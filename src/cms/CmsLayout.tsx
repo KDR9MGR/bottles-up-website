@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, Ticket, Users, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Ticket, Users, Settings, LogOut, ScanLine } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -21,6 +21,7 @@ const navItems = [
   { to: '/cms/events', label: 'Events', icon: CalendarDays },
   { to: '/cms/bookings', label: 'Bookings', icon: Ticket },
   { to: '/cms/vip-list', label: 'VIP List', icon: Users },
+  { to: '/cms/door-staff', label: 'Door Staff', icon: ScanLine },
   { to: '/cms/content', label: 'Site Content', icon: Settings },
 ];
 

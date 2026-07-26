@@ -1,14 +1,25 @@
 // Public browser-facing functions are called directly from the website, local dev, and
 // preview deployments. CORS is not an auth boundary here, so avoid brittle exact-origin
 // matching that breaks Vercel previews. ALLOWED_ORIGIN still supports explicit allow-lists
-// for custom domains, while localhost and *.vercel.app are allowed automatically.
+// for additional custom domains, while localhost, *.vercel.app, and this site's known
+// production domains are allowed automatically - so a stale/out-of-sync ALLOWED_ORIGIN
+// secret can't silently break checkout after a domain change.
 const allowedOrigins = (Deno.env.get('ALLOWED_ORIGIN') ?? '')
   .split(',')
   .map((o: string) => o.trim())
   .filter(Boolean);
 
-function isPreviewOrLocalOrigin(origin: string) {
-  return /^https?:\/\/localhost(?::\d+)?$/.test(origin) || /^https:\/\/.*\.vercel\.app$/.test(origin);
+const KNOWN_PRODUCTION_ORIGINS = new Set([
+  'https://bottlesupapp.com',
+  'https://www.bottlesupapp.com',
+]);
+
+export function isPreviewOrLocalOrigin(origin: string) {
+  return (
+    /^https?:\/\/localhost(?::\d+)?$/.test(origin) ||
+    /^https:\/\/.*\.vercel\.app$/.test(origin) ||
+    KNOWN_PRODUCTION_ORIGINS.has(origin)
+  );
 }
 
 export function corsHeadersFor(req: Request) {

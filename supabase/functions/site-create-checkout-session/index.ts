@@ -1,10 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
-import { corsHeadersFor, handleOptions } from '../_shared/cors.ts';
-
-function isPreviewOrLocalOrigin(origin: string) {
-  return /^https?:\/\/localhost(?::\d+)?$/.test(origin) || /^https:\/\/.*\.vercel\.app$/.test(origin);
-}
+import { corsHeadersFor, handleOptions, isPreviewOrLocalOrigin } from '../_shared/cors.ts';
 
 Deno.serve(async (req: Request) => {
   const preflight = handleOptions(req);

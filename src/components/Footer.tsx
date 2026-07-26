@@ -61,10 +61,10 @@ const Footer = () => {
           <div>
             <h3 className="font-semibold text-white mb-4">For Partners</h3>
             <ul className="space-y-2">
-              <li><a href="mailto:partners@bottlesup.to" className="text-gray-400 hover:text-orange-500 transition-colors">Venue Partnership</a></li>
-              <li><a href="mailto:promoters@bottlesup.to" className="text-gray-400 hover:text-orange-500 transition-colors">Promoter Portal</a></li>
-              <li><a href="mailto:events@bottlesup.to" className="text-gray-400 hover:text-orange-500 transition-colors">Event Listing</a></li>
-              <li><a href="mailto:business@bottlesup.to" className="text-gray-400 hover:text-orange-500 transition-colors">Business Inquiries</a></li>
+              <li><a href="mailto:partners@bottlesupapp.com" className="text-gray-400 hover:text-orange-500 transition-colors">Venue Partnership</a></li>
+              <li><a href="mailto:promoters@bottlesupapp.com" className="text-gray-400 hover:text-orange-500 transition-colors">Promoter Portal</a></li>
+              <li><a href="mailto:events@bottlesupapp.com" className="text-gray-400 hover:text-orange-500 transition-colors">Event Listing</a></li>
+              <li><a href="mailto:business@bottlesupapp.com" className="text-gray-400 hover:text-orange-500 transition-colors">Business Inquiries</a></li>
             </ul>
           </div>
 
@@ -101,7 +101,7 @@ const Footer = () => {
               <h4 className="text-sm font-semibold text-orange-500 mb-2">Partners & Promoters</h4>
               <p className="text-xs text-gray-400 mb-3">Want to list your venue or event?</p>
               <a 
-                href="mailto:partners@bottlesup.to" 
+                href="mailto:partners@bottlesupapp.com" 
                 className="inline-flex items-center text-xs bg-orange-500 text-black px-3 py-1 rounded-md font-medium hover:bg-orange-600 transition-colors"
               >
                 Get Started
@@ -131,6 +131,9 @@ const Footer = () => {
           <div className="flex space-x-6 mt-4 md:mt-0">
             <Link to="/privacy-policy" className="text-gray-400 hover:text-orange-500 text-sm transition-colors">
               Privacy Policy
+            </Link>
+            <Link to="/my-tickets" className="text-gray-400 hover:text-orange-500 text-sm transition-colors">
+              My Tickets
             </Link>
             <a href="#" className="text-gray-400 hover:text-orange-500 text-sm transition-colors">
               Terms of Service

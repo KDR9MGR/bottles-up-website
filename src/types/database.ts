@@ -91,6 +91,8 @@ export interface Database {
           status: OrderStatus;
           ticket_code: string | null;
           ticket_sent_at: string | null;
+          checked_in_at: string | null;
+          checked_in_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -121,6 +123,24 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['vip_emails']['Row']>;
         Relationships: [];
       };
+      door_staff: {
+        Row: {
+          id: string;
+          email: string;
+          created_at: string;
+        };
+        Insert: {
+          id: string;
+          email: string;
+          created_at?: string;
+        };
+        Update: Partial<{
+          id: string;
+          email: string;
+          created_at: string;
+        }>;
+        Relationships: [];
+      };
       site_content: {
         Row: {
           id: number;
@@ -143,7 +163,18 @@ export interface Database {
       };
     };
     Views: { [_ in never]: never };
-    Functions: { [_ in never]: never };
+    Functions: {
+      checkin_ticket: {
+        Args: { p_ticket_code: string };
+        Returns: {
+          result: 'ok' | 'already_checked_in' | 'not_paid' | 'not_found';
+          customer_name: string | null;
+          event_title: string | null;
+          tier_name: string | null;
+          quantity: number | null;
+        }[];
+      };
+    };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
   };

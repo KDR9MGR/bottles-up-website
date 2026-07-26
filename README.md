@@ -144,12 +144,12 @@ See `DEPLOYMENT.md` for detailed deployment instructions.
 ## 📧 Contact & Support
 
 For questions about the BottlesUp website:
-- **Email**: hello@bottlesup.to
-- **Developers**: dev@bottlesup.to
+- **Email**: hello@bottlesupapp.com
+- **Developers**: dev@bottlesupapp.com
 
 For venue partnerships and promoter inquiries:
-- **Partners**: partners@bottlesup.to
-- **Promoters**: promoters@bottlesup.to
+- **Partners**: partners@bottlesupapp.com
+- **Promoters**: promoters@bottlesupapp.com
 
 ## 🎯 Toronto Nightlife
 

@@ -6,7 +6,7 @@ export type SiteContent = Database['public']['Tables']['site_content']['Row'];
 // fetch fails or hasn't resolved yet, so the public site never renders blank.
 export const SITE_CONTENT_DEFAULTS: SiteContent = {
   id: 1,
-  contact_email: 'hello@bottlesup.to',
+  contact_email: 'hello@bottlesupapp.com',
   contact_phone: '+14169999999',
   address: 'Toronto, ON, Canada',
   social_instagram:

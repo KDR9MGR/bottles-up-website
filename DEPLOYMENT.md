@@ -92,7 +92,7 @@ The CMS, events, bookings, and VIP list live in a Supabase project (`supabase/` 
 
 #### 5. **Custom Domain** (Optional)
 1. Go to Project Settings → Domains
-2. Add your custom domain (e.g., `bottlesup.to`)
+2. Add your custom domain (e.g., `bottlesupapp.com`)
 3. Follow Vercel's DNS configuration instructions
 
 ### ✅ What's Already Configured
@@ -143,6 +143,6 @@ The CMS, events, bookings, and VIP list live in a Supabase project (`supabase/` 
 
 After deployment, your site will be available at:
 - **Vercel subdomain**: `https://bottlesup-website.vercel.app`
-- **Custom domain** (if configured): `https://bottlesup.to`
+- **Custom domain** (if configured): `https://bottlesupapp.com`
 
 Your BottlesUp website is now ready to capture Toronto's nightlife enthusiasts! 🍾 

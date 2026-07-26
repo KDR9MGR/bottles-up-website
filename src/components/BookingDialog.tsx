@@ -32,6 +32,7 @@ const BookingDialog = ({ event, open, onOpenChange }: BookingDialogProps) => {
   const { toast } = useToast();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [confirmEmail, setConfirmEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [tierId, setTierId] = useState('');
   const [quantity, setQuantity] = useState('1');
@@ -43,6 +44,7 @@ const BookingDialog = ({ event, open, onOpenChange }: BookingDialogProps) => {
     }
     setName('');
     setEmail('');
+    setConfirmEmail('');
     setPhone('');
     setQuantity('1');
   }, [event]);
@@ -62,6 +64,10 @@ const BookingDialog = ({ event, open, onOpenChange }: BookingDialogProps) => {
     }
     if (!EMAIL_RE.test(email)) {
       toast({ title: 'Please enter a valid email', variant: 'destructive' });
+      return;
+    }
+    if (email.trim().toLowerCase() !== confirmEmail.trim().toLowerCase()) {
+      toast({ title: 'Emails do not match', description: 'Please make sure both email fields match.', variant: 'destructive' });
       return;
     }
 
@@ -108,6 +114,17 @@ const BookingDialog = ({ event, open, onOpenChange }: BookingDialogProps) => {
           <div className="space-y-2">
             <Label>Email</Label>
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </div>
+          <div className="space-y-2">
+            <Label>Confirm Email</Label>
+            <Input
+              type="email"
+              value={confirmEmail}
+              onChange={(e) => setConfirmEmail(e.target.value)}
+              onPaste={(e) => e.preventDefault()}
+              required
+            />
+            <p className="text-xs text-gray-500">Your ticket and QR code are sent here - please double-check it.</p>
           </div>
           <div className="space-y-2">
             <Label>Phone (optional)</Label>

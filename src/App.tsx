@@ -1,10 +1,8 @@
-import { useState, useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import LoadingScreen from "./components/LoadingScreen";
 import Index from "./pages/Index";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import NotFound from "./pages/NotFound";
@@ -16,26 +14,24 @@ import CmsDashboard from "./cms/pages/Dashboard";
 import CmsEvents from "./cms/pages/Events";
 import CmsBookings from "./cms/pages/Bookings";
 import CmsVipList from "./cms/pages/VipList";
+import CmsDoorStaff from "./cms/pages/DoorStaff";
 import CmsContent from "./cms/pages/Content";
 import BookingSuccess from "./pages/BookingSuccess";
 import BookingCancel from "./pages/BookingCancel";
 import EventDetail from "./pages/EventDetail";
+import MyTickets from "./pages/MyTickets";
+import RequireDoorAuth from "./door/RequireDoorAuth";
+import DoorLogin from "./door/pages/DoorLogin";
+import ScanTickets from "./door/pages/ScanTickets";
 
 const queryClient = new QueryClient();
 
 const App = () => {
-  const [isLoading, setIsLoading] = useState(true);
-
-  const handleLoadingComplete = () => {
-    setIsLoading(false);
-  };
-
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        {isLoading && <LoadingScreen onLoadingComplete={handleLoadingComplete} />}
         <BrowserRouter>
           <ScrollToTop />
           <Routes>
@@ -44,6 +40,16 @@ const App = () => {
             <Route path="/events/:id" element={<EventDetail />} />
             <Route path="/booking/success" element={<BookingSuccess />} />
             <Route path="/booking/cancel" element={<BookingCancel />} />
+            <Route path="/my-tickets" element={<MyTickets />} />
+            <Route path="/door/login" element={<DoorLogin />} />
+            <Route
+              path="/door/scan"
+              element={
+                <RequireDoorAuth>
+                  <ScanTickets />
+                </RequireDoorAuth>
+              }
+            />
             <Route path="/cms/login" element={<CmsLogin />} />
             <Route
               path="/cms/*"
@@ -57,6 +63,7 @@ const App = () => {
               <Route path="events" element={<CmsEvents />} />
               <Route path="bookings" element={<CmsBookings />} />
               <Route path="vip-list" element={<CmsVipList />} />
+              <Route path="door-staff" element={<CmsDoorStaff />} />
               <Route path="content" element={<CmsContent />} />
             </Route>
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

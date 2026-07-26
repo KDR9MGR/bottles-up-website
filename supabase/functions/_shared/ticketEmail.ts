@@ -1,5 +1,5 @@
 const resendApiKey = Deno.env.get('RESEND_API_KEY');
-const fromEmail = Deno.env.get('TICKETS_FROM_EMAIL') ?? 'tickets@bottlesup.to';
+const fromEmail = Deno.env.get('TICKETS_FROM_EMAIL') ?? 'tickets@bottlesupapp.com';
 
 export function generateTicketCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O/1/I
@@ -43,12 +43,17 @@ export async function sendTicketEmail(opts: {
       <p style="color: #999; margin-top: 0;">${opts.venueName}<br/>${formattedDate}</p>
       <p><strong>${opts.tierName}</strong> &times; ${opts.quantity}</p>
       <div style="text-align: center; margin: 24px 0;">
-        <img src="${opts.qrDataUrl}" alt="Ticket QR code" width="200" height="200" style="background: #fff; padding: 12px; border-radius: 8px;" />
+        <img src="cid:qrcode" alt="Ticket QR code" width="200" height="200" style="background: #fff; padding: 12px; border-radius: 8px;" />
       </div>
       <p style="text-align: center; font-size: 20px; letter-spacing: 2px; font-weight: bold;">${opts.ticketCode}</p>
       <p style="color: #999; font-size: 13px;">Show this email (QR code or the code above) at the door. See you there!</p>
     </div>
   `;
+
+  // Most email clients (Gmail included) strip inline data: URI images out of HTML
+  // emails as a spam-filtering measure, so the QR never rendered. Attaching it and
+  // referencing it via cid: is the standard, actually-reliable way to inline an image.
+  const qrBase64 = opts.qrDataUrl.split(',')[1];
 
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -61,6 +66,7 @@ export async function sendTicketEmail(opts: {
       to: opts.toEmail,
       subject: `Your ticket for ${opts.eventTitle}`,
       html,
+      attachments: [{ filename: 'ticket-qr.png', content: qrBase64, content_id: 'qrcode' }],
     }),
   });
 
