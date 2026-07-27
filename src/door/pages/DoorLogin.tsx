@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
+import { getAuthRedirectBase } from '@/lib/authRedirect';
 import { doorSignOut, useDoorAuth } from '../useDoorAuth';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -46,7 +47,7 @@ const DoorLogin = () => {
     setSending(true);
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/door/scan` },
+      options: { emailRedirectTo: `${getAuthRedirectBase()}/door/scan` },
     });
     setSending(false);
 

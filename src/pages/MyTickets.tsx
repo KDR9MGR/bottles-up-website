@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
+import { getAuthRedirectBase } from '@/lib/authRedirect';
 import TicketCard, { type TicketCardData } from '@/components/TicketCard';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -85,7 +86,7 @@ const MyTickets = () => {
     setSending(true);
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/my-tickets` },
+      options: { emailRedirectTo: `${getAuthRedirectBase()}/my-tickets` },
     });
     setSending(false);
 
