@@ -21,6 +21,7 @@ import { Trash2, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { uploadEventMedia } from '@/lib/uploadEventMedia';
+import { logAudit } from '@/lib/auditLog';
 import type { Database, EventStatus } from '@/types/database';
 import DateTimePicker from './DateTimePicker';
 
@@ -59,6 +60,7 @@ const emptyForm = {
   category: '',
   status: 'draft' as EventStatus,
   cover_image_url: '' as string | null,
+  banner_image_url: '' as string | null,
   gallery: [] as string[],
   slug: '' as string | null,
 };
@@ -72,6 +74,7 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
   const [originalTierIds, setOriginalTierIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [slugManual, setSlugManual] = useState(false);
 
@@ -89,10 +92,11 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
         category: event.category ?? '',
         status: event.status,
         cover_image_url: event.cover_image_url,
+        banner_image_url: event.banner_image_url ?? '',
         gallery: event.gallery ?? [],
-        slug: (event as any).slug ?? '',
+        slug: event.slug ?? '',
       });
-      setSlugManual(!!(event as any).slug);
+      setSlugManual(!!event.slug);
 
       supabase
         .from('site_ticket_tiers')
@@ -140,6 +144,18 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
     }
   };
 
+  const handleBannerUpload = async (file: File) => {
+    setUploadingBanner(true);
+    try {
+      const url = await uploadEventMedia(file);
+      updateField('banner_image_url', url);
+    } catch (error) {
+      toast({ title: 'Upload failed', description: String(error), variant: 'destructive' });
+    } finally {
+      setUploadingBanner(false);
+    }
+  };
+
   const handleGalleryUpload = async (files: FileList) => {
     setUploadingGallery(true);
     try {
@@ -176,6 +192,7 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
         category: form.category || null,
         status: form.status,
         cover_image_url: form.cover_image_url,
+        banner_image_url: form.banner_image_url || null,
         gallery: form.gallery,
         capacity: totalCapacity || null,
         slug: form.slug || null,
@@ -217,6 +234,12 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
       }
 
       toast({ title: event ? 'Event updated' : 'Event created' });
+      logAudit({
+        action: event ? 'event.updated' : 'event.created',
+        entityType: 'site_events',
+        entityId: eventId,
+        details: { title: form.title },
+      });
       onSaved();
       onOpenChange(false);
     } catch (error) {
@@ -297,44 +320,119 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Cover Image</Label>
+          <div className="space-y-3 rounded-lg border border-gray-800 p-4">
+            <div>
+              <Label>Cover Image</Label>
+              <p className="text-xs text-gray-500">Shown as the thumbnail on the homepage event card.</p>
+            </div>
             <div className="flex items-center gap-4">
-              {form.cover_image_url && (
-                <img src={form.cover_image_url} alt="Cover" className="h-16 w-16 rounded object-cover" />
+              {form.cover_image_url ? (
+                <img src={form.cover_image_url} alt="Cover" className="h-20 w-20 rounded object-cover" />
+              ) : (
+                <div className="flex h-20 w-20 items-center justify-center rounded border border-dashed border-gray-700 text-[10px] text-gray-600">
+                  No image yet
+                </div>
               )}
-              <Input
-                type="file"
-                accept="image/*"
-                disabled={uploadingCover}
-                onChange={(e) => e.target.files?.[0] && handleCoverUpload(e.target.files[0])}
-              />
+              <div className="space-y-2">
+                <Button type="button" variant="outline" size="sm" disabled={uploadingCover} asChild>
+                  <label className="cursor-pointer">
+                    {uploadingCover ? 'Uploading...' : 'Upload Cover Image'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => e.target.files?.[0] && handleCoverUpload(e.target.files[0])}
+                    />
+                  </label>
+                </Button>
+                {form.cover_image_url && (
+                  <button
+                    type="button"
+                    className="block text-xs text-gray-500 hover:text-red-400"
+                    onClick={() => updateField('cover_image_url', null)}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Gallery</Label>
-            <div className="flex flex-wrap gap-2">
-              {form.gallery.map((url) => (
-                <div key={url} className="relative">
-                  <img src={url} alt="Gallery" className="h-16 w-16 rounded object-cover" />
+          <div className="space-y-3 rounded-lg border border-gray-800 p-4">
+            <div>
+              <Label>Banner Image</Label>
+              <p className="text-xs text-gray-500">Wide hero image shown at the top of the event detail page.</p>
+            </div>
+            <div className="flex items-center gap-4">
+              {form.banner_image_url ? (
+                <img src={form.banner_image_url} alt="Banner" className="h-20 w-32 rounded object-cover" />
+              ) : (
+                <div className="flex h-20 w-32 items-center justify-center rounded border border-dashed border-gray-700 text-[10px] text-gray-600">
+                  No image yet
+                </div>
+              )}
+              <div className="space-y-2">
+                <Button type="button" variant="outline" size="sm" disabled={uploadingBanner} asChild>
+                  <label className="cursor-pointer">
+                    {uploadingBanner ? 'Uploading...' : 'Upload Banner Image'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => e.target.files?.[0] && handleBannerUpload(e.target.files[0])}
+                    />
+                  </label>
+                </Button>
+                {form.banner_image_url && (
                   <button
                     type="button"
-                    onClick={() => setForm((prev) => ({ ...prev, gallery: prev.gallery.filter((g) => g !== url) }))}
-                    className="absolute -right-1 -top-1 rounded-full bg-black p-0.5 text-white"
+                    className="block text-xs text-gray-500 hover:text-red-400"
+                    onClick={() => updateField('banner_image_url', null)}
                   >
-                    <Trash2 className="h-3 w-3" />
+                    Remove
                   </button>
-                </div>
-              ))}
+                )}
+              </div>
             </div>
-            <Input
-              type="file"
-              accept="image/*"
-              multiple
-              disabled={uploadingGallery}
-              onChange={(e) => e.target.files && handleGalleryUpload(e.target.files)}
-            />
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-gray-800 p-4">
+            <div>
+              <Label>Gallery</Label>
+              <p className="text-xs text-gray-500">Extra photos shown further down the event detail page.</p>
+            </div>
+            {form.gallery.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {form.gallery.map((url) => (
+                  <div key={url} className="relative">
+                    <img src={url} alt="Gallery" className="h-16 w-16 rounded object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, gallery: prev.gallery.filter((g) => g !== url) }))}
+                      className="absolute -right-1 -top-1 rounded-full bg-black p-0.5 text-white"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex h-16 items-center rounded border border-dashed border-gray-700 px-3 text-xs text-gray-600">
+                No gallery images yet
+              </div>
+            )}
+            <Button type="button" variant="outline" size="sm" disabled={uploadingGallery} asChild>
+              <label className="cursor-pointer">
+                {uploadingGallery ? 'Uploading...' : 'Add Gallery Images'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => e.target.files && handleGalleryUpload(e.target.files)}
+                />
+              </label>
+            </Button>
           </div>
 
           <div className="space-y-2">
@@ -381,7 +479,7 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
           </Button>
           <Button
             onClick={handleSave}
-            disabled={saving || uploadingCover || uploadingGallery}
+            disabled={saving || uploadingCover || uploadingBanner || uploadingGallery}
             className="bg-gradient-orange text-black font-bold hover:opacity-90"
           >
             {saving ? 'Saving...' : 'Save Event'}

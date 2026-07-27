@@ -71,6 +71,15 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'Failed to add door staff' }, 500);
     }
 
+    await supabase.from('audit_log').insert({
+      actor_id: userData.user.id,
+      actor_email: userData.user.email ?? 'unknown',
+      action: 'door_staff.added',
+      entity_type: 'door_staff',
+      entity_id: linkData.user.id,
+      details: { email },
+    });
+
     return json({ success: true });
   } catch (error) {
     console.error('manage-door-staff error:', error);

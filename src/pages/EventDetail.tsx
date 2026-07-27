@@ -85,7 +85,7 @@ const EventDetail = () => {
       <section className="relative">
         <div className="relative h-[45vh] min-h-[320px] w-full overflow-hidden lg:h-[55vh]">
           <img
-            src={event.cover_image_url ?? '/placeholder.svg'}
+            src={event.banner_image_url ?? event.cover_image_url ?? '/placeholder.svg'}
             alt={event.title}
             className="h-full w-full object-cover"
           />

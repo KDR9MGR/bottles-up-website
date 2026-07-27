@@ -78,6 +78,15 @@ Deno.serve(async (req: Request) => {
 
     await supabase.from('site_orders').update({ ticket_sent_at: new Date().toISOString() }).eq('id', order_id);
 
+    await supabase.from('audit_log').insert({
+      actor_id: userData.user.id,
+      actor_email: userData.user.email ?? 'unknown',
+      action: 'ticket.resent',
+      entity_type: 'site_orders',
+      entity_id: order_id,
+      details: { ticket_code: order.ticket_code },
+    });
+
     return json({ success: true });
   } catch (error) {
     console.error('resend-ticket-email error:', error);

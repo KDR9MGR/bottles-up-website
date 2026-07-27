@@ -15,6 +15,8 @@ import CmsEvents from "./cms/pages/Events";
 import CmsBookings from "./cms/pages/Bookings";
 import CmsVipList from "./cms/pages/VipList";
 import CmsDoorStaff from "./cms/pages/DoorStaff";
+import CmsCheckIns from "./cms/pages/CheckIns";
+import CmsAuditLog from "./cms/pages/AuditLog";
 import CmsContent from "./cms/pages/Content";
 import BookingSuccess from "./pages/BookingSuccess";
 import BookingCancel from "./pages/BookingCancel";
@@ -64,6 +66,8 @@ const App = () => {
               <Route path="bookings" element={<CmsBookings />} />
               <Route path="vip-list" element={<CmsVipList />} />
               <Route path="door-staff" element={<CmsDoorStaff />} />
+              <Route path="check-ins" element={<CmsCheckIns />} />
+              <Route path="audit-log" element={<CmsAuditLog />} />
               <Route path="content" element={<CmsContent />} />
             </Route>
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

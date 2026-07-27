@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/auditLog';
 import { SITE_CONTENT_DEFAULTS, type SiteContent } from '@/lib/siteContentDefaults';
 
 const CmsContent = () => {
@@ -49,6 +50,7 @@ const CmsContent = () => {
       toast({ title: 'Failed to save', description: error.message, variant: 'destructive' });
     } else {
       toast({ title: 'Site content saved' });
+      logAudit({ action: 'site_content.updated', entityType: 'site_content', entityId: '1' });
     }
   };
 

@@ -5,6 +5,7 @@
 export type EventStatus = 'draft' | 'published';
 export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 export type PaymentsMode = 'test' | 'live';
+export type ScanResult = 'ok' | 'already_checked_in' | 'not_paid' | 'not_found';
 
 export interface Database {
   public: {
@@ -38,6 +39,7 @@ export interface Database {
           start_date: string;
           end_date: string | null;
           cover_image_url: string | null;
+          banner_image_url: string | null;
           gallery: string[];
           category: string | null;
           status: EventStatus;
@@ -139,6 +141,50 @@ export interface Database {
           email: string;
           created_at: string;
         }>;
+        Relationships: [];
+      };
+      scan_attempts: {
+        Row: {
+          id: string;
+          ticket_code_attempted: string;
+          result: ScanResult;
+          order_id: string | null;
+          scanned_by: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          ticket_code_attempted: string;
+          result: ScanResult;
+          order_id?: string | null;
+          scanned_by: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['scan_attempts']['Row']>;
+        Relationships: [];
+      };
+      audit_log: {
+        Row: {
+          id: string;
+          actor_id: string | null;
+          actor_email: string;
+          action: string;
+          entity_type: string;
+          entity_id: string | null;
+          details: Record<string, unknown> | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          actor_id?: string | null;
+          actor_email: string;
+          action: string;
+          entity_type: string;
+          entity_id?: string | null;
+          details?: Record<string, unknown> | null;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['audit_log']['Row']>;
         Relationships: [];
       };
       site_content: {

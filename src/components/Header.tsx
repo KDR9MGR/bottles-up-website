@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Menu, X } from 'lucide-react';
 
@@ -10,14 +11,14 @@ const Header = () => {
       <div className="container mx-auto px-4 lg:px-6">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <div className="flex items-center space-x-3">
-            <img 
-              src="/app_logo.svg" 
-              alt="BottlesUp Logo" 
+          <Link to="/" className="flex items-center space-x-3">
+            <img
+              src="/app_logo.svg"
+              alt="BottlesUp Logo"
               className="w-8 h-8"
             />
             <span className="text-xl font-bold text-gradient">BottlesUp</span>
-          </div>
+          </Link>
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-8">
