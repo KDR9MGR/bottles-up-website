@@ -5,7 +5,7 @@
 export type EventStatus = 'draft' | 'published';
 export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 export type PaymentsMode = 'test' | 'live';
-export type ScanResult = 'ok' | 'already_checked_in' | 'not_paid' | 'not_found';
+export type ScanResult = 'ok' | 'already_checked_in' | 'not_paid' | 'not_found' | 'expired';
 
 export interface Database {
   public: {
@@ -213,7 +213,7 @@ export interface Database {
       checkin_ticket: {
         Args: { p_ticket_code: string };
         Returns: {
-          result: 'ok' | 'already_checked_in' | 'not_paid' | 'not_found';
+          result: ScanResult;
           customer_name: string | null;
           event_title: string | null;
           tier_name: string | null;

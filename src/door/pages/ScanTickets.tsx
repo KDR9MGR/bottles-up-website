@@ -5,28 +5,39 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/lib/supabase';
 import { doorSignOut } from '../useDoorAuth';
+import type { ScanResult } from '@/types/database';
 
 const READER_ID = 'door-qr-reader';
+// Ignore an identical decoded code for this long after it was last processed, so a
+// ticket still sitting in front of the camera after "Scan Next" doesn't instantly
+// re-trigger and report "Already checked in" before staff can move to the next guest.
+const SAME_CODE_COOLDOWN_MS = 5000;
+
+type ClientResult = ScanResult | 'session_expired' | 'scan_error';
 
 type CheckinResult = {
-  result: 'ok' | 'already_checked_in' | 'not_paid' | 'not_found';
+  result: ClientResult;
   customer_name: string | null;
   event_title: string | null;
   tier_name: string | null;
   quantity: number | null;
 };
 
-const resultCopy: Record<CheckinResult['result'], { label: string; tone: 'ok' | 'warn' | 'error' }> = {
+const resultCopy: Record<ClientResult, { label: string; tone: 'ok' | 'warn' | 'error' }> = {
   ok: { label: 'Admit', tone: 'ok' },
   already_checked_in: { label: 'Already checked in', tone: 'warn' },
   not_paid: { label: 'Not paid', tone: 'error' },
   not_found: { label: 'Ticket not found', tone: 'error' },
+  expired: { label: 'Event has ended', tone: 'error' },
+  session_expired: { label: 'Session expired', tone: 'error' },
+  scan_error: { label: 'Scan failed - try again', tone: 'error' },
 };
 
 const ScanTickets = () => {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const busyRef = useRef(false);
   const pausedRef = useRef(false);
+  const lastCodeRef = useRef<{ code: string; at: number } | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState('');
   const [checking, setChecking] = useState(false);
@@ -42,7 +53,17 @@ const ScanTickets = () => {
     busyRef.current = false;
 
     if (error) {
-      setResult({ result: 'not_found', customer_name: null, event_title: null, tier_name: null, quantity: null });
+      // checkin_ticket() raises 'not authorized' when the caller's session/door-staff
+      // membership no longer checks out - most commonly an expired session. Surface
+      // that distinctly instead of implying the ticket itself is the problem.
+      const isAuthError = /not authorized/i.test(error.message ?? '');
+      setResult({
+        result: isAuthError ? 'session_expired' : 'scan_error',
+        customer_name: null,
+        event_title: null,
+        tier_name: null,
+        quantity: null,
+      });
       return;
     }
     setResult((data?.[0] as CheckinResult) ?? null);
@@ -57,9 +78,11 @@ const ScanTickets = () => {
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => {
-          if (!busyRef.current && !pausedRef.current) {
-            runCheckin(decodedText);
-          }
+          if (busyRef.current || pausedRef.current) return;
+          const last = lastCodeRef.current;
+          if (last && last.code === decodedText && Date.now() - last.at < SAME_CODE_COOLDOWN_MS) return;
+          lastCodeRef.current = { code: decodedText, at: Date.now() };
+          runCheckin(decodedText);
         },
         () => {
           // per-frame decode miss - expected while the camera searches, not an error
@@ -119,11 +142,14 @@ const ScanTickets = () => {
               {result.event_title}
             </div>
           )}
+          {result.result === 'session_expired' ? (
+            <p className="mt-4 text-sm opacity-90">Your login expired. Sign in again to keep scanning.</p>
+          ) : null}
           <Button
             className="mt-6 w-full bg-gradient-orange text-black font-bold hover:opacity-90"
-            onClick={scanNext}
+            onClick={result.result === 'session_expired' ? () => doorSignOut() : scanNext}
           >
-            Scan Next
+            {result.result === 'session_expired' ? 'Sign In Again' : 'Scan Next'}
           </Button>
         </div>
       ) : (

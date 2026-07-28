@@ -40,6 +40,7 @@ const issueLabel: Record<Exclude<ScanResult, 'ok'>, string> = {
   already_checked_in: 'Already checked in',
   not_paid: 'Not paid',
   not_found: 'Not found',
+  expired: 'Event ended',
 };
 
 const CmsCheckIns = () => {

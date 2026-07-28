@@ -1,0 +1,36 @@
+<!--
+  Supabase Auth "Magic Link" email template - shared by both /door/login (door
+  staff) and /my-tickets (customer ticket recovery), since Supabase only has
+  one global magic-link template per project. This file is the source of
+  truth kept in git; Supabase's dashboard doesn't read it automatically -
+  paste the contents into:
+
+    Supabase Dashboard -> Authentication -> Email Templates -> Magic Link
+
+  Suggested subject line: Your BottlesUp sign-in link
+
+  Supabase template variables available here: {{ .ConfirmationURL }},
+  {{ .Token }}, {{ .TokenHash }}, {{ .SiteURL }}, {{ .Email }}.
+-->
+<div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0a0a0a; color: #fff; border-radius: 16px;">
+  <h1 style="color: #f97316; margin: 0 0 4px;">BottlesUp 🍾</h1>
+  <p style="color: #999; margin: 0 0 24px;">Toronto's Premier Nightlife App</p>
+
+  <p style="margin: 0 0 8px;">Here's your one-time sign-in link:</p>
+
+  <div style="text-align: center; margin: 28px 0;">
+    <a
+      href="{{ .ConfirmationURL }}"
+      style="display: inline-block; background: linear-gradient(90deg, #f97316, #fb923c); color: #000; font-weight: bold; font-size: 16px; padding: 14px 40px; border-radius: 8px; text-decoration: none;"
+    >
+      Sign In
+    </a>
+  </div>
+
+  <p style="color: #999; font-size: 13px; margin: 0 0 4px;">
+    This link expires shortly and can only be used once.
+  </p>
+  <p style="color: #999; font-size: 13px; margin: 0;">
+    Didn't request this? You can safely ignore this email - no account changes were made.
+  </p>
+</div>
