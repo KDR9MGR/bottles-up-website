@@ -13,6 +13,8 @@ import CmsLogin from "./cms/pages/Login";
 import CmsDashboard from "./cms/pages/Dashboard";
 import CmsEvents from "./cms/pages/Events";
 import CmsBookings from "./cms/pages/Bookings";
+import CmsVenues from "./cms/pages/Venues";
+import CmsTableBookings from "./cms/pages/TableBookings";
 import CmsVipList from "./cms/pages/VipList";
 import CmsDoorStaff from "./cms/pages/DoorStaff";
 import CmsCheckIns from "./cms/pages/CheckIns";
@@ -21,6 +23,8 @@ import CmsContent from "./cms/pages/Content";
 import BookingSuccess from "./pages/BookingSuccess";
 import BookingCancel from "./pages/BookingCancel";
 import EventDetail from "./pages/EventDetail";
+import VipTables from "./pages/VipTables";
+import VenueDetail from "./pages/VenueDetail";
 import MyTickets from "./pages/MyTickets";
 import RequireDoorAuth from "./door/RequireDoorAuth";
 import DoorLogin from "./door/pages/DoorLogin";
@@ -40,6 +44,8 @@ const App = () => {
             <Route path="/" element={<Index />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/events/:id" element={<EventDetail />} />
+            <Route path="/vip-tables" element={<VipTables />} />
+            <Route path="/venues/:id" element={<VenueDetail />} />
             <Route path="/booking/success" element={<BookingSuccess />} />
             <Route path="/booking/cancel" element={<BookingCancel />} />
             <Route path="/my-tickets" element={<MyTickets />} />
@@ -64,6 +70,8 @@ const App = () => {
               <Route index element={<CmsDashboard />} />
               <Route path="events" element={<CmsEvents />} />
               <Route path="bookings" element={<CmsBookings />} />
+              <Route path="venues" element={<CmsVenues />} />
+              <Route path="table-bookings" element={<CmsTableBookings />} />
               <Route path="vip-list" element={<CmsVipList />} />
               <Route path="door-staff" element={<CmsDoorStaff />} />
               <Route path="check-ins" element={<CmsCheckIns />} />

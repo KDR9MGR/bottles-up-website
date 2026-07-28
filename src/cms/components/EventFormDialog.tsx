@@ -42,14 +42,6 @@ interface EventFormDialogProps {
   onSaved: () => void;
 }
 
-const generateSlug = (title: string): string => {
-  return title
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-');
-};
-
 const emptyForm = {
   title: '',
   description: '',
@@ -76,7 +68,6 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
-  const [slugManual, setSlugManual] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -96,7 +87,6 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
         gallery: event.gallery ?? [],
         slug: event.slug ?? '',
       });
-      setSlugManual(!!event.slug);
 
       supabase
         .from('site_ticket_tiers')
@@ -118,19 +108,11 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
       setForm(emptyForm);
       setTiers([{ name: 'General Admission', priceDollars: '', capacity: '' }]);
       setOriginalTierIds([]);
-      setSlugManual(false);
     }
   }, [event, open]);
 
   const updateField = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
-    setForm((prev) => {
-      const next = { ...prev, [key]: value };
-      // Auto-generate slug if title changes and user hasn't manually edited slug
-      if (key === 'title' && !slugManual && typeof value === 'string' && value) {
-        next.slug = generateSlug(value);
-      }
-      return next;
-    });
+    setForm((prev) => ({ ...prev, [key]: value }));
 
   const handleCoverUpload = async (file: File) => {
     setUploadingCover(true);
@@ -182,6 +164,8 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
     setSaving(true);
     try {
       const totalCapacity = tiers.reduce((sum, t) => sum + (parseInt(t.capacity, 10) || 0), 0);
+      // slug is intentionally omitted - a DB trigger (set_event_slug) generates it
+      // from the title on insert and leaves it untouched on update.
       const payload: Database['public']['Tables']['site_events']['Insert'] = {
         title: form.title,
         description: form.description,
@@ -195,7 +179,6 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
         banner_image_url: form.banner_image_url || null,
         gallery: form.gallery,
         capacity: totalCapacity || null,
-        slug: form.slug || null,
       };
 
       let eventId = event?.id;
@@ -262,17 +245,11 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
             <Input value={form.title} onChange={(e) => updateField('title', e.target.value)} />
           </div>
 
-          <div className="space-y-2">
-            <Label>Slug</Label>
-            <Input
-              value={form.slug ?? ''}
-              onChange={(e) => {
-                updateField('slug', e.target.value);
-                setSlugManual(true);
-              }}
-              placeholder="event-url-slug"
-            />
-          </div>
+          {event && (
+            <p className="text-xs text-gray-500">
+              URL slug: <span className="font-mono text-gray-400">{form.slug || '(generating...)'}</span> — generated automatically from the title.
+            </p>
+          )}
 
           <div className="space-y-2">
             <Label>Description</Label>

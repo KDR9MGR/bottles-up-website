@@ -29,7 +29,7 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    const { data: order, error } = await supabase
+    const { data: order } = await supabase
       .from('site_orders')
       .select(
         'status, ticket_code, customer_name, quantity, site_ticket_tiers(name), site_events(title, venue_name, start_date)',
@@ -37,27 +37,58 @@ Deno.serve(async (req: Request) => {
       .eq('stripe_checkout_session_id', session_id)
       .maybeSingle();
 
-    if (error || !order) {
+    if (order) {
+      if (order.status !== 'paid' || !order.ticket_code) {
+        return json({ status: order.status });
+      }
+
+      const tier = order.site_ticket_tiers as unknown as { name: string } | null;
+      const event = order.site_events as unknown as { title: string; venue_name: string; start_date: string } | null;
+
+      return json({
+        status: 'paid',
+        ticket: {
+          ticketCode: order.ticket_code,
+          customerName: order.customer_name,
+          quantity: order.quantity,
+          tierName: tier?.name ?? '',
+          eventTitle: event?.title ?? 'Your event',
+          venueName: event?.venue_name ?? '',
+          startDate: event?.start_date ?? '',
+        },
+      });
+    }
+
+    const { data: booking, error: bookingError } = await supabase
+      .from('site_table_bookings')
+      .select(
+        'status, confirmation_code, customer_name, guest_count, booking_date, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)',
+      )
+      .eq('stripe_checkout_session_id', session_id)
+      .maybeSingle();
+
+    if (bookingError || !booking) {
       return json({ status: 'not_found' });
     }
 
-    if (order.status !== 'paid' || !order.ticket_code) {
-      return json({ status: order.status });
+    if (booking.status !== 'paid' || !booking.confirmation_code) {
+      return json({ status: booking.status });
     }
 
-    const tier = order.site_ticket_tiers as unknown as { name: string } | null;
-    const event = order.site_events as unknown as { title: string; venue_name: string; start_date: string } | null;
+    const tableType = booking.site_table_types as unknown as { name: string } | null;
+    const venue = booking.site_venues as unknown as { name: string } | null;
+    const timeSlot = booking.site_venue_time_slots as unknown as { start_time: string } | null;
 
     return json({
       status: 'paid',
-      ticket: {
-        ticketCode: order.ticket_code,
-        customerName: order.customer_name,
-        quantity: order.quantity,
-        tierName: tier?.name ?? '',
-        eventTitle: event?.title ?? 'Your event',
-        venueName: event?.venue_name ?? '',
-        startDate: event?.start_date ?? '',
+      booking: {
+        confirmationCode: booking.confirmation_code,
+        customerName: booking.customer_name,
+        guestCount: booking.guest_count,
+        tableTypeName: tableType?.name ?? '',
+        venueName: venue?.name ?? '',
+        bookingDate: booking.booking_date,
+        startTime: timeSlot?.start_time ?? '',
       },
     });
   } catch (error) {

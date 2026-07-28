@@ -11,11 +11,11 @@ export interface TicketCardData {
   tierName: string;
 }
 
-const TicketCard = ({ ticket }: { ticket: TicketCardData }) => {
+const TicketCard = ({ ticket, label = 'BottlesUp E-Ticket' }: { ticket: TicketCardData; label?: string }) => {
   return (
     <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-gray-800 bg-gray-950">
       <div className="bg-gradient-orange px-6 py-4 text-left">
-        <div className="text-xs font-medium uppercase tracking-wide text-black/70">BottlesUp E-Ticket</div>
+        <div className="text-xs font-medium uppercase tracking-wide text-black/70">{label}</div>
         <div className="text-lg font-bold text-black">{ticket.eventTitle}</div>
       </div>
 

@@ -1,24 +1,28 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, MapPin, Ticket } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, Ticket, Crown } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { supabase } from '@/lib/supabase';
 import BookingDialog from '@/components/BookingDialog';
+import Lightbox from '@/components/Lightbox';
 import type { EventWithTiers } from '@/components/PopularEvents';
 
 const EventDetail = () => {
   const { id } = useParams<{ id: string }>();
   const [event, setEvent] = useState<EventWithTiers | null>(null);
+  const [relatedEvents, setRelatedEvents] = useState<EventWithTiers[]>([]);
   const [loading, setLoading] = useState(true);
   const [bookingOpen, setBookingOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    
+    setLightboxIndex(null);
+
     // Try by slug first, then by id
     const loadEvent = async () => {
       // First try with slug
@@ -28,7 +32,7 @@ const EventDetail = () => {
         .eq('slug', id)
         .eq('status', 'published')
         .maybeSingle();
-      
+
       if (!data) {
         // If no event by slug, try id
         ({ data } = await supabase
@@ -38,11 +42,23 @@ const EventDetail = () => {
           .eq('status', 'published')
           .maybeSingle());
       }
-      
-      setEvent(data as EventWithTiers | null);
+
+      const loaded = data as EventWithTiers | null;
+      setEvent(loaded);
       setLoading(false);
+
+      if (loaded) {
+        const { data: related } = await supabase
+          .from('site_events')
+          .select('*, ticket_tiers:site_ticket_tiers(*)')
+          .eq('status', 'published')
+          .neq('id', loaded.id)
+          .order('start_date', { ascending: true })
+          .limit(4);
+        setRelatedEvents((related as EventWithTiers[]) ?? []);
+      }
     };
-    
+
     loadEvent();
   }, [id]);
 
@@ -77,6 +93,11 @@ const EventDetail = () => {
     : null;
   const soldOut =
     event.ticket_tiers.length > 0 && event.ticket_tiers.every((t) => t.sold_count >= t.capacity);
+  const tags = (event.category ?? '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const gallery = event.gallery ?? [];
 
   return (
     <div className="min-h-screen bg-black">
@@ -101,10 +122,14 @@ const EventDetail = () => {
             Back to Events
           </Link>
 
-          {event.category && (
-            <span className="mb-3 inline-block rounded-full bg-primary/20 px-3 py-1 text-xs font-medium text-primary">
-              {event.category}
-            </span>
+          {tags.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {tags.map((tag) => (
+                <span key={tag} className="rounded-full bg-primary/20 px-3 py-1 text-xs font-medium text-primary">
+                  {tag}
+                </span>
+              ))}
+            </div>
           )}
 
           <h1 className="text-3xl font-bold text-white lg:text-5xl">{event.title}</h1>
@@ -145,17 +170,23 @@ const EventDetail = () => {
               <p className="whitespace-pre-line leading-relaxed text-gray-400">{event.description}</p>
             </div>
 
-            {event.gallery && event.gallery.length > 0 && (
+            {gallery.length > 0 && (
               <div>
-                <h2 className="mb-3 text-xl font-semibold text-white">Gallery</h2>
+                <h2 className="mb-3 text-xl font-semibold text-white">Event Gallery</h2>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {event.gallery.map((url) => (
-                    <img
+                  {gallery.map((url, i) => (
+                    <button
                       key={url}
-                      src={url}
-                      alt={event.title}
-                      className="aspect-square w-full rounded-lg object-cover"
-                    />
+                      type="button"
+                      onClick={() => setLightboxIndex(i)}
+                      className="aspect-square overflow-hidden rounded-lg"
+                    >
+                      <img
+                        src={url}
+                        alt={event.title}
+                        className="h-full w-full object-cover transition-transform hover:scale-105"
+                      />
+                    </button>
                   ))}
                 </div>
               </div>
@@ -213,13 +244,72 @@ const EventDetail = () => {
                 </Button>
               </CardContent>
             </Card>
+
+            <Card className="mt-6 overflow-hidden border-border bg-card">
+              <CardContent className="space-y-3 p-6">
+                <div className="flex items-center gap-2 text-white">
+                  <Crown className="h-5 w-5 text-primary" />
+                  <span className="font-semibold">Reserve a VIP Table</span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Elevate your night with bottle service, a dedicated host, and the best view in the room.
+                </p>
+                <Button asChild variant="outline" className="w-full border-border">
+                  <Link to="/vip-tables">Browse VIP Tables</Link>
+                </Button>
+              </CardContent>
+            </Card>
           </div>
         </div>
+
+        {relatedEvents.length > 0 && (
+          <div className="mt-14">
+            <h2 className="mb-6 text-xl font-semibold text-white">You Might Also Like</h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {relatedEvents.map((related) => {
+                const relatedPriceFrom = related.ticket_tiers.length
+                  ? Math.min(...related.ticket_tiers.map((t) => t.price_cents))
+                  : null;
+                return (
+                  <Link
+                    key={related.id}
+                    to={`/events/${related.slug || related.id}`}
+                    className="group overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-primary/50"
+                  >
+                    <div className="h-32 w-full overflow-hidden">
+                      <img
+                        src={related.cover_image_url ?? '/placeholder.svg'}
+                        alt={related.title}
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                    </div>
+                    <div className="p-3">
+                      <div className="truncate text-sm font-medium text-white">{related.title}</div>
+                      <div className="truncate text-xs text-muted-foreground">{related.venue_name}</div>
+                      {relatedPriceFrom !== null && (
+                        <div className="mt-1 text-xs text-primary">From ${(relatedPriceFrom / 100).toFixed(0)}</div>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </section>
 
       <Footer />
 
       <BookingDialog event={bookingOpen ? event : null} open={bookingOpen} onOpenChange={setBookingOpen} />
+
+      {lightboxIndex !== null && (
+        <Lightbox
+          images={gallery}
+          index={lightboxIndex}
+          onIndexChange={setLightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      )}
     </div>
   );
 };

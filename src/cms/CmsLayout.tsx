@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, Ticket, Users, Settings, LogOut, ScanLine, CheckCircle2, ScrollText } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Ticket, Users, Settings, LogOut, ScanLine, CheckCircle2, ScrollText, Building2, Wine } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -20,6 +20,8 @@ const navItems = [
   { to: '/cms', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/cms/events', label: 'Events', icon: CalendarDays },
   { to: '/cms/bookings', label: 'Bookings', icon: Ticket },
+  { to: '/cms/venues', label: 'Venues', icon: Building2 },
+  { to: '/cms/table-bookings', label: 'Table Bookings', icon: Wine },
   { to: '/cms/vip-list', label: 'VIP List', icon: Users },
   { to: '/cms/door-staff', label: 'Door Staff', icon: ScanLine },
   { to: '/cms/check-ins', label: 'Check-ins', icon: CheckCircle2 },

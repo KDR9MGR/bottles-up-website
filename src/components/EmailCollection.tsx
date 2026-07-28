@@ -59,7 +59,7 @@ const EmailCollection = () => {
   };
 
   return (
-    <section id="waitlist" className="py-20 px-4 bg-gradient-to-br from-black via-gray-900 to-black">
+    <section id="waitlist" className="py-20 px-4 overflow-hidden bg-gradient-to-br from-black via-gray-900 to-black">
       <div className="max-w-4xl mx-auto text-center">
         <div className="relative">
           {/* Background decoration */}

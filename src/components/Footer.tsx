@@ -1,9 +1,22 @@
 import { Instagram, Twitter, Facebook, Linkedin, Mail, Phone, MapPin } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useSiteContent } from '@/hooks/useSiteContent';
 
 const Footer = () => {
   const content = useSiteContent();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Same cross-page section nav fix as Header: these targets are homepage
+  // sections, so a plain hash link would hard-reload the app from other pages.
+  const goToSection = (id: string) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (location.pathname === '/') {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      navigate(`/#${id}`);
+    }
+  };
 
   return (
     <footer className="bg-black border-t border-gray-800 pt-16 pb-8">
@@ -50,15 +63,15 @@ const Footer = () => {
           <div>
             <h3 className="font-semibold text-white mb-4">For Users</h3>
             <ul className="space-y-2">
-              <li><a href="#features" className="text-gray-400 hover:text-orange-500 transition-colors">Browse Events</a></li>
-              <li><a href="#booking" className="text-gray-400 hover:text-orange-500 transition-colors">VIP Tables</a></li>
-              <li><a href="#" className="text-gray-400 hover:text-orange-500 transition-colors">Digital Tickets</a></li>
-              <li><a href="#waitlist" className="text-gray-400 hover:text-orange-500 transition-colors">Join Waitlist</a></li>
+              <li><a href="/#events" onClick={goToSection('events')} className="text-gray-400 hover:text-orange-500 transition-colors">Browse Events</a></li>
+              <li><Link to="/vip-tables" className="text-gray-400 hover:text-orange-500 transition-colors">VIP Tables</Link></li>
+              <li><Link to="/my-tickets" className="text-gray-400 hover:text-orange-500 transition-colors">Digital Tickets</Link></li>
+              <li><a href="/#waitlist" onClick={goToSection('waitlist')} className="text-gray-400 hover:text-orange-500 transition-colors">Join Waitlist</a></li>
             </ul>
           </div>
 
           {/* For Partners */}
-          <div>
+          <div id="partners">
             <h3 className="font-semibold text-white mb-4">For Partners</h3>
             <ul className="space-y-2">
               <li><a href="mailto:partners@bottlesupapp.com" className="text-gray-400 hover:text-orange-500 transition-colors">Venue Partnership</a></li>

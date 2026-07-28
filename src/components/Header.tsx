@@ -1,17 +1,43 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Menu, X } from 'lucide-react';
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Features/Events/Partners are sections on the homepage, not standalone pages.
+  // A plain <a href="#id"> only works while already on "/" - from any other page
+  // it's a dead click (there's no matching id on that page). Navigate home with
+  // the hash first, then scroll, so these links work from anywhere in the app.
+  const goToSection = (id: string) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsMenuOpen(false);
+    if (location.pathname === '/') {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      navigate(`/#${id}`);
+    }
+  };
+
+  const handleLogoClick = (e: React.MouseEvent) => {
+    setIsMenuOpen(false);
+    // React Router's <Link> is a no-op when already on the target route, so
+    // clicking the logo while already on "/" would otherwise do nothing.
+    if (location.pathname === '/') {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-black/95 backdrop-blur-sm border-b border-gray-800">
       <div className="container mx-auto px-4 lg:px-6">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to="/" className="flex items-center space-x-3">
+          <Link to="/" onClick={handleLogoClick} className="flex items-center space-x-3">
             <img
               src="/app_logo.svg"
               alt="BottlesUp Logo"
@@ -22,16 +48,16 @@ const Header = () => {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-8">
-            <a href="#features" className="text-gray-300 hover:text-orange-500 transition-colors">
+            <a href="/#features" onClick={goToSection('features')} className="text-gray-300 hover:text-orange-500 transition-colors">
               Features
             </a>
-            <a href="#events" className="text-gray-300 hover:text-orange-500 transition-colors">
+            <a href="/#events" onClick={goToSection('events')} className="text-gray-300 hover:text-orange-500 transition-colors">
               Events
             </a>
-            <a href="#booking" className="text-gray-300 hover:text-orange-500 transition-colors">
+            <Link to="/vip-tables" className="text-gray-300 hover:text-orange-500 transition-colors">
               VIP Tables
-            </a>
-            <a href="#partners" className="text-gray-300 hover:text-orange-500 transition-colors">
+            </Link>
+            <a href="/#partners" onClick={goToSection('partners')} className="text-gray-300 hover:text-orange-500 transition-colors">
               Partners
             </a>
           </nav>
@@ -65,16 +91,16 @@ const Header = () => {
         {isMenuOpen && (
           <div className="md:hidden py-4 border-t border-gray-800 animate-fade-in">
             <nav className="flex flex-col space-y-4">
-              <a href="#features" className="text-gray-300 hover:text-orange-500 transition-colors">
+              <a href="/#features" onClick={goToSection('features')} className="text-gray-300 hover:text-orange-500 transition-colors">
                 Features
               </a>
-              <a href="#events" className="text-gray-300 hover:text-orange-500 transition-colors">
+              <a href="/#events" onClick={goToSection('events')} className="text-gray-300 hover:text-orange-500 transition-colors">
                 Events
               </a>
-              <a href="#booking" className="text-gray-300 hover:text-orange-500 transition-colors">
+              <Link to="/vip-tables" onClick={() => setIsMenuOpen(false)} className="text-gray-300 hover:text-orange-500 transition-colors">
                 VIP Tables
-              </a>
-              <a href="#partners" className="text-gray-300 hover:text-orange-500 transition-colors">
+              </Link>
+              <a href="/#partners" onClick={goToSection('partners')} className="text-gray-300 hover:text-orange-500 transition-colors">
                 Partners
               </a>
               <div className="flex flex-col space-y-2 pt-4">

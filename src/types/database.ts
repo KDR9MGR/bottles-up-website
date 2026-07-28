@@ -149,6 +149,7 @@ export interface Database {
           ticket_code_attempted: string;
           result: ScanResult;
           order_id: string | null;
+          booking_id: string | null;
           scanned_by: string;
           created_at: string;
         };
@@ -157,10 +158,110 @@ export interface Database {
           ticket_code_attempted: string;
           result: ScanResult;
           order_id?: string | null;
+          booking_id?: string | null;
           scanned_by: string;
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['scan_attempts']['Row']>;
+        Relationships: [];
+      };
+      site_venues: {
+        Row: {
+          id: string;
+          name: string;
+          slug: string | null;
+          description: string | null;
+          address: string | null;
+          cover_image_url: string | null;
+          gallery: string[];
+          status: EventStatus;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['site_venues']['Row']> & { name: string };
+        Update: Partial<Database['public']['Tables']['site_venues']['Row']>;
+        Relationships: [];
+      };
+      site_venue_time_slots: {
+        Row: {
+          id: string;
+          venue_id: string;
+          day_of_week: number;
+          start_time: string;
+          label: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['site_venue_time_slots']['Row']> & {
+          venue_id: string;
+          day_of_week: number;
+          start_time: string;
+        };
+        Update: Partial<Database['public']['Tables']['site_venue_time_slots']['Row']>;
+        Relationships: [];
+      };
+      site_table_types: {
+        Row: {
+          id: string;
+          venue_id: string;
+          name: string;
+          description: string | null;
+          max_guests: number;
+          min_spend_cents: number;
+          deposit_cents: number;
+          currency: string;
+          inventory_count: number;
+          image_url: string | null;
+          badge_label: string | null;
+          is_featured: boolean;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['site_table_types']['Row']> & {
+          venue_id: string;
+          name: string;
+          max_guests: number;
+          min_spend_cents: number;
+          deposit_cents: number;
+          inventory_count: number;
+        };
+        Update: Partial<Database['public']['Tables']['site_table_types']['Row']>;
+        Relationships: [];
+      };
+      site_table_bookings: {
+        Row: {
+          id: string;
+          venue_id: string;
+          table_type_id: string;
+          time_slot_id: string;
+          booking_date: string;
+          customer_name: string;
+          customer_email: string;
+          customer_phone: string | null;
+          guest_count: number;
+          amount_total_cents: number;
+          currency: string;
+          stripe_checkout_session_id: string | null;
+          stripe_payment_intent_id: string | null;
+          status: OrderStatus;
+          confirmation_code: string | null;
+          confirmation_sent_at: string | null;
+          checked_in_at: string | null;
+          checked_in_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['site_table_bookings']['Row']> & {
+          venue_id: string;
+          table_type_id: string;
+          time_slot_id: string;
+          booking_date: string;
+          customer_name: string;
+          customer_email: string;
+          guest_count: number;
+          amount_total_cents: number;
+        };
+        Update: Partial<Database['public']['Tables']['site_table_bookings']['Row']>;
         Relationships: [];
       };
       audit_log: {

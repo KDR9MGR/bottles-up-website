@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,6 +34,13 @@ const DoorLogin = () => {
         <Button variant="outline" className="border-gray-700 text-white hover:bg-gray-900" onClick={() => doorSignOut()}>
           Try a different email
         </Button>
+        <Link
+          to="/"
+          className="mt-6 inline-flex items-center gap-2 text-sm text-gray-400 transition-colors hover:text-primary"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to website
+        </Link>
       </div>
     );
   }
@@ -59,7 +67,14 @@ const DoorLogin = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-black px-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-black px-4">
+      <Link
+        to="/"
+        className="mb-6 inline-flex items-center gap-2 text-sm text-gray-400 transition-colors hover:text-primary"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to website
+      </Link>
       <div className="w-full max-w-sm rounded-2xl border border-gray-800 bg-gray-900/50 p-8 text-center">
         <h1 className="mb-6 text-2xl font-bold text-white">Door Staff Sign In</h1>
 
