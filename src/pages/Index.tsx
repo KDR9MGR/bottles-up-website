@@ -4,8 +4,9 @@ import Header from '@/components/Header';
 import Hero from '@/components/Hero';
 import Features from '@/components/Features';
 import PopularEvents from '@/components/PopularEvents';
-import PopularVipTables from '@/components/PopularVipTables';
 import HowItWorks from '@/components/HowItWorks';
+import PopularVipTables from '@/components/PopularVipTables';
+import TrustedByVenues from '@/components/TrustedByVenues';
 import EmailCollection from '@/components/EmailCollection';
 import Footer from '@/components/Footer';
 
@@ -34,8 +35,9 @@ const Index = () => {
       <Hero />
       <Features />
       <PopularEvents />
-      <PopularVipTables />
       <HowItWorks />
+      <PopularVipTables />
+      <TrustedByVenues />
       <EmailCollection />
       <Footer />
     </div>

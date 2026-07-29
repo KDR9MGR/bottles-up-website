@@ -3,6 +3,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Menu, X } from 'lucide-react';
 
+const navLinkClass =
+  'relative text-sm font-medium text-gray-300 transition-colors hover:text-white after:absolute after:-bottom-1 after:left-0 after:h-px after:w-0 after:bg-gradient-orange after:transition-all after:duration-300 hover:after:w-full';
+
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
@@ -33,87 +36,99 @@ const Header = () => {
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-black/95 backdrop-blur-sm border-b border-gray-800">
+    <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-black/50 backdrop-blur-2xl">
       <div className="container mx-auto px-4 lg:px-6">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex h-20 items-center justify-between py-3">
           {/* Logo */}
-          <Link to="/" onClick={handleLogoClick} className="flex items-center space-x-3">
-            <img
-              src="/app_logo.svg"
-              alt="BottlesUp Logo"
-              className="w-8 h-8"
-            />
-            <span className="text-xl font-bold text-gradient">BottlesUp</span>
+          <Link
+            to="/"
+            onClick={handleLogoClick}
+            className="group flex items-center space-x-2.5 transition-transform duration-300 hover:scale-[1.03]"
+          >
+            <img src="/app_logo.svg" alt="BottlesUp Logo" className="h-8 w-8" />
+            <span className="text-xl font-bold tracking-tight text-gradient">BottlesUp</span>
           </Link>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center space-x-8">
-            <a href="/#features" onClick={goToSection('features')} className="text-gray-300 hover:text-orange-500 transition-colors">
+          <nav className="hidden items-center gap-9 md:flex">
+            <a href="/#features" onClick={goToSection('features')} className={navLinkClass}>
               Features
             </a>
-            <a href="/#events" onClick={goToSection('events')} className="text-gray-300 hover:text-orange-500 transition-colors">
+            <a href="/#events" onClick={goToSection('events')} className={navLinkClass}>
               Events
             </a>
-            <Link to="/vip-tables" className="text-gray-300 hover:text-orange-500 transition-colors">
+            <Link to="/vip-tables" className={navLinkClass}>
               VIP Tables
             </Link>
-            <a href="/#partners" onClick={goToSection('partners')} className="text-gray-300 hover:text-orange-500 transition-colors">
+            <a href="/#how-it-works" onClick={goToSection('how-it-works')} className={navLinkClass}>
+              How It Works
+            </a>
+            <a href="/#partners" onClick={goToSection('partners')} className={navLinkClass}>
               Partners
             </a>
           </nav>
 
           {/* Desktop CTA */}
-          <div className="hidden md:flex items-center space-x-4">
-            <Button variant="outline" className="border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-black">
+          <div className="hidden items-center gap-3 md:flex">
+            <Button
+              variant="ghost"
+              className="text-sm text-gray-300 hover:bg-white/5 hover:text-white"
+            >
               Promoter Login
             </Button>
-            <Button 
+            <Button
               onClick={() => window.open('https://vendor.bottlesupapp.com/', '_blank')}
-              className="bg-gradient-orange hover:opacity-90 text-black font-bold border-0"
+              variant="outline"
+              className="rounded-full border-orange-500/60 text-orange-500 transition-all duration-300 hover:border-orange-500 hover:bg-orange-500/10 hover:text-orange-400"
             >
               Be Partner
             </Button>
-            <Button className="bg-gradient-orange hover:opacity-90 text-black font-bold border-0">
+            <Button className="rounded-full bg-gradient-orange border-0 font-bold text-black shadow-lg shadow-orange-500/20 transition-all duration-300 hover:scale-105 hover:shadow-orange-500/40">
               Join Waitlist
             </Button>
           </div>
 
           {/* Mobile Menu Button */}
           <button
-            className="md:hidden text-white"
+            className="rounded-full p-2 text-white transition-colors hover:bg-white/10 md:hidden"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
+            aria-label="Toggle menu"
           >
-            {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
         </div>
 
         {/* Mobile Menu */}
         {isMenuOpen && (
-          <div className="md:hidden py-4 border-t border-gray-800 animate-fade-in">
-            <nav className="flex flex-col space-y-4">
-              <a href="/#features" onClick={goToSection('features')} className="text-gray-300 hover:text-orange-500 transition-colors">
+          <div className="animate-fade-in mb-4 rounded-2xl border border-white/10 bg-black/80 p-5 backdrop-blur-2xl md:hidden">
+            <nav className="flex flex-col gap-4">
+              <a href="/#features" onClick={goToSection('features')} className="text-gray-300 transition-colors hover:text-orange-500">
                 Features
               </a>
-              <a href="/#events" onClick={goToSection('events')} className="text-gray-300 hover:text-orange-500 transition-colors">
+              <a href="/#events" onClick={goToSection('events')} className="text-gray-300 transition-colors hover:text-orange-500">
                 Events
               </a>
-              <Link to="/vip-tables" onClick={() => setIsMenuOpen(false)} className="text-gray-300 hover:text-orange-500 transition-colors">
+              <Link to="/vip-tables" onClick={() => setIsMenuOpen(false)} className="text-gray-300 transition-colors hover:text-orange-500">
                 VIP Tables
               </Link>
-              <a href="/#partners" onClick={goToSection('partners')} className="text-gray-300 hover:text-orange-500 transition-colors">
+              <a href="/#how-it-works" onClick={goToSection('how-it-works')} className="text-gray-300 transition-colors hover:text-orange-500">
+                How It Works
+              </a>
+              <a href="/#partners" onClick={goToSection('partners')} className="text-gray-300 transition-colors hover:text-orange-500">
                 Partners
               </a>
-              <div className="flex flex-col space-y-2 pt-4">
-                <Button variant="outline" className="border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-black">
+              <div className="flex flex-col gap-2 pt-3">
+                <Button variant="outline" className="rounded-full border-orange-500/60 text-orange-500 hover:bg-orange-500/10">
                   Promoter Login
                 </Button>
-                <Button 
+                <Button
                   onClick={() => window.open('https://vendor.bottlesupapp.com/', '_blank')}
-                  className="bg-gradient-orange hover:opacity-90 text-black font-bold border-0"
+                  variant="outline"
+                  className="rounded-full border-orange-500/60 text-orange-500 hover:bg-orange-500/10"
                 >
                   Be Partner
                 </Button>
-                <Button className="bg-gradient-orange hover:opacity-90 text-black font-bold border-0">
+                <Button className="rounded-full bg-gradient-orange border-0 font-bold text-black">
                   Join Waitlist
                 </Button>
               </div>

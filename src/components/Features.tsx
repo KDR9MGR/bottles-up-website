@@ -50,51 +50,70 @@ const Features = () => {
     }
   ];
 
+  const strip = features.slice(0, 6);
+
   return (
-    <section id="features" className="py-16 lg:py-24 bg-gradient-to-br from-black via-gray-900 to-black">
+    <section id="features" className="bg-black py-20 lg:py-28">
       <div className="container mx-auto px-4 lg:px-6">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl lg:text-5xl font-bold mb-6 text-white">
-            Revolutionizing{' '}
-            <span className="text-gradient">Toronto Nightlife</span>
+        <div className="mx-auto mb-14 max-w-3xl text-center">
+          <span className="mb-4 inline-block text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
+            Why BottlesUp
+          </span>
+          <h2 className="mb-6 text-4xl font-bold text-white lg:text-5xl">
+            Revolutionizing <span className="text-gradient">Toronto Nightlife</span>
           </h2>
-          <p className="text-lg lg:text-xl text-gray-300 max-w-3xl mx-auto">
-            From Entertainment District to King Street West, BottlesUp connects you to the city's most exclusive venues and events.
-            Experience Toronto nightlife like never before.
+          <p className="text-lg text-gray-400 lg:text-xl">
+            From Entertainment District to King Street West, BottlesUp connects you to the city's most exclusive
+            venues and events. Experience Toronto nightlife like never before.
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+        {/* Feature strip */}
+        <div className="mb-16 grid grid-cols-2 gap-4 rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-xl sm:grid-cols-3 lg:grid-cols-6 lg:p-8">
+          {strip.map((feature, index) => (
+            <div
+              key={feature.title}
+              className="animate-fade-in flex flex-col items-center gap-3 rounded-2xl px-2 py-3 text-center transition-colors duration-300 hover:bg-white/5"
+              style={{ animationDelay: `${index * 0.08}s` }}
+            >
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-orange">
+                <feature.icon className="h-5 w-5 text-black" />
+              </div>
+              <span className="text-sm font-medium text-gray-200">{feature.title}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Card grid */}
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 lg:gap-8">
           {features.map((feature, index) => (
-            <Card 
-              key={index} 
-              className="bg-black/50 border-gray-800 hover:border-orange-500/50 transition-all duration-300 group animate-fade-in hover-lift backdrop-blur-sm"
+            <Card
+              key={feature.title}
+              className="group animate-fade-in hover-lift rounded-3xl border-white/10 bg-white/[0.03] backdrop-blur-xl transition-all duration-300 hover:border-orange-500/40 hover:bg-white/[0.06]"
               style={{ animationDelay: `${index * 0.1}s` }}
             >
-              <CardContent className="p-6">
-                <div className="w-12 h-12 bg-gradient-orange rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform glow-orange">
-                  <feature.icon className="w-6 h-6 text-black font-bold" />
+              <CardContent className="p-7">
+                <div className="glow-orange mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-orange transition-transform duration-300 group-hover:scale-110">
+                  <feature.icon className="h-6 w-6 text-black" />
                 </div>
-                <h3 className="text-xl font-semibold mb-3 group-hover:text-orange-500 transition-colors text-white">
+                <h3 className="mb-3 text-xl font-semibold text-white transition-colors group-hover:text-orange-500">
                   {feature.title}
                 </h3>
-                <p className="text-gray-400 leading-relaxed">
-                  {feature.description}
-                </p>
+                <p className="leading-relaxed text-gray-400">{feature.description}</p>
               </CardContent>
             </Card>
           ))}
         </div>
 
         {/* Call to Action */}
-        <div className="text-center mt-16">
-          <p className="text-gray-400 mb-6">Ready to elevate your Toronto nightlife experience?</p>
-          <button 
+        <div className="mt-16 text-center">
+          <p className="mb-6 text-gray-400">Ready to elevate your Toronto nightlife experience?</p>
+          <button
             onClick={() => {
               const waitlistSection = document.querySelector('#waitlist');
               waitlistSection?.scrollIntoView({ behavior: 'smooth' });
             }}
-            className="bg-gradient-orange hover:opacity-90 text-black font-bold px-8 py-4 rounded-xl transition-all duration-300 transform hover:scale-105 glow-orange"
+            className="glow-orange transform rounded-full bg-gradient-orange px-8 py-4 font-bold text-black transition-all duration-300 hover:scale-105 hover:opacity-90"
           >
             Join the Revolution
           </button>

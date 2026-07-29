@@ -22,6 +22,7 @@ import {
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
+import { describeDeleteBlockedError } from '@/lib/friendlyDbError';
 import type { Database } from '@/types/database';
 import EventFormDialog from '../components/EventFormDialog';
 
@@ -34,6 +35,8 @@ const CmsEvents = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<EventRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<EventRow | null>(null);
+  const [blocked, setBlocked] = useState<{ event: EventRow; referencingLabel: string } | null>(null);
+  const [unpublishing, setUnpublishing] = useState(false);
 
   const loadEvents = async () => {
     setLoading(true);
@@ -48,14 +51,35 @@ const CmsEvents = () => {
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
-    const { error } = await supabase.from('site_events').delete().eq('id', deleteTarget.id);
+    const target = deleteTarget;
+    const { error } = await supabase.from('site_events').delete().eq('id', target.id);
     if (error) {
+      const blockedInfo = describeDeleteBlockedError(error);
+      if (blockedInfo) {
+        setDeleteTarget(null);
+        setBlocked({ event: target, referencingLabel: blockedInfo.referencingLabel });
+        return;
+      }
       toast({ title: 'Failed to delete event', description: error.message, variant: 'destructive' });
     } else {
       toast({ title: 'Event deleted' });
       loadEvents();
     }
     setDeleteTarget(null);
+  };
+
+  const handleUnpublish = async () => {
+    if (!blocked) return;
+    setUnpublishing(true);
+    const { error } = await supabase.from('site_events').update({ status: 'draft' }).eq('id', blocked.event.id);
+    setUnpublishing(false);
+    if (error) {
+      toast({ title: 'Failed to unpublish event', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Event unpublished', description: 'It’s hidden from the site but its data is kept.' });
+    setBlocked(null);
+    loadEvents();
   };
 
   return (
@@ -146,6 +170,34 @@ const CmsEvents = () => {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!blocked} onOpenChange={(open) => !open && setBlocked(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Can't delete "{blocked?.event.title}"</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                This event still has {blocked?.referencingLabel} linked to it, so it can't be deleted - that history
+                is kept on purpose and is never removed automatically.
+              </span>
+              <span className="block">To proceed, either:</span>
+              <span className="block">
+                1. Unpublish it instead (hides it from the site, keeps all data), or
+                <br />
+                2. Cancel/refund the related {blocked?.referencingLabel} first, then delete the event.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Close</AlertDialogCancel>
+            {blocked?.event.status === 'published' && (
+              <AlertDialogAction onClick={handleUnpublish} disabled={unpublishing}>
+                {unpublishing ? 'Unpublishing...' : 'Unpublish Instead'}
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
