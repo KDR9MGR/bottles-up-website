@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Users, MapPin, Wine, Crown, ShieldCheck, Zap, BadgeDollarSign, Info, CheckCircle2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Users, MapPin, Wine, Crown, ShieldCheck, Zap, BadgeDollarSign, Info, CheckCircle2, Search } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 import TableBookingDialog from '@/components/TableBookingDialog';
@@ -36,6 +37,7 @@ type ListingCard =
 const VipTables = () => {
   const [cards, setCards] = useState<ListingCard[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [bookingTableType, setBookingTableType] = useState<TableTypeWithVenue | null>(null);
 
   useEffect(() => {
@@ -77,6 +79,16 @@ const VipTables = () => {
         setLoading(false);
       });
   }, []);
+
+  const filteredCards = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return cards;
+    return cards.filter((card) => {
+      const name = card.kind === 'venue' ? card.venue.name : card.tableType.name;
+      const venueName = card.kind === 'venue' ? card.venue.name : card.tableType.venue.name;
+      return name.toLowerCase().includes(term) || venueName.toLowerCase().includes(term);
+    });
+  }, [cards, search]);
 
   const heroImages = Array.from(
     new Map(
@@ -129,18 +141,32 @@ const VipTables = () => {
       </section>
 
       <section className="container mx-auto px-4 pb-24 lg:px-6">
-        <div className="mb-8">
+        <div className="mb-6">
           <h2 className="text-2xl font-bold text-white">Available Tables</h2>
           <p className="mt-1 text-sm text-gray-400">Handpicked tables at Toronto's top venues</p>
         </div>
 
+        <div className="relative mb-10 max-w-md">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search tables or venues..."
+            className="border-gray-800 bg-gray-950/60 pl-10"
+          />
+        </div>
+
         {loading ? (
           <div className="text-center text-gray-400">Loading...</div>
-        ) : cards.length === 0 ? (
-          <div className="text-center text-gray-400">No tables available right now - check back soon.</div>
+        ) : filteredCards.length === 0 ? (
+          <div className="text-center text-gray-400">
+            {cards.length === 0
+              ? 'No tables available right now - check back soon.'
+              : 'No tables match that search - try a different term.'}
+          </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {cards.map((card) =>
+            {filteredCards.map((card) =>
               card.kind === 'venue' ? (
                 <Card
                   key={card.id}
