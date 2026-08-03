@@ -23,6 +23,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { uploadEventMedia } from '@/lib/uploadEventMedia';
 import { logAudit } from '@/lib/auditLog';
+import { describeDeleteBlockedError } from '@/lib/friendlyDbError';
 import FloorPlanEditor, { type TablePlacement } from './FloorPlanEditor';
 import type { Database, EventStatus, PricingMode } from '@/types/database';
 
@@ -412,7 +413,21 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
       const removedTableTypeIds = originalTableTypeIds.filter((id) => !keptTableTypeIds.has(id));
       if (removedTableTypeIds.length > 0) {
         const { error } = await supabase.from('site_table_types').delete().in('id', removedTableTypeIds);
-        if (error) throw error;
+        if (error) {
+          const blocked = describeDeleteBlockedError(error);
+          if (blocked) {
+            toast({
+              title: "Can't remove that table type",
+              description: `It has existing ${blocked.referencingLabel} attached to it, so it wasn't deleted - everything else you changed was saved. Reopen this venue to edit or reprice it instead of removing it.`,
+              variant: 'destructive',
+            });
+            setSaving(false);
+            onSaved();
+            onOpenChange(false);
+            return;
+          }
+          throw error;
+        }
       }
       for (const [index, tableType] of tableTypes.entries()) {
         if (!tableType.name || !tableType.maxGuests || !tableType.inventoryCount) continue;
