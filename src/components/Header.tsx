@@ -60,6 +60,9 @@ const Header = () => {
             <Link to="/vip-tables" className={navLinkClass}>
               VIP Tables
             </Link>
+            <Link to="/venues" className={navLinkClass}>
+              Venues
+            </Link>
             <a href="/#how-it-works" onClick={goToSection('how-it-works')} className={navLinkClass}>
               How It Works
             </a>
@@ -110,6 +113,9 @@ const Header = () => {
               </a>
               <Link to="/vip-tables" onClick={() => setIsMenuOpen(false)} className="text-gray-300 transition-colors hover:text-orange-500">
                 VIP Tables
+              </Link>
+              <Link to="/venues" onClick={() => setIsMenuOpen(false)} className="text-gray-300 transition-colors hover:text-orange-500">
+                Venues
               </Link>
               <a href="/#how-it-works" onClick={goToSection('how-it-works')} className="text-gray-300 transition-colors hover:text-orange-500">
                 How It Works

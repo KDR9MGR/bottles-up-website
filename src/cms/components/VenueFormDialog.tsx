@@ -98,6 +98,8 @@ const emptyTableType: TableTypeDraft = {
   height: null,
 };
 
+const VENUE_CATEGORIES = ['Nightclub', 'Rooftop', 'Lounge', 'Restaurant', 'Beach Club', 'Patio'];
+
 const emptyForm = {
   name: '',
   slug: '' as string | null,
@@ -106,6 +108,7 @@ const emptyForm = {
   status: 'draft' as EventStatus,
   cover_image_url: '' as string | null,
   gallery: [] as string[],
+  category: '' as string,
   bookingStartDate: '',
   bookingEndDate: '',
 };
@@ -138,6 +141,7 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         status: venue.status,
         cover_image_url: venue.cover_image_url,
         gallery: venue.gallery ?? [],
+        category: venue.category ?? '',
         bookingStartDate: venue.booking_start_date ?? '',
         bookingEndDate: venue.booking_end_date ?? '',
       });
@@ -343,6 +347,7 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         status: form.status,
         cover_image_url: form.cover_image_url,
         gallery: form.gallery,
+        category: form.category || null,
         booking_start_date: form.bookingStartDate || null,
         booking_end_date: form.bookingEndDate || null,
       };
@@ -528,6 +533,23 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Category (optional)</Label>
+            <Select value={form.category} onValueChange={(v) => updateField('category', v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                {VENUE_CATEGORIES.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-500">Used to group this venue under Nightclubs/Rooftops/etc. on the public Venues page.</p>
           </div>
 
           <div className="space-y-2 rounded-lg border border-gray-800 p-4">

@@ -178,6 +178,7 @@ export interface Database {
           status: EventStatus;
           booking_start_date: string | null;
           booking_end_date: string | null;
+          category: string | null;
           created_at: string;
           updated_at: string;
         };
