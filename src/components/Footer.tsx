@@ -79,8 +79,9 @@ const Footer = () => {
           <div>
             <h3 className="mb-5 text-sm font-semibold uppercase tracking-wide text-white">For Users</h3>
             <ul className="space-y-3">
-              <li><a href="/#events" onClick={goToSection('events')} className={linkClass}>Browse Events</a></li>
+              <li><Link to="/events" className={linkClass}>Browse Events</Link></li>
               <li><Link to="/vip-tables" className={linkClass}>VIP Tables</Link></li>
+              <li><Link to="/venues" className={linkClass}>Venues</Link></li>
               <li><Link to="/my-tickets" className={linkClass}>Digital Tickets</Link></li>
               <li><a href="/#waitlist" onClick={goToSection('waitlist')} className={linkClass}>Join Waitlist</a></li>
             </ul>
