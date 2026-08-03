@@ -27,6 +27,8 @@ interface TableBookingDialogProps {
   tableType: TableTypeWithVenue | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialDate?: Date;
+  initialSlotId?: string;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -38,7 +40,7 @@ const formatTimeSlot = (startTime: string) => {
   return `${hour12}:${m.toString().padStart(2, '0')} ${period}`;
 };
 
-const TableBookingDialog = ({ tableType, open, onOpenChange }: TableBookingDialogProps) => {
+const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initialSlotId }: TableBookingDialogProps) => {
   const { toast } = useToast();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -47,6 +49,7 @@ const TableBookingDialog = ({ tableType, open, onOpenChange }: TableBookingDialo
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [slotId, setSlotId] = useState('');
   const [guestCount, setGuestCount] = useState('2');
+  const [hours, setHours] = useState('1');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -54,9 +57,11 @@ const TableBookingDialog = ({ tableType, open, onOpenChange }: TableBookingDialo
     setEmail('');
     setConfirmEmail('');
     setPhone('');
-    setDate(undefined);
-    setSlotId('');
+    setDate(initialDate);
+    setSlotId(initialSlotId ?? '');
     setGuestCount('2');
+    setHours(tableType?.min_hours ? tableType.min_hours.toString() : '1');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableType]);
 
   const availableDaysOfWeek = useMemo(
@@ -81,7 +86,13 @@ const TableBookingDialog = ({ tableType, open, onOpenChange }: TableBookingDialo
   if (!tableType) return null;
 
   const guests = parseInt(guestCount, 10) || 0;
-  const depositTotal = tableType.deposit_cents / 100;
+  const isHourly = tableType.pricing_mode === 'hourly';
+  const bookedHours = parseInt(hours, 10) || 0;
+  const minHours = tableType.min_hours ?? 1;
+  const depositTotal = isHourly ? ((tableType.hourly_rate_cents ?? 0) * bookedHours) / 100 : tableType.deposit_cents / 100;
+
+  const bookingStart = tableType.venue.booking_start_date ? startOfDay(new Date(`${tableType.venue.booking_start_date}T00:00:00`)) : null;
+  const bookingEnd = tableType.venue.booking_end_date ? startOfDay(new Date(`${tableType.venue.booking_end_date}T00:00:00`)) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,6 +113,10 @@ const TableBookingDialog = ({ tableType, open, onOpenChange }: TableBookingDialo
       toast({ title: `This table seats up to ${tableType.max_guests} guests`, variant: 'destructive' });
       return;
     }
+    if (isHourly && bookedHours < minHours) {
+      toast({ title: `This table requires a minimum of ${minHours} hour${minHours === 1 ? '' : 's'}`, variant: 'destructive' });
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -115,6 +130,7 @@ const TableBookingDialog = ({ tableType, open, onOpenChange }: TableBookingDialo
           customer_name: name,
           customer_email: email,
           customer_phone: phone || null,
+          hours: isHourly ? bookedHours : undefined,
         },
       });
 
@@ -163,7 +179,14 @@ const TableBookingDialog = ({ tableType, open, onOpenChange }: TableBookingDialo
                   mode="single"
                   selected={date}
                   onSelect={setDate}
-                  disabled={(d) => startOfDay(d) < startOfDay(new Date()) || !availableDaysOfWeek.has(d.getDay())}
+                  disabled={(d) => {
+                    const day = startOfDay(d);
+                    if (day < startOfDay(new Date())) return true;
+                    if (!availableDaysOfWeek.has(d.getDay())) return true;
+                    if (bookingStart && day < bookingStart) return true;
+                    if (bookingEnd && day > bookingEnd) return true;
+                    return false;
+                  }}
                 />
               </PopoverContent>
             </Popover>
@@ -222,8 +245,23 @@ const TableBookingDialog = ({ tableType, open, onOpenChange }: TableBookingDialo
             </div>
           </div>
 
+          {isHourly && (
+            <div className="space-y-2">
+              <Label>Hours</Label>
+              <Input
+                type="number"
+                min={minHours}
+                value={hours}
+                onChange={(e) => setHours(e.target.value)}
+              />
+              <p className="text-xs text-gray-500">
+                ${((tableType.hourly_rate_cents ?? 0) / 100).toFixed(2)}/hour &middot; {minHours} hour minimum
+              </p>
+            </div>
+          )}
+
           <div className="text-right text-lg font-semibold text-white">
-            Deposit due today: ${depositTotal.toFixed(2)}
+            {isHourly ? 'Total due today' : 'Deposit due today'}: ${depositTotal.toFixed(2)}
           </div>
 
           <DialogFooter>

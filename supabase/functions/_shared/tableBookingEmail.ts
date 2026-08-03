@@ -27,6 +27,7 @@ export async function sendTableBookingEmail(opts: {
   guestCount: number;
   depositCents: number;
   currency: string;
+  hours?: number | null;
   confirmationCode: string;
   qrDataUrl: string;
 }) {
@@ -41,7 +42,11 @@ export async function sendTableBookingEmail(opts: {
     day: 'numeric',
     timeZone: 'UTC',
   });
-  const depositFormatted = `$${(opts.depositCents / 100).toFixed(2)} ${opts.currency.toUpperCase()}`;
+  const amountFormatted = `$${(opts.depositCents / 100).toFixed(2)} ${opts.currency.toUpperCase()}`;
+  const amountLabel = opts.hours ? 'Total paid' : 'Deposit paid';
+  const durationLine = opts.hours
+    ? `<br/>Duration: ${opts.hours} hour${opts.hours === 1 ? '' : 's'}`
+    : '';
 
   const html = `
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0a0a0a; color: #fff; border-radius: 16px;">
@@ -49,8 +54,8 @@ export async function sendTableBookingEmail(opts: {
       <p>Hi ${opts.toName},</p>
       <p>You're confirmed for:</p>
       <h2 style="margin-bottom: 4px;">${opts.tableTypeName} - ${opts.venueName}</h2>
-      <p style="color: #999; margin-top: 0;">${formattedDate}<br/>Arrival: ${opts.timeSlotLabel}</p>
-      <p><strong>${opts.guestCount}</strong> guests &middot; Deposit paid: <strong>${depositFormatted}</strong></p>
+      <p style="color: #999; margin-top: 0;">${formattedDate}<br/>Arrival: ${opts.timeSlotLabel}${durationLine}</p>
+      <p><strong>${opts.guestCount}</strong> guests &middot; ${amountLabel}: <strong>${amountFormatted}</strong></p>
       <div style="text-align: center; margin: 24px 0;">
         <img src="cid:qrcode" alt="Booking QR code" width="200" height="200" style="background: #fff; padding: 12px; border-radius: 8px;" />
       </div>

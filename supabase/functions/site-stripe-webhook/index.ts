@@ -125,6 +125,7 @@ Deno.serve(async (req: Request) => {
         guestCount: booking.guest_count,
         depositCents: booking.amount_total_cents,
         currency: booking.currency,
+        hours: booking.hours,
         confirmationCode,
         qrDataUrl,
       });

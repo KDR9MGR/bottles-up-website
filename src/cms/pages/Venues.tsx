@@ -19,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { describeDeleteBlockedError } from '@/lib/friendlyDbError';
@@ -27,10 +27,11 @@ import type { Database } from '@/types/database';
 import VenueFormDialog from '../components/VenueFormDialog';
 
 type VenueRow = Database['public']['Tables']['site_venues']['Row'];
+type VenueWithCount = VenueRow & { site_table_types: { count: number }[] };
 
 const CmsVenues = () => {
   const { toast } = useToast();
-  const [venues, setVenues] = useState<VenueRow[]>([]);
+  const [venues, setVenues] = useState<VenueWithCount[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingVenue, setEditingVenue] = useState<VenueRow | null>(null);
@@ -40,8 +41,13 @@ const CmsVenues = () => {
 
   const loadVenues = async () => {
     setLoading(true);
-    const { data } = await supabase.from('site_venues').select('*').order('name', { ascending: true });
-    setVenues(data ?? []);
+    // Embedded count lets the list flag published venues with zero table types -
+    // those are invisible on the public VIP Tables page despite being "published".
+    const { data } = await supabase
+      .from('site_venues')
+      .select('*, site_table_types(count)')
+      .order('name', { ascending: true });
+    setVenues((data as VenueWithCount[]) ?? []);
     setLoading(false);
   };
 
@@ -112,9 +118,20 @@ const CmsVenues = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {venues.map((venue) => (
+              {venues.map((venue) => {
+                const tableTypeCount = venue.site_table_types[0]?.count ?? 0;
+                const noTableTypesWhilePublished = venue.status === 'published' && tableTypeCount === 0;
+                return (
                 <TableRow key={venue.id}>
-                  <TableCell>{venue.name}</TableCell>
+                  <TableCell>
+                    {venue.name}
+                    {noTableTypesWhilePublished && (
+                      <span className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-amber-500">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        No table types - won't show on VIP Tables
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell>{venue.address ?? '-'}</TableCell>
                   <TableCell>
                     <Badge variant={venue.status === 'published' ? 'default' : 'secondary'}>
@@ -137,7 +154,8 @@ const CmsVenues = () => {
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
               {venues.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-gray-500">

@@ -21,6 +21,7 @@ Deno.serve(async (req: Request) => {
       time_slot_id,
       booking_date,
       guest_count,
+      hours,
       customer_name,
       customer_email,
       customer_phone,
@@ -65,13 +66,13 @@ Deno.serve(async (req: Request) => {
     });
 
     // Re-read the table type + venue + time slot server-side. The client never gets to
-    // say what the deposit is, or invent a slot the venue doesn't actually offer.
+    // say what the price is, or invent a slot/date the venue doesn't actually offer.
     // site_venue_time_slots and site_table_types are siblings under site_venues (no FK
     // between them), so they can't be embedded together in one PostgREST query - fetch
     // the time slot separately and cross-check venue_id in application code instead.
     const { data: tableType, error: tableTypeError } = await supabase
       .from('site_table_types')
-      .select('*, venue:site_venues!inner(id, name, status)')
+      .select('*, venue:site_venues!inner(id, name, status, booking_start_date, booking_end_date)')
       .eq('id', table_type_id)
       .eq('venue_id', venue_id)
       .single();
@@ -84,6 +85,15 @@ Deno.serve(async (req: Request) => {
     }
     if (guests > tableType.max_guests) {
       return json({ error: `This table seats up to ${tableType.max_guests} guests` }, 400);
+    }
+
+    // Venue-level booking window - bookings are only accepted for dates inside it,
+    // when the venue has one configured.
+    if (tableType.venue.booking_start_date && booking_date < tableType.venue.booking_start_date) {
+      return json({ error: 'This venue is not yet taking bookings for that date' }, 400);
+    }
+    if (tableType.venue.booking_end_date && booking_date > tableType.venue.booking_end_date) {
+      return json({ error: 'This venue is no longer taking bookings for that date' }, 400);
     }
 
     const { data: timeSlot, error: timeSlotError } = await supabase
@@ -101,6 +111,29 @@ Deno.serve(async (req: Request) => {
     const requestedDayOfWeek = new Date(`${booking_date}T00:00:00Z`).getUTCDay();
     if (requestedDayOfWeek !== timeSlot.day_of_week) {
       return json({ error: 'This time slot is not offered on the selected date' }, 400);
+    }
+
+    // Hourly-priced tables: the customer picks how many hours, total scales with it.
+    // Flat-priced tables charge the fixed deposit, exactly as before.
+    let amountCents: number;
+    let bookedHours: number | null = null;
+    let productLabel: string;
+
+    if (tableType.pricing_mode === 'hourly') {
+      const requestedHours = Number(hours);
+      const minHours = tableType.min_hours ?? 1;
+      if (!Number.isInteger(requestedHours) || requestedHours < minHours) {
+        return json({ error: `This table requires a minimum of ${minHours} hour(s)` }, 400);
+      }
+      if (!tableType.hourly_rate_cents) {
+        return json({ error: 'This table is not configured for booking yet' }, 500);
+      }
+      amountCents = tableType.hourly_rate_cents * requestedHours;
+      bookedHours = requestedHours;
+      productLabel = `${tableType.venue.name} - ${tableType.name} table (${requestedHours} hour${requestedHours === 1 ? '' : 's'})`;
+    } else {
+      amountCents = tableType.deposit_cents;
+      productLabel = `${tableType.venue.name} - ${tableType.name} table (deposit)`;
     }
 
     // Best-effort capacity check against bookings already confirmed paid for this exact
@@ -129,7 +162,8 @@ Deno.serve(async (req: Request) => {
         customer_email,
         customer_phone: customer_phone ?? null,
         guest_count: guests,
-        amount_total_cents: tableType.deposit_cents,
+        hours: bookedHours,
+        amount_total_cents: amountCents,
         currency: tableType.currency,
         status: 'pending',
       })
@@ -154,8 +188,8 @@ Deno.serve(async (req: Request) => {
         {
           price_data: {
             currency: tableType.currency,
-            product_data: { name: `${tableType.venue.name} - ${tableType.name} table (deposit)` },
-            unit_amount: tableType.deposit_cents,
+            product_data: { name: productLabel },
+            unit_amount: amountCents,
           },
           quantity: 1,
         },

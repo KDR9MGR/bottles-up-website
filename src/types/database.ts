@@ -6,6 +6,7 @@ export type EventStatus = 'draft' | 'published';
 export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 export type PaymentsMode = 'test' | 'live';
 export type ScanResult = 'ok' | 'already_checked_in' | 'not_paid' | 'not_found' | 'expired';
+export type PricingMode = 'flat' | 'hourly';
 
 export interface Database {
   public: {
@@ -175,11 +176,31 @@ export interface Database {
           cover_image_url: string | null;
           gallery: string[];
           status: EventStatus;
+          booking_start_date: string | null;
+          booking_end_date: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: Partial<Database['public']['Tables']['site_venues']['Row']> & { name: string };
         Update: Partial<Database['public']['Tables']['site_venues']['Row']>;
+        Relationships: [];
+      };
+      site_venue_floors: {
+        Row: {
+          id: string;
+          venue_id: string;
+          label: string;
+          image_url: string;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['site_venue_floors']['Row']> & {
+          venue_id: string;
+          label: string;
+          image_url: string;
+        };
+        Update: Partial<Database['public']['Tables']['site_venue_floors']['Row']>;
         Relationships: [];
       };
       site_venue_time_slots: {
@@ -213,6 +234,15 @@ export interface Database {
           image_url: string | null;
           badge_label: string | null;
           is_featured: boolean;
+          floor_id: string | null;
+          pos_x: number | null;
+          pos_y: number | null;
+          width: number | null;
+          height: number | null;
+          min_guests: number | null;
+          pricing_mode: PricingMode;
+          hourly_rate_cents: number | null;
+          min_hours: number | null;
           sort_order: number;
           created_at: string;
           updated_at: string;
@@ -241,6 +271,7 @@ export interface Database {
           guest_count: number;
           amount_total_cents: number;
           currency: string;
+          hours: number | null;
           stripe_checkout_session_id: string | null;
           stripe_payment_intent_id: string | null;
           status: OrderStatus;
@@ -320,6 +351,10 @@ export interface Database {
           tier_name: string | null;
           quantity: number | null;
         }[];
+      };
+      get_unavailable_table_types: {
+        Args: { p_venue_id: string; p_booking_date: string; p_time_slot_id: string };
+        Returns: string[];
       };
     };
     Enums: { [_ in never]: never };

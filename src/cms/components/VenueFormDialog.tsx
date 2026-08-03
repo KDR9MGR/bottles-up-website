@@ -18,16 +18,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Trash2, Plus } from 'lucide-react';
+import { Trash2, Plus, MapPin } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { uploadEventMedia } from '@/lib/uploadEventMedia';
 import { logAudit } from '@/lib/auditLog';
-import type { Database, EventStatus } from '@/types/database';
+import FloorPlanEditor, { type TablePlacement } from './FloorPlanEditor';
+import type { Database, EventStatus, PricingMode } from '@/types/database';
 
 type VenueRow = Database['public']['Tables']['site_venues']['Row'];
 type TimeSlotRow = Database['public']['Tables']['site_venue_time_slots']['Row'];
 type TableTypeRow = Database['public']['Tables']['site_table_types']['Row'];
+type FloorRow = Database['public']['Tables']['site_venue_floors']['Row'];
 
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -38,17 +40,33 @@ interface TimeSlotDraft {
   label: string;
 }
 
+interface FloorDraft {
+  id?: string;
+  tempId: string; // stable client-side key; equals `id` once persisted
+  label: string;
+  imageUrl: string | null;
+}
+
 interface TableTypeDraft {
   id?: string;
   name: string;
   description: string;
   maxGuests: string;
+  minGuests: string;
   minSpendDollars: string;
   depositDollars: string;
   inventoryCount: string;
   imageUrl: string | null;
   badgeLabel: string;
   isFeatured: boolean;
+  pricingMode: PricingMode;
+  hourlyRateDollars: string;
+  minHours: string;
+  floorTempId: string | null;
+  posX: number | null;
+  posY: number | null;
+  width: number | null;
+  height: number | null;
 }
 
 interface VenueFormDialogProps {
@@ -58,6 +76,27 @@ interface VenueFormDialogProps {
   onSaved: () => void;
 }
 
+const emptyTableType: TableTypeDraft = {
+  name: '',
+  description: '',
+  maxGuests: '',
+  minGuests: '',
+  minSpendDollars: '',
+  depositDollars: '',
+  inventoryCount: '',
+  imageUrl: null,
+  badgeLabel: '',
+  isFeatured: false,
+  pricingMode: 'flat',
+  hourlyRateDollars: '',
+  minHours: '1',
+  floorTempId: null,
+  posX: null,
+  posY: null,
+  width: null,
+  height: null,
+};
+
 const emptyForm = {
   name: '',
   slug: '' as string | null,
@@ -66,6 +105,8 @@ const emptyForm = {
   status: 'draft' as EventStatus,
   cover_image_url: '' as string | null,
   gallery: [] as string[],
+  bookingStartDate: '',
+  bookingEndDate: '',
 };
 
 const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialogProps) => {
@@ -73,12 +114,16 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
   const [form, setForm] = useState(emptyForm);
   const [slots, setSlots] = useState<TimeSlotDraft[]>([]);
   const [originalSlotIds, setOriginalSlotIds] = useState<string[]>([]);
+  const [floors, setFloors] = useState<FloorDraft[]>([]);
+  const [originalFloorIds, setOriginalFloorIds] = useState<string[]>([]);
   const [tableTypes, setTableTypes] = useState<TableTypeDraft[]>([]);
   const [originalTableTypeIds, setOriginalTableTypeIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [uploadingTableImage, setUploadingTableImage] = useState<number | null>(null);
+  const [uploadingFloorImage, setUploadingFloorImage] = useState<number | null>(null);
+  const [placementIndex, setPlacementIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -92,6 +137,8 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         status: venue.status,
         cover_image_url: venue.cover_image_url,
         gallery: venue.gallery ?? [],
+        bookingStartDate: venue.booking_start_date ?? '',
+        bookingEndDate: venue.booking_end_date ?? '',
       });
 
       supabase
@@ -112,6 +159,17 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         });
 
       supabase
+        .from('site_venue_floors')
+        .select('*')
+        .eq('venue_id', venue.id)
+        .order('sort_order', { ascending: true })
+        .then(({ data }) => {
+          const rows = (data ?? []) as FloorRow[];
+          setFloors(rows.map((f) => ({ id: f.id, tempId: f.id, label: f.label, imageUrl: f.image_url })));
+          setOriginalFloorIds(rows.map((f) => f.id));
+        });
+
+      supabase
         .from('site_table_types')
         .select('*')
         .eq('venue_id', venue.id)
@@ -124,12 +182,21 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
               name: t.name,
               description: t.description ?? '',
               maxGuests: t.max_guests.toString(),
+              minGuests: t.min_guests?.toString() ?? '',
               minSpendDollars: (t.min_spend_cents / 100).toString(),
               depositDollars: (t.deposit_cents / 100).toString(),
               inventoryCount: t.inventory_count.toString(),
               imageUrl: t.image_url,
               badgeLabel: t.badge_label ?? '',
               isFeatured: t.is_featured,
+              pricingMode: t.pricing_mode,
+              hourlyRateDollars: t.hourly_rate_cents ? (t.hourly_rate_cents / 100).toString() : '',
+              minHours: t.min_hours?.toString() ?? '1',
+              floorTempId: t.floor_id,
+              posX: t.pos_x,
+              posY: t.pos_y,
+              width: t.width,
+              height: t.height,
             })),
           );
           setOriginalTableTypeIds(rows.map((t) => t.id));
@@ -138,9 +205,9 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
       setForm(emptyForm);
       setSlots([{ dayOfWeek: '5', startTime: '22:00', label: '' }]);
       setOriginalSlotIds([]);
-      setTableTypes([
-        { name: '', description: '', maxGuests: '', minSpendDollars: '', depositDollars: '', inventoryCount: '', imageUrl: null, badgeLabel: '', isFeatured: false },
-      ]);
+      setFloors([]);
+      setOriginalFloorIds([]);
+      setTableTypes([{ ...emptyTableType }]);
       setOriginalTableTypeIds([]);
     }
   }, [venue, open]);
@@ -177,11 +244,30 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
   const updateSlot = (index: number, patch: Partial<TimeSlotDraft>) =>
     setSlots((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
 
-  const addTableType = () =>
-    setTableTypes((prev) => [
-      ...prev,
-      { name: '', description: '', maxGuests: '', minSpendDollars: '', depositDollars: '', inventoryCount: '', imageUrl: null, badgeLabel: '', isFeatured: false },
-    ]);
+  const addFloor = () => setFloors((prev) => [...prev, { tempId: crypto.randomUUID(), label: '', imageUrl: null }]);
+  const removeFloor = (tempId: string) => {
+    setFloors((prev) => prev.filter((f) => f.tempId !== tempId));
+    // Tables positioned on a removed floor go back to being plain (unpositioned) cards.
+    setTableTypes((prev) =>
+      prev.map((t) => (t.floorTempId === tempId ? { ...t, floorTempId: null, posX: null, posY: null, width: null, height: null } : t)),
+    );
+  };
+  const updateFloor = (tempId: string, patch: Partial<FloorDraft>) =>
+    setFloors((prev) => prev.map((f) => (f.tempId === tempId ? { ...f, ...patch } : f)));
+
+  const handleFloorImageUpload = async (index: number, file: File) => {
+    setUploadingFloorImage(index);
+    try {
+      const url = await uploadEventMedia(file);
+      updateFloor(floors[index].tempId, { imageUrl: url });
+    } catch (error) {
+      toast({ title: 'Upload failed', description: String(error), variant: 'destructive' });
+    } finally {
+      setUploadingFloorImage(null);
+    }
+  };
+
+  const addTableType = () => setTableTypes((prev) => [...prev, { ...emptyTableType }]);
   const removeTableType = (index: number) => setTableTypes((prev) => prev.filter((_, i) => i !== index));
   const updateTableType = (index: number, patch: Partial<TableTypeDraft>) =>
     setTableTypes((prev) => prev.map((t, i) => (i === index ? { ...t, ...patch } : t)));
@@ -204,6 +290,47 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
       return;
     }
 
+    // A table type row counts as "started" once the admin has entered anything
+    // into it. Those must be complete before saving - previously an incomplete
+    // row (e.g. name filled in but max guests left blank) was silently dropped
+    // with no feedback, so the venue would save as "published" with zero
+    // bookable tables and never appear on the public VIP Tables page.
+    const incompleteIndex = tableTypes.findIndex((t) => {
+      const started =
+        t.name || t.description || t.maxGuests || t.minSpendDollars || t.depositDollars || t.inventoryCount || t.badgeLabel || t.imageUrl;
+      return started && (!t.name || !t.maxGuests || !t.inventoryCount);
+    });
+    if (incompleteIndex !== -1) {
+      toast({
+        title: `Table type #${incompleteIndex + 1} is incomplete`,
+        description: 'Name, max guests, and # of tables available are required for every table type you start filling in.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const hourlyMissingRate = tableTypes.findIndex(
+      (t) => t.name && t.pricingMode === 'hourly' && !t.hourlyRateDollars,
+    );
+    if (hourlyMissingRate !== -1) {
+      toast({
+        title: `Table type #${hourlyMissingRate + 1} needs an hourly rate`,
+        description: 'Set an hourly rate for every table type priced by the hour.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const completeTableTypeCount = tableTypes.filter((t) => t.name && t.maxGuests && t.inventoryCount).length;
+    if (form.status === 'published' && completeTableTypeCount === 0) {
+      toast({
+        title: 'No table types to publish',
+        description: "This venue has no complete table types, so it won't appear on the VIP Tables page. Add at least one table type, or save it as Draft instead.",
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       // slug is intentionally omitted - a DB trigger (set_venue_slug) generates it
@@ -215,6 +342,8 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         status: form.status,
         cover_image_url: form.cover_image_url,
         gallery: form.gallery,
+        booking_start_date: form.bookingStartDate || null,
+        booking_end_date: form.bookingEndDate || null,
       };
 
       let venueId = venue?.id;
@@ -251,6 +380,34 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         }
       }
 
+      // Floors must be saved before table types, since a table type's floor_id
+      // references a floor row that may only just now be getting created.
+      const keptFloorIds = new Set(floors.filter((f) => f.id).map((f) => f.id!));
+      const removedFloorIds = originalFloorIds.filter((id) => !keptFloorIds.has(id));
+      if (removedFloorIds.length > 0) {
+        const { error } = await supabase.from('site_venue_floors').delete().in('id', removedFloorIds);
+        if (error) throw error;
+      }
+      const tempIdToFloorId = new Map<string, string>();
+      for (const [index, floor] of floors.entries()) {
+        if (!floor.label || !floor.imageUrl) continue;
+        const floorPayload: Database['public']['Tables']['site_venue_floors']['Insert'] = {
+          venue_id: venueId!,
+          label: floor.label,
+          image_url: floor.imageUrl,
+          sort_order: index,
+        };
+        if (floor.id) {
+          const { error } = await supabase.from('site_venue_floors').update(floorPayload).eq('id', floor.id);
+          if (error) throw error;
+          tempIdToFloorId.set(floor.tempId, floor.id);
+        } else {
+          const { data, error } = await supabase.from('site_venue_floors').insert(floorPayload).select('id').single();
+          if (error) throw error;
+          if (data?.id) tempIdToFloorId.set(floor.tempId, data.id);
+        }
+      }
+
       const keptTableTypeIds = new Set(tableTypes.filter((t) => t.id).map((t) => t.id!));
       const removedTableTypeIds = originalTableTypeIds.filter((id) => !keptTableTypeIds.has(id));
       if (removedTableTypeIds.length > 0) {
@@ -259,17 +416,29 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
       }
       for (const [index, tableType] of tableTypes.entries()) {
         if (!tableType.name || !tableType.maxGuests || !tableType.inventoryCount) continue;
+        const resolvedFloorId = tableType.floorTempId ? (tempIdToFloorId.get(tableType.floorTempId) ?? null) : null;
+        const isPositioned = !!resolvedFloorId && tableType.posX !== null;
         const tableTypePayload: Database['public']['Tables']['site_table_types']['Insert'] = {
           venue_id: venueId!,
           name: tableType.name,
           description: tableType.description || null,
           max_guests: parseInt(tableType.maxGuests, 10),
+          min_guests: tableType.minGuests ? parseInt(tableType.minGuests, 10) : null,
           min_spend_cents: Math.round((parseFloat(tableType.minSpendDollars) || 0) * 100),
           deposit_cents: Math.round((parseFloat(tableType.depositDollars) || 0) * 100),
           inventory_count: parseInt(tableType.inventoryCount, 10),
           image_url: tableType.imageUrl,
           badge_label: tableType.badgeLabel || null,
           is_featured: tableType.isFeatured,
+          pricing_mode: tableType.pricingMode,
+          hourly_rate_cents:
+            tableType.pricingMode === 'hourly' ? Math.round((parseFloat(tableType.hourlyRateDollars) || 0) * 100) : null,
+          min_hours: tableType.pricingMode === 'hourly' ? parseInt(tableType.minHours, 10) || 1 : null,
+          floor_id: isPositioned ? resolvedFloorId : null,
+          pos_x: isPositioned ? tableType.posX : null,
+          pos_y: isPositioned ? tableType.posY : null,
+          width: isPositioned ? tableType.width : null,
+          height: isPositioned ? tableType.height : null,
           sort_order: index,
         };
         if (tableType.id) {
@@ -296,6 +465,12 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
       setSaving(false);
     }
   };
+
+  const floorOptions = floors
+    .filter((f): f is FloorDraft & { imageUrl: string } => !!f.imageUrl)
+    .map((f) => ({ id: f.tempId, label: f.label || 'Untitled floor', imageUrl: f.imageUrl }));
+
+  const placementTableType = placementIndex !== null ? tableTypes[placementIndex] : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -337,6 +512,25 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
                   <SelectItem value="published">Published</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-lg border border-gray-800 p-4">
+            <div>
+              <Label>Booking Window (optional)</Label>
+              <p className="text-xs text-gray-500">
+                Restricts which dates customers can book, on top of the time slots below. Leave blank for no limit.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-500">Start date</Label>
+                <Input type="date" value={form.bookingStartDate} onChange={(e) => updateField('bookingStartDate', e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-500">End date</Label>
+                <Input type="date" value={form.bookingEndDate} onChange={(e) => updateField('bookingEndDate', e.target.value)} />
+              </div>
             </div>
           </div>
 
@@ -462,6 +656,55 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
           <div className="space-y-3 rounded-lg border border-gray-800 p-4">
             <div className="flex items-center justify-between">
               <div>
+                <Label>Floors</Label>
+                <p className="text-xs text-gray-500">
+                  Upload a floor plan image per level (e.g. "Downstairs", "Upstairs") to place tables on below.
+                </p>
+              </div>
+              <Button type="button" size="sm" variant="outline" onClick={addFloor}>
+                <Plus className="mr-1 h-3 w-3" />
+                Add Floor
+              </Button>
+            </div>
+            {floors.map((floor, i) => (
+              <div key={floor.tempId} className="flex items-center gap-3 rounded-lg border border-gray-800 p-3">
+                {floor.imageUrl ? (
+                  <img src={floor.imageUrl} alt={floor.label} className="h-16 w-16 shrink-0 rounded object-cover" />
+                ) : (
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded border border-dashed border-gray-700 text-[9px] text-gray-600">
+                    No image
+                  </div>
+                )}
+                <Input
+                  placeholder="Label (e.g. Downstairs)"
+                  value={floor.label}
+                  onChange={(e) => updateFloor(floor.tempId, { label: e.target.value })}
+                  className="flex-1"
+                />
+                <Button type="button" variant="outline" size="sm" disabled={uploadingFloorImage === i} asChild>
+                  <label className="cursor-pointer">
+                    {uploadingFloorImage === i ? 'Uploading...' : floor.imageUrl ? 'Replace Image' : 'Upload Image'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => e.target.files?.[0] && handleFloorImageUpload(i, e.target.files[0])}
+                    />
+                  </label>
+                </Button>
+                <Button type="button" size="icon" variant="ghost" onClick={() => removeFloor(floor.tempId)}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+            {floors.length === 0 && (
+              <p className="text-xs text-gray-600">No floors yet - tables will show as plain cards without a visual layout.</p>
+            )}
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-gray-800 p-4">
+            <div className="flex items-center justify-between">
+              <div>
                 <Label>Table Types</Label>
                 <p className="text-xs text-gray-500">Silver/Gold/Platinum-style categories, each with its own inventory.</p>
               </div>
@@ -470,7 +713,9 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
                 Add Table Type
               </Button>
             </div>
-            {tableTypes.map((tableType, i) => (
+            {tableTypes.map((tableType, i) => {
+              const placedFloor = floorOptions.find((f) => f.id === tableType.floorTempId);
+              return (
               <div key={i} className="space-y-2 rounded-lg border border-gray-800 p-3">
                 <div className="flex items-start gap-3">
                   {tableType.imageUrl ? (
@@ -506,6 +751,16 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
                     />
                     <div className="grid grid-cols-4 gap-2">
                       <div className="space-y-1">
+                        <Label className="text-xs text-gray-500">Min guests</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          placeholder="Optional"
+                          value={tableType.minGuests}
+                          onChange={(e) => updateTableType(i, { minGuests: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1">
                         <Label className="text-xs text-gray-500">Max guests</Label>
                         <Input
                           type="number"
@@ -525,16 +780,6 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs text-gray-500">Deposit $</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={tableType.depositDollars}
-                          onChange={(e) => updateTableType(i, { depositDollars: e.target.value })}
-                        />
-                      </div>
-                      <div className="space-y-1">
                         <Label className="text-xs text-gray-500"># of tables available</Label>
                         <Input
                           type="number"
@@ -544,6 +789,59 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
                         />
                       </div>
                     </div>
+
+                    <div className="rounded-lg border border-gray-800 p-2">
+                      <div className="mb-2 flex items-center gap-2">
+                        <Label className="text-xs text-gray-500">Pricing</Label>
+                        <Select
+                          value={tableType.pricingMode}
+                          onValueChange={(v) => updateTableType(i, { pricingMode: v as PricingMode })}
+                        >
+                          <SelectTrigger className="h-8 w-28 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="flat">Flat deposit</SelectItem>
+                            <SelectItem value="hourly">Hourly</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {tableType.pricingMode === 'flat' ? (
+                        <div className="space-y-1">
+                          <Label className="text-xs text-gray-500">Deposit $</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={tableType.depositDollars}
+                            onChange={(e) => updateTableType(i, { depositDollars: e.target.value })}
+                          />
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs text-gray-500">Hourly rate $</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={tableType.hourlyRateDollars}
+                              onChange={(e) => updateTableType(i, { hourlyRateDollars: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-gray-500">Min hours</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={tableType.minHours}
+                              onChange={(e) => updateTableType(i, { minHours: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="flex items-center gap-3">
                       <div className="flex-1 space-y-1">
                         <Label className="text-xs text-gray-500">Badge (optional, e.g. "Most Popular", "Best View")</Label>
@@ -561,13 +859,25 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
                         <Label className="text-xs text-gray-400">Featured (highlighted card)</Label>
                       </div>
                     </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPlacementIndex(i)}
+                      className="w-full"
+                    >
+                      <MapPin className="mr-1.5 h-3.5 w-3.5" />
+                      {placedFloor ? `Positioned on ${placedFloor.label}` : 'Place on floor plan (optional)'}
+                    </Button>
                   </div>
                   <Button type="button" size="icon" variant="ghost" onClick={() => removeTableType(i)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -577,13 +887,47 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
           </Button>
           <Button
             onClick={handleSave}
-            disabled={saving || uploadingCover || uploadingGallery || uploadingTableImage !== null}
+            disabled={saving || uploadingCover || uploadingGallery || uploadingTableImage !== null || uploadingFloorImage !== null}
             className="bg-gradient-orange text-black font-bold hover:opacity-90"
           >
             {saving ? 'Saving...' : 'Save Venue'}
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {placementTableType && (
+        <FloorPlanEditor
+          open={placementIndex !== null}
+          onOpenChange={(o) => !o && setPlacementIndex(null)}
+          tableName={placementTableType.name || 'this table'}
+          floors={floorOptions}
+          initialPlacement={
+            placementTableType.floorTempId && placementTableType.posX !== null
+              ? {
+                  floorId: placementTableType.floorTempId,
+                  posX: placementTableType.posX,
+                  posY: placementTableType.posY!,
+                  width: placementTableType.width!,
+                  height: placementTableType.height!,
+                }
+              : null
+          }
+          onSave={(placement: TablePlacement) => {
+            if (placementIndex === null) return;
+            updateTableType(placementIndex, {
+              floorTempId: placement.floorId,
+              posX: placement.posX,
+              posY: placement.posY,
+              width: placement.width,
+              height: placement.height,
+            });
+          }}
+          onClear={() => {
+            if (placementIndex === null) return;
+            updateTableType(placementIndex, { floorTempId: null, posX: null, posY: null, width: null, height: null });
+          }}
+        />
+      )}
     </Dialog>
   );
 };
