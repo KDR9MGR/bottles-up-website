@@ -20,6 +20,7 @@ import CmsDoorStaff from "./cms/pages/DoorStaff";
 import CmsCheckIns from "./cms/pages/CheckIns";
 import CmsAuditLog from "./cms/pages/AuditLog";
 import CmsContent from "./cms/pages/Content";
+import CmsHelp from "./cms/pages/Help";
 import BookingSuccess from "./pages/BookingSuccess";
 import BookingCancel from "./pages/BookingCancel";
 import EventDetail from "./pages/EventDetail";
@@ -81,6 +82,7 @@ const App = () => {
               <Route path="check-ins" element={<CmsCheckIns />} />
               <Route path="audit-log" element={<CmsAuditLog />} />
               <Route path="content" element={<CmsContent />} />
+              <Route path="help" element={<CmsHelp />} />
             </Route>
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

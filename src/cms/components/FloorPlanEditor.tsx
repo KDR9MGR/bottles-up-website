@@ -126,7 +126,7 @@ const FloorPlanEditor = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl border-gray-800 bg-gray-950">
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto border-gray-800 bg-gray-950">
         <DialogHeader>
           <DialogTitle className="text-white">Place "{tableName}" on the floor plan</DialogTitle>
         </DialogHeader>
