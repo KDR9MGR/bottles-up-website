@@ -131,8 +131,11 @@ const EventDetail = () => {
         </Link>
 
         <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-          <div className="overflow-hidden rounded-2xl border border-border">
-            <div className="relative h-40 w-full lg:h-full">
+          {/* The small thumbnail only makes sense alongside the wide banner in the
+              two-column desktop layout - on mobile, showing both stacked just looks
+              like two near-duplicate hero images, so it's hidden below lg. */}
+          <div className="hidden overflow-hidden rounded-2xl border border-border lg:block">
+            <div className="relative h-full w-full">
               <img
                 src={event.cover_image_url ?? '/placeholder.svg'}
                 alt={event.title}
