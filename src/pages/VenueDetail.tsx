@@ -187,7 +187,9 @@ const VenueDetail = () => {
                         return (
                           <div key={tableType.id} className="rounded-lg border border-border p-3">
                             <div className="mb-2 flex items-start justify-between gap-2">
-                              <div className="text-sm font-medium text-white">{tableType.name}</div>
+                              <Link to={`/tables/${tableType.id}`} className="text-sm font-medium text-white hover:text-primary">
+                                {tableType.name}
+                              </Link>
                               {tableType.badge_label && (
                                 <span
                                   className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
@@ -216,19 +218,24 @@ const VenueDetail = () => {
                                 </span>
                               </div>
                             </div>
-                            <Button
-                              size="sm"
-                              className={
-                                tableType.is_featured
-                                  ? 'w-full bg-gradient-orange text-black font-bold hover:opacity-90'
-                                  : 'w-full'
-                              }
-                              variant={tableType.is_featured ? 'default' : 'outline'}
-                              disabled={noSlots}
-                              onClick={() => openBooking(tableType)}
-                            >
-                              {noSlots ? 'Coming Soon' : 'Buy Table'}
-                            </Button>
+                            <div className="flex gap-2">
+                              <Button asChild size="sm" variant="outline" className="flex-1">
+                                <Link to={`/tables/${tableType.id}`}>Details</Link>
+                              </Button>
+                              <Button
+                                size="sm"
+                                className={
+                                  tableType.is_featured
+                                    ? 'flex-1 bg-gradient-orange text-black font-bold hover:opacity-90'
+                                    : 'flex-1'
+                                }
+                                variant={tableType.is_featured ? 'default' : 'outline'}
+                                disabled={noSlots}
+                                onClick={() => openBooking(tableType)}
+                              >
+                                {noSlots ? 'Coming Soon' : 'Buy Table'}
+                              </Button>
+                            </div>
                           </div>
                         );
                       })}

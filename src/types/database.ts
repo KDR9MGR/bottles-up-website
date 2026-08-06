@@ -179,6 +179,10 @@ export interface Database {
           booking_start_date: string | null;
           booking_end_date: string | null;
           category: string | null;
+          phone: string | null;
+          website_url: string | null;
+          hours_note: string | null;
+          dress_code: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -244,6 +248,11 @@ export interface Database {
           pricing_mode: PricingMode;
           hourly_rate_cents: number | null;
           min_hours: number | null;
+          table_view: string | null;
+          privacy_level: string | null;
+          seating_type: string | null;
+          amenities: string | null;
+          policy_note: string | null;
           sort_order: number;
           created_at: string;
           updated_at: string;

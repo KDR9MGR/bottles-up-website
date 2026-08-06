@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import {
   Select,
   SelectContent,
@@ -68,6 +69,11 @@ interface TableTypeDraft {
   posY: number | null;
   width: number | null;
   height: number | null;
+  tableView: string;
+  privacyLevel: string;
+  seatingType: string;
+  amenities: string;
+  policyNote: string;
 }
 
 interface VenueFormDialogProps {
@@ -96,9 +102,15 @@ const emptyTableType: TableTypeDraft = {
   posY: null,
   width: null,
   height: null,
+  tableView: '',
+  privacyLevel: '',
+  seatingType: '',
+  amenities: '',
+  policyNote: '',
 };
 
 const VENUE_CATEGORIES = ['Nightclub', 'Rooftop', 'Lounge', 'Restaurant', 'Beach Club', 'Patio'];
+const PRIVACY_LEVELS = ['Private', 'Semi-Private', 'Open'];
 
 const emptyForm = {
   name: '',
@@ -109,6 +121,10 @@ const emptyForm = {
   cover_image_url: '' as string | null,
   gallery: [] as string[],
   category: '' as string,
+  phone: '',
+  websiteUrl: '',
+  hoursNote: '',
+  dressCode: '',
   bookingStartDate: '',
   bookingEndDate: '',
 };
@@ -142,6 +158,10 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         cover_image_url: venue.cover_image_url,
         gallery: venue.gallery ?? [],
         category: venue.category ?? '',
+        phone: venue.phone ?? '',
+        websiteUrl: venue.website_url ?? '',
+        hoursNote: venue.hours_note ?? '',
+        dressCode: venue.dress_code ?? '',
         bookingStartDate: venue.booking_start_date ?? '',
         bookingEndDate: venue.booking_end_date ?? '',
       });
@@ -197,6 +217,11 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
               pricingMode: t.pricing_mode,
               hourlyRateDollars: t.hourly_rate_cents ? (t.hourly_rate_cents / 100).toString() : '',
               minHours: t.min_hours?.toString() ?? '1',
+              tableView: t.table_view ?? '',
+              privacyLevel: t.privacy_level ?? '',
+              seatingType: t.seating_type ?? '',
+              amenities: t.amenities ?? '',
+              policyNote: t.policy_note ?? '',
               floorTempId: t.floor_id,
               posX: t.pos_x,
               posY: t.pos_y,
@@ -348,6 +373,10 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         cover_image_url: form.cover_image_url,
         gallery: form.gallery,
         category: form.category || null,
+        phone: form.phone || null,
+        website_url: form.websiteUrl || null,
+        hours_note: form.hoursNote || null,
+        dress_code: form.dressCode || null,
         booking_start_date: form.bookingStartDate || null,
         booking_end_date: form.bookingEndDate || null,
       };
@@ -454,6 +483,11 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
           hourly_rate_cents:
             tableType.pricingMode === 'hourly' ? Math.round((parseFloat(tableType.hourlyRateDollars) || 0) * 100) : null,
           min_hours: tableType.pricingMode === 'hourly' ? parseInt(tableType.minHours, 10) || 1 : null,
+          table_view: tableType.tableView || null,
+          privacy_level: tableType.privacyLevel || null,
+          seating_type: tableType.seatingType || null,
+          amenities: tableType.amenities || null,
+          policy_note: tableType.policyNote || null,
           floor_id: isPositioned ? resolvedFloorId : null,
           pos_x: isPositioned ? tableType.posX : null,
           pos_y: isPositioned ? tableType.posY : null,
@@ -550,6 +584,28 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
               </SelectContent>
             </Select>
             <p className="text-xs text-gray-500">Used to group this venue under Nightclubs/Rooftops/etc. on the public Venues page.</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Phone (optional)</Label>
+              <Input type="tel" value={form.phone} onChange={(e) => updateField('phone', e.target.value)} placeholder="e.g. (416) 555-0100" />
+            </div>
+            <div className="space-y-2">
+              <Label>Website (optional)</Label>
+              <Input value={form.websiteUrl} onChange={(e) => updateField('websiteUrl', e.target.value)} placeholder="https://..." />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Hours (optional)</Label>
+              <Input value={form.hoursNote} onChange={(e) => updateField('hoursNote', e.target.value)} placeholder="e.g. 9 PM - 3 AM" />
+            </div>
+            <div className="space-y-2">
+              <Label>Dress Code (optional)</Label>
+              <Input value={form.dressCode} onChange={(e) => updateField('dressCode', e.target.value)} placeholder="e.g. Smart Casual, No Sneakers" />
+            </div>
           </div>
 
           <div className="space-y-2 rounded-lg border border-gray-800 p-4">
@@ -907,6 +963,68 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
                       <MapPin className="mr-1.5 h-3.5 w-3.5" />
                       {placedFloor ? `Positioned on ${placedFloor.label}` : 'Place on floor plan (optional)'}
                     </Button>
+
+                    <Accordion type="single" collapsible>
+                      <AccordionItem value="details" className="border-gray-800">
+                        <AccordionTrigger className="text-xs text-gray-400 hover:no-underline">
+                          More details for the table's page (optional)
+                        </AccordionTrigger>
+                        <AccordionContent className="space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs text-gray-500">Table view</Label>
+                              <Input
+                                placeholder="e.g. Dance Floor, DJ Booth"
+                                value={tableType.tableView}
+                                onChange={(e) => updateTableType(i, { tableView: e.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs text-gray-500">Privacy level</Label>
+                              <Select
+                                value={tableType.privacyLevel}
+                                onValueChange={(v) => updateTableType(i, { privacyLevel: v })}
+                              >
+                                <SelectTrigger className="h-9">
+                                  <SelectValue placeholder="None" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {PRIVACY_LEVELS.map((p) => (
+                                    <SelectItem key={p} value={p}>
+                                      {p}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-gray-500">Seating type</Label>
+                            <Input
+                              placeholder="e.g. Booth, Lounge Seating, Standing"
+                              value={tableType.seatingType}
+                              onChange={(e) => updateTableType(i, { seatingType: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-gray-500">Amenities</Label>
+                            <Input
+                              placeholder="e.g. LED lights, power outlets, dedicated server"
+                              value={tableType.amenities}
+                              onChange={(e) => updateTableType(i, { amenities: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-gray-500">Booking policy note</Label>
+                            <Input
+                              placeholder="e.g. 48hr cancellation notice required"
+                              value={tableType.policyNote}
+                              onChange={(e) => updateTableType(i, { policyNote: e.target.value })}
+                            />
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
                   </div>
                   <Button type="button" size="icon" variant="ghost" onClick={() => removeTableType(i)}>
                     <Trash2 className="h-4 w-4" />

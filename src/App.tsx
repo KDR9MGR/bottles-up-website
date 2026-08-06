@@ -28,6 +28,7 @@ import Events from "./pages/Events";
 import VipTables from "./pages/VipTables";
 import Venues from "./pages/Venues";
 import VenueDetail from "./pages/VenueDetail";
+import TableDetail from "./pages/TableDetail";
 import MyTickets from "./pages/MyTickets";
 import RequireDoorAuth from "./door/RequireDoorAuth";
 import DoorLogin from "./door/pages/DoorLogin";
@@ -51,6 +52,7 @@ const App = () => {
             <Route path="/vip-tables" element={<VipTables />} />
             <Route path="/venues" element={<Venues />} />
             <Route path="/venues/:id" element={<VenueDetail />} />
+            <Route path="/tables/:id" element={<TableDetail />} />
             <Route path="/booking/success" element={<BookingSuccess />} />
             <Route path="/booking/cancel" element={<BookingCancel />} />
             <Route path="/my-tickets" element={<MyTickets />} />

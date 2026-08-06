@@ -269,7 +269,7 @@ const VipTables = () => {
                     </div>
                     <div className="flex gap-2">
                       <Button asChild variant="outline" className="flex-1 border-border">
-                        <Link to={`/venues/${card.tableType.venue.slug || card.tableType.venue.id}`}>
+                        <Link to={`/tables/${card.tableType.id}`}>
                           <Info className="mr-1.5 h-4 w-4" />
                           Details
                         </Link>
