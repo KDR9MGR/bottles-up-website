@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, MapPin, Users, Wine, Crown } from 'lucide-react';
+import { ArrowLeft, MapPin, Users, Wine, Crown, Music2 } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { supabase } from '@/lib/supabase';
 import TableBookingDialog from '@/components/TableBookingDialog';
 import VenueFloorPlanPicker from '@/components/VenueFloorPlanPicker';
@@ -27,6 +28,9 @@ const VenueDetail = () => {
   const { id } = useParams<{ id: string }>();
   const [venue, setVenue] = useState<VenueWithNested | null>(null);
   const [loading, setLoading] = useState(true);
+  const [previewTable, setPreviewTable] = useState<TableTypeRow | null>(null);
+  const [previewInitialDate, setPreviewInitialDate] = useState<Date | undefined>(undefined);
+  const [previewInitialSlotId, setPreviewInitialSlotId] = useState<string | undefined>(undefined);
   const [bookingTableType, setBookingTableType] = useState<TableTypeWithVenue | null>(null);
   const [bookingInitialDate, setBookingInitialDate] = useState<Date | undefined>(undefined);
   const [bookingInitialSlotId, setBookingInitialSlotId] = useState<string | undefined>(undefined);
@@ -89,6 +93,10 @@ const VenueDetail = () => {
 
   const tableTypes = venue.site_table_types.slice().sort((a, b) => a.sort_order - b.sort_order);
   const hasFloorPlan = tableTypes.some((t) => t.floor_id && t.pos_x !== null);
+  const genres = (venue.music_genres ?? '')
+    .split(',')
+    .map((g) => g.trim())
+    .filter(Boolean);
 
   const toBookingTableType = (tableType: TableTypeRow): TableTypeWithVenue => ({
     ...tableType,
@@ -96,24 +104,46 @@ const VenueDetail = () => {
     timeSlots: venue.site_venue_time_slots,
   });
 
-  const openBooking = (tableType: TableTypeRow, initialDate?: Date, initialSlotId?: string) => {
-    setBookingInitialDate(initialDate);
-    setBookingInitialSlotId(initialSlotId);
-    setBookingTableType(toBookingTableType(tableType));
+  // Selecting a table (from the floor plan or the plain list) opens a quick
+  // preview sheet first - name, capacity, price, what's included - rather
+  // than dropping straight into the full booking form.
+  const openPreview = (tableType: TableTypeRow, initialDate?: Date, initialSlotId?: string) => {
+    setPreviewInitialDate(initialDate);
+    setPreviewInitialSlotId(initialSlotId);
+    setPreviewTable(tableType);
   };
 
+  const confirmReserve = () => {
+    if (!previewTable) return;
+    setBookingInitialDate(previewInitialDate);
+    setBookingInitialSlotId(previewInitialSlotId);
+    setBookingTableType(toBookingTableType(previewTable));
+    setPreviewTable(null);
+  };
+
+  const scrollToTables = () => {
+    document.getElementById('select-table')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const previewIsHourly = previewTable?.pricing_mode === 'hourly';
+  const previewPriceLabel = previewTable
+    ? previewIsHourly
+      ? `$${((previewTable.hourly_rate_cents ?? 0) / 100).toFixed(0)}/hr`
+      : `$${(previewTable.deposit_cents / 100).toFixed(0)} deposit`
+    : '';
+
   return (
-    <div className="min-h-screen bg-black">
+    <div className="min-h-screen bg-black pb-24 lg:pb-0">
       <Header />
 
       <section className="relative">
-        <div className="relative h-[45vh] min-h-[320px] w-full overflow-hidden lg:h-[55vh]">
+        <div className="relative h-[55vh] min-h-[380px] w-full overflow-hidden lg:h-[65vh]">
           <img
             src={venue.cover_image_url ?? '/placeholder.svg'}
             alt={venue.name}
             className="h-full w-full object-cover"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/10" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent" />
         </div>
 
         <div className="container relative mx-auto -mt-24 px-4 pb-4 lg:px-6">
@@ -133,6 +163,29 @@ const VenueDetail = () => {
               <span>{venue.address}</span>
             </div>
           )}
+
+          {(venue.capacity || tableTypes.length > 0 || genres.length > 0) && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-300">
+              {venue.capacity && (
+                <div className="flex items-center gap-1.5">
+                  <Users className="h-4 w-4 text-primary" />
+                  <span>{venue.capacity} Capacity</span>
+                </div>
+              )}
+              {tableTypes.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <Wine className="h-4 w-4 text-primary" />
+                  <span>{tableTypes.length} VIP Tables</span>
+                </div>
+              )}
+              {genres.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <Music2 className="h-4 w-4 text-primary" />
+                  <span>{genres.join(' • ')}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </section>
 
@@ -149,13 +202,13 @@ const VenueDetail = () => {
             {venue.gallery && venue.gallery.length > 0 && (
               <div>
                 <h2 className="mb-3 text-xl font-semibold text-white">Gallery</h2>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
                   {venue.gallery.map((url, i) => (
                     <button
                       key={url}
                       type="button"
                       onClick={() => setLightboxIndex(i)}
-                      className="aspect-square overflow-hidden rounded-lg"
+                      className="relative h-64 w-48 shrink-0 snap-start overflow-hidden rounded-lg sm:h-72 sm:w-56"
                     >
                       <img
                         src={url}
@@ -170,7 +223,7 @@ const VenueDetail = () => {
           </div>
 
           {!hasFloorPlan && (
-            <div>
+            <div id="select-table">
               <Card className="sticky top-24 border-border bg-card">
                 <CardContent className="space-y-4 p-6">
                   <div className="flex items-center gap-2 text-white">
@@ -185,11 +238,15 @@ const VenueDetail = () => {
                       {tableTypes.map((tableType) => {
                         const noSlots = venue.site_venue_time_slots.length === 0;
                         return (
-                          <div key={tableType.id} className="rounded-lg border border-border p-3">
+                          <button
+                            key={tableType.id}
+                            type="button"
+                            disabled={noSlots}
+                            onClick={() => openPreview(tableType)}
+                            className="w-full rounded-lg border border-border p-3 text-left transition-colors hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
                             <div className="mb-2 flex items-start justify-between gap-2">
-                              <Link to={`/tables/${tableType.id}`} className="text-sm font-medium text-white hover:text-primary">
-                                {tableType.name}
-                              </Link>
+                              <span className="text-sm font-medium text-white">{tableType.name}</span>
                               {tableType.badge_label && (
                                 <span
                                   className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
@@ -200,17 +257,11 @@ const VenueDetail = () => {
                                 </span>
                               )}
                             </div>
-                            <div className="mb-3 space-y-1 text-xs text-muted-foreground">
+                            <div className="space-y-1 text-xs text-muted-foreground">
                               <div className="flex items-center gap-1.5">
                                 <Users className="h-3.5 w-3.5 text-primary" />
                                 <span>Up to {tableType.max_guests} guests</span>
                               </div>
-                              {tableType.description && (
-                                <div className="flex items-center gap-1.5">
-                                  <Wine className="h-3.5 w-3.5 text-primary" />
-                                  <span>{tableType.description}</span>
-                                </div>
-                              )}
                               <div className="flex items-center justify-between pt-1">
                                 <span>Minimum Spend</span>
                                 <span className="font-semibold text-white">
@@ -218,25 +269,10 @@ const VenueDetail = () => {
                                 </span>
                               </div>
                             </div>
-                            <div className="flex gap-2">
-                              <Button asChild size="sm" variant="outline" className="flex-1">
-                                <Link to={`/tables/${tableType.id}`}>Details</Link>
-                              </Button>
-                              <Button
-                                size="sm"
-                                className={
-                                  tableType.is_featured
-                                    ? 'flex-1 bg-gradient-orange text-black font-bold hover:opacity-90'
-                                    : 'flex-1'
-                                }
-                                variant={tableType.is_featured ? 'default' : 'outline'}
-                                disabled={noSlots}
-                                onClick={() => openBooking(tableType)}
-                              >
-                                {noSlots ? 'Coming Soon' : 'Buy Table'}
-                              </Button>
+                            <div className="mt-3 text-center text-xs font-semibold text-primary">
+                              {noSlots ? 'Coming Soon' : 'View Table →'}
                             </div>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -248,7 +284,7 @@ const VenueDetail = () => {
         </div>
 
         {hasFloorPlan && (
-          <div className="mt-10">
+          <div id="select-table" className="mt-10">
             <h2 className="mb-4 flex items-center gap-2 text-xl font-semibold text-white">
               <Crown className="h-5 w-5 text-primary" />
               Select Your Table
@@ -258,13 +294,80 @@ const VenueDetail = () => {
               floors={venue.site_venue_floors}
               tableTypes={tableTypes}
               timeSlots={venue.site_venue_time_slots}
-              onSelectTable={openBooking}
+              onSelectTable={openPreview}
             />
           </div>
         )}
       </section>
 
       <Footer />
+
+      {/* Sticky booking CTA - always reachable while scrolling, jumps to the
+          table picker rather than a specific table since none is chosen yet. */}
+      {tableTypes.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/90 p-3 backdrop-blur-xl lg:hidden">
+          <Button onClick={scrollToTables} className="w-full bg-gradient-orange text-black font-bold hover:opacity-90">
+            Reserve a Table
+          </Button>
+        </div>
+      )}
+
+      <Sheet open={!!previewTable} onOpenChange={(open) => !open && setPreviewTable(null)}>
+        <SheetContent
+          side="bottom"
+          className="mx-auto max-h-[85vh] max-w-lg overflow-y-auto rounded-t-2xl border-gray-800 bg-gray-950"
+        >
+
+          {previewTable && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="text-white">{previewTable.name}</SheetTitle>
+              </SheetHeader>
+              <div className="space-y-4 pb-6 pt-2">
+                {previewTable.image_url && (
+                  <img
+                    src={previewTable.image_url}
+                    alt={previewTable.name}
+                    className="h-40 w-full rounded-lg object-cover"
+                  />
+                )}
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg border border-gray-800 p-3">
+                    <div className="text-xs text-gray-500">Capacity</div>
+                    <div className="font-semibold text-white">
+                      {previewTable.min_guests
+                        ? `${previewTable.min_guests}-${previewTable.max_guests} guests`
+                        : `Up to ${previewTable.max_guests} guests`}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-gray-800 p-3">
+                    <div className="text-xs text-gray-500">{previewIsHourly ? 'Rate' : 'Minimum Spend'}</div>
+                    <div className="font-semibold text-white">
+                      {previewIsHourly ? previewPriceLabel : `$${(previewTable.min_spend_cents / 100).toFixed(0)}`}
+                    </div>
+                  </div>
+                </div>
+                {previewTable.description && (
+                  <div>
+                    <div className="mb-1 text-xs text-gray-500">What's included</div>
+                    <p className="text-sm text-gray-300">{previewTable.description}</p>
+                  </div>
+                )}
+                <div className="flex items-center justify-between border-t border-gray-800 pt-4">
+                  <span className="text-sm text-gray-400">{previewIsHourly ? 'Hourly rate' : 'Deposit due today'}</span>
+                  <span className="text-lg font-bold text-white">{previewPriceLabel}</span>
+                </div>
+                <Button
+                  onClick={confirmReserve}
+                  className="w-full bg-gradient-orange text-black font-bold hover:opacity-90"
+                >
+                  Reserve This Table
+                </Button>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
 
       <TableBookingDialog
         tableType={bookingTableType}

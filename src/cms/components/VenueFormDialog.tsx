@@ -125,6 +125,8 @@ const emptyForm = {
   websiteUrl: '',
   hoursNote: '',
   dressCode: '',
+  capacity: '',
+  musicGenres: '',
   bookingStartDate: '',
   bookingEndDate: '',
 };
@@ -162,6 +164,8 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         websiteUrl: venue.website_url ?? '',
         hoursNote: venue.hours_note ?? '',
         dressCode: venue.dress_code ?? '',
+        capacity: venue.capacity?.toString() ?? '',
+        musicGenres: venue.music_genres ?? '',
         bookingStartDate: venue.booking_start_date ?? '',
         bookingEndDate: venue.booking_end_date ?? '',
       });
@@ -377,6 +381,8 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         website_url: form.websiteUrl || null,
         hours_note: form.hoursNote || null,
         dress_code: form.dressCode || null,
+        capacity: form.capacity ? parseInt(form.capacity, 10) : null,
+        music_genres: form.musicGenres || null,
         booking_start_date: form.bookingStartDate || null,
         booking_end_date: form.bookingEndDate || null,
       };
@@ -605,6 +611,27 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
             <div className="space-y-2">
               <Label>Dress Code (optional)</Label>
               <Input value={form.dressCode} onChange={(e) => updateField('dressCode', e.target.value)} placeholder="e.g. Smart Casual, No Sneakers" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Capacity (optional)</Label>
+              <Input
+                type="number"
+                min="0"
+                value={form.capacity}
+                onChange={(e) => updateField('capacity', e.target.value)}
+                placeholder="e.g. 700"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Music Genres (optional)</Label>
+              <Input
+                value={form.musicGenres}
+                onChange={(e) => updateField('musicGenres', e.target.value)}
+                placeholder="e.g. Afrobeats, Amapiano, Hip-Hop"
+              />
             </div>
           </div>
 

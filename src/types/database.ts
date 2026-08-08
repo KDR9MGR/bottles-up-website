@@ -183,6 +183,8 @@ export interface Database {
           website_url: string | null;
           hours_note: string | null;
           dress_code: string | null;
+          capacity: number | null;
+          music_genres: string | null;
           created_at: string;
           updated_at: string;
         };
