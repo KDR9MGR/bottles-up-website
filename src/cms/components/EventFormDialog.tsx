@@ -300,38 +300,41 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
           <div className="space-y-3 rounded-lg border border-gray-800 p-4">
             <div>
               <Label>Cover Image</Label>
-              <p className="text-xs text-gray-500">Shown as the thumbnail on the homepage event card.</p>
+              <p className="text-xs text-gray-500">
+                Shown as the thumbnail on event cards. Works with any aspect ratio - portrait flyers show in full
+                below, not cropped.
+              </p>
             </div>
-            <div className="flex items-center gap-4">
-              {form.cover_image_url ? (
-                <img src={form.cover_image_url} alt="Cover" className="h-20 w-20 rounded object-cover" />
-              ) : (
-                <div className="flex h-20 w-20 items-center justify-center rounded border border-dashed border-gray-700 text-[10px] text-gray-600">
-                  No image yet
-                </div>
-              )}
-              <div className="space-y-2">
-                <Button type="button" variant="outline" size="sm" disabled={uploadingCover} asChild>
-                  <label className="cursor-pointer">
-                    {uploadingCover ? 'Uploading...' : 'Upload Cover Image'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => e.target.files?.[0] && handleCoverUpload(e.target.files[0])}
-                    />
-                  </label>
-                </Button>
-                {form.cover_image_url && (
-                  <button
-                    type="button"
-                    className="block text-xs text-gray-500 hover:text-red-400"
-                    onClick={() => updateField('cover_image_url', null)}
-                  >
-                    Remove
-                  </button>
-                )}
+            {form.cover_image_url ? (
+              <div className="flex justify-center overflow-hidden rounded-lg border border-gray-800 bg-black/40 p-2">
+                <img src={form.cover_image_url} alt="Cover" className="max-h-72 w-auto rounded object-contain" />
               </div>
+            ) : (
+              <div className="flex h-24 items-center justify-center rounded border border-dashed border-gray-700 text-xs text-gray-600">
+                No image yet
+              </div>
+            )}
+            <div className="flex items-center gap-3">
+              <Button type="button" variant="outline" size="sm" disabled={uploadingCover} asChild>
+                <label className="cursor-pointer">
+                  {uploadingCover ? 'Uploading...' : form.cover_image_url ? 'Replace Cover Image' : 'Upload Cover Image'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => e.target.files?.[0] && handleCoverUpload(e.target.files[0])}
+                  />
+                </label>
+              </Button>
+              {form.cover_image_url && (
+                <button
+                  type="button"
+                  className="text-xs text-gray-500 hover:text-red-400"
+                  onClick={() => updateField('cover_image_url', null)}
+                >
+                  Remove
+                </button>
+              )}
             </div>
           </div>
 
@@ -340,36 +343,36 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
               <Label>Banner Image</Label>
               <p className="text-xs text-gray-500">Wide hero image shown at the top of the event detail page.</p>
             </div>
-            <div className="flex items-center gap-4">
-              {form.banner_image_url ? (
-                <img src={form.banner_image_url} alt="Banner" className="h-20 w-32 rounded object-cover" />
-              ) : (
-                <div className="flex h-20 w-32 items-center justify-center rounded border border-dashed border-gray-700 text-[10px] text-gray-600">
-                  No image yet
-                </div>
-              )}
-              <div className="space-y-2">
-                <Button type="button" variant="outline" size="sm" disabled={uploadingBanner} asChild>
-                  <label className="cursor-pointer">
-                    {uploadingBanner ? 'Uploading...' : 'Upload Banner Image'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => e.target.files?.[0] && handleBannerUpload(e.target.files[0])}
-                    />
-                  </label>
-                </Button>
-                {form.banner_image_url && (
-                  <button
-                    type="button"
-                    className="block text-xs text-gray-500 hover:text-red-400"
-                    onClick={() => updateField('banner_image_url', null)}
-                  >
-                    Remove
-                  </button>
-                )}
+            {form.banner_image_url ? (
+              <div className="flex justify-center overflow-hidden rounded-lg border border-gray-800 bg-black/40 p-2">
+                <img src={form.banner_image_url} alt="Banner" className="max-h-72 w-auto rounded object-contain" />
               </div>
+            ) : (
+              <div className="flex h-24 items-center justify-center rounded border border-dashed border-gray-700 text-xs text-gray-600">
+                No image yet
+              </div>
+            )}
+            <div className="flex items-center gap-3">
+              <Button type="button" variant="outline" size="sm" disabled={uploadingBanner} asChild>
+                <label className="cursor-pointer">
+                  {uploadingBanner ? 'Uploading...' : form.banner_image_url ? 'Replace Banner Image' : 'Upload Banner Image'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => e.target.files?.[0] && handleBannerUpload(e.target.files[0])}
+                  />
+                </label>
+              </Button>
+              {form.banner_image_url && (
+                <button
+                  type="button"
+                  className="text-xs text-gray-500 hover:text-red-400"
+                  onClick={() => updateField('banner_image_url', null)}
+                >
+                  Remove
+                </button>
+              )}
             </div>
           </div>
 

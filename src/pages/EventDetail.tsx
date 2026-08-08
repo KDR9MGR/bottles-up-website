@@ -135,11 +135,11 @@ const EventDetail = () => {
               two-column desktop layout - on mobile, showing both stacked just looks
               like two near-duplicate hero images, so it's hidden below lg. */}
           <div className="hidden overflow-hidden rounded-2xl border border-border lg:block">
-            <div className="relative h-full w-full">
+            <div className="relative h-full w-full bg-black/40">
               <img
                 src={event.cover_image_url ?? '/placeholder.svg'}
                 alt={event.title}
-                className="h-full w-full object-cover"
+                className="h-full w-full object-contain"
               />
             </div>
           </div>

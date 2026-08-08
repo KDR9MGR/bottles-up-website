@@ -62,11 +62,11 @@ const PopularEvents = () => {
                 className="group animate-fade-in hover-lift overflow-hidden rounded-3xl border-white/10 bg-white/[0.03] backdrop-blur-xl transition-all duration-300 hover:border-orange-500/40"
                 style={{ animationDelay: `${index * 0.1}s` }}
               >
-                <div className="relative">
+                <div className="relative bg-black/40">
                   <img
                     src={event.cover_image_url ?? '/placeholder.svg'}
                     alt={event.title}
-                    className="h-52 w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    className="h-52 w-full object-contain transition-transform duration-500 group-hover:scale-105"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
 

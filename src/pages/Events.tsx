@@ -95,11 +95,11 @@ const Events = () => {
               {heroImages.map((event, i) => (
                 <div
                   key={event.id}
-                  className={`overflow-hidden rounded-2xl border border-white/10 ${
+                  className={`overflow-hidden rounded-2xl border border-white/10 bg-black/40 ${
                     i === 0 ? 'col-span-2 h-48' : 'h-32'
                   }`}
                 >
-                  <img src={event.cover_image_url!} alt={event.title} className="h-full w-full object-cover" />
+                  <img src={event.cover_image_url!} alt={event.title} className="h-full w-full object-contain" />
                 </div>
               ))}
             </div>
@@ -169,11 +169,11 @@ const Events = () => {
                   key={event.id}
                   className="overflow-hidden border-border bg-card transition-all duration-300 hover:border-primary/50"
                 >
-                  <div className="relative h-48 w-full">
+                  <div className="relative h-48 w-full bg-black/40">
                     <img
                       src={event.cover_image_url ?? '/placeholder.svg'}
                       alt={event.title}
-                      className="h-full w-full object-cover"
+                      className="h-full w-full object-contain"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
                     <div className="absolute left-3 top-3 flex w-14 flex-col items-center rounded-2xl border border-white/10 bg-black/70 py-2 text-center backdrop-blur-xl">
