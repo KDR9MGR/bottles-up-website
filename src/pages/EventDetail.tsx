@@ -283,9 +283,11 @@ const EventDetail = () => {
                             <div className="text-sm font-medium text-white">{tier.name}</div>
                             <div className="font-semibold text-white">${(tier.price_cents / 100).toFixed(2)}</div>
                           </div>
-                          <div className="text-xs text-muted-foreground">
-                            {remaining > 0 ? `${remaining} left` : 'Sold out'}
-                          </div>
+                          {event.show_ticket_count && (
+                            <div className="text-xs text-muted-foreground">
+                              {remaining > 0 ? `${remaining} left` : 'Sold out'}
+                            </div>
+                          )}
                         </div>
                       );
                     })}

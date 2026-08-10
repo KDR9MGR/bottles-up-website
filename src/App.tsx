@@ -16,6 +16,7 @@ import CmsBookings from "./cms/pages/Bookings";
 import CmsVenues from "./cms/pages/Venues";
 import CmsTableBookings from "./cms/pages/TableBookings";
 import CmsVipList from "./cms/pages/VipList";
+import CmsVipGuestList from "./cms/pages/VipGuestList";
 import CmsDoorStaff from "./cms/pages/DoorStaff";
 import CmsCheckIns from "./cms/pages/CheckIns";
 import CmsAuditLog from "./cms/pages/AuditLog";
@@ -80,6 +81,7 @@ const App = () => {
               <Route path="venues" element={<CmsVenues />} />
               <Route path="table-bookings" element={<CmsTableBookings />} />
               <Route path="vip-list" element={<CmsVipList />} />
+              <Route path="vip-guest-list" element={<CmsVipGuestList />} />
               <Route path="door-staff" element={<CmsDoorStaff />} />
               <Route path="check-ins" element={<CmsCheckIns />} />
               <Route path="audit-log" element={<CmsAuditLog />} />

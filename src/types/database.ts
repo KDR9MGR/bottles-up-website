@@ -45,6 +45,7 @@ export interface Database {
           category: string | null;
           status: EventStatus;
           capacity: number | null;
+          show_ticket_count: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -329,6 +330,24 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['audit_log']['Row']>;
+        Relationships: [];
+      };
+      site_vip_guests: {
+        Row: {
+          id: string;
+          first_name: string;
+          last_name: string;
+          email: string;
+          venue_id: string | null;
+          event_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['site_vip_guests']['Row']> & {
+          first_name: string;
+          last_name: string;
+          email: string;
+        };
+        Update: Partial<Database['public']['Tables']['site_vip_guests']['Row']>;
         Relationships: [];
       };
       site_content: {

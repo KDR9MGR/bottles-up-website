@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -55,6 +56,7 @@ const emptyForm = {
   banner_image_url: '' as string | null,
   gallery: [] as string[],
   slug: '' as string | null,
+  show_ticket_count: true,
 };
 
 const toDatetimeLocal = (iso: string | null) => (iso ? iso.slice(0, 16) : '');
@@ -86,6 +88,7 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
         banner_image_url: event.banner_image_url ?? '',
         gallery: event.gallery ?? [],
         slug: event.slug ?? '',
+        show_ticket_count: event.show_ticket_count,
       });
 
       supabase
@@ -179,6 +182,7 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
         banner_image_url: form.banner_image_url || null,
         gallery: form.gallery,
         capacity: totalCapacity || null,
+        show_ticket_count: form.show_ticket_count,
       };
 
       let eventId = event?.id;
@@ -295,6 +299,20 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-gray-800 p-4">
+            <div>
+              <Label>Show ticket count</Label>
+              <p className="text-xs text-gray-500">
+                Show "X left" / "Sold out" under each ticket tier on the public event page. Turn off to hide the
+                count while still selling tickets.
+              </p>
+            </div>
+            <Switch
+              checked={form.show_ticket_count}
+              onCheckedChange={(checked) => updateField('show_ticket_count', checked)}
+            />
           </div>
 
           <div className="space-y-3 rounded-lg border border-gray-800 p-4">
