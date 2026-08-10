@@ -19,6 +19,7 @@ import {
 import { Mail } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
+import { sessionMode, type PaymentModeFilter } from '../lib/paymentMode';
 import type { Database, OrderStatus } from '@/types/database';
 
 type OrderRow = Database['public']['Tables']['site_orders']['Row'] & {
@@ -37,6 +38,7 @@ const CmsBookings = () => {
   const { toast } = useToast();
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
+  const [modeFilter, setModeFilter] = useState<PaymentModeFilter>('live');
   const [loading, setLoading] = useState(true);
   const [resendingId, setResendingId] = useState<string | null>(null);
 
@@ -55,8 +57,11 @@ const CmsBookings = () => {
   }, []);
 
   const filtered = useMemo(
-    () => (statusFilter === 'all' ? orders : orders.filter((o) => o.status === statusFilter)),
-    [orders, statusFilter],
+    () =>
+      orders
+        .filter((o) => statusFilter === 'all' || o.status === statusFilter)
+        .filter((o) => modeFilter === 'all' || sessionMode(o.stripe_checkout_session_id) === modeFilter),
+    [orders, statusFilter, modeFilter],
   );
 
   const handleResend = async (orderId: string) => {
@@ -81,19 +86,31 @@ const CmsBookings = () => {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Bookings ({orders.length})</h1>
-        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as OrderStatus | 'all')}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="paid">Paid</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-            <SelectItem value="refunded">Refunded</SelectItem>
-          </SelectContent>
-        </Select>
+        <h1 className="text-2xl font-bold text-white">Bookings ({filtered.length})</h1>
+        <div className="flex gap-2">
+          <Select value={modeFilter} onValueChange={(v) => setModeFilter(v as PaymentModeFilter)}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="live">Live payments</SelectItem>
+              <SelectItem value="test">Test payments</SelectItem>
+              <SelectItem value="all">All</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as OrderStatus | 'all')}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="refunded">Refunded</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {loading ? (

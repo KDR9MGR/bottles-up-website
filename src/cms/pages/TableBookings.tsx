@@ -19,6 +19,7 @@ import {
 import { Mail } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
+import { sessionMode, type PaymentModeFilter } from '../lib/paymentMode';
 import type { Database, OrderStatus } from '@/types/database';
 
 type BookingRow = Database['public']['Tables']['site_table_bookings']['Row'] & {
@@ -37,6 +38,7 @@ const CmsTableBookings = () => {
   const { toast } = useToast();
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
+  const [modeFilter, setModeFilter] = useState<PaymentModeFilter>('live');
   const [loading, setLoading] = useState(true);
   const [resendingId, setResendingId] = useState<string | null>(null);
 
@@ -55,8 +57,11 @@ const CmsTableBookings = () => {
   }, []);
 
   const filtered = useMemo(
-    () => (statusFilter === 'all' ? bookings : bookings.filter((b) => b.status === statusFilter)),
-    [bookings, statusFilter],
+    () =>
+      bookings
+        .filter((b) => statusFilter === 'all' || b.status === statusFilter)
+        .filter((b) => modeFilter === 'all' || sessionMode(b.stripe_checkout_session_id) === modeFilter),
+    [bookings, statusFilter, modeFilter],
   );
 
   const handleResend = async (bookingId: string) => {
@@ -81,19 +86,31 @@ const CmsTableBookings = () => {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Table Bookings ({bookings.length})</h1>
-        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as OrderStatus | 'all')}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="paid">Paid</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-            <SelectItem value="refunded">Refunded</SelectItem>
-          </SelectContent>
-        </Select>
+        <h1 className="text-2xl font-bold text-white">Table Bookings ({filtered.length})</h1>
+        <div className="flex gap-2">
+          <Select value={modeFilter} onValueChange={(v) => setModeFilter(v as PaymentModeFilter)}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="live">Live payments</SelectItem>
+              <SelectItem value="test">Test payments</SelectItem>
+              <SelectItem value="all">All</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as OrderStatus | 'all')}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="refunded">Refunded</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {loading ? (

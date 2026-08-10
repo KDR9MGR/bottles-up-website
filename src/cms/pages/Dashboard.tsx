@@ -10,7 +10,15 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { supabase } from '@/lib/supabase';
+import { sessionMode, type PaymentModeFilter } from '../lib/paymentMode';
 
 type EventWithTiers = {
   id: string;
@@ -28,6 +36,7 @@ type PaidOrder = {
   quantity: number;
   checked_in_at: string | null;
   created_at: string;
+  stripe_checkout_session_id: string | null;
 };
 
 const formatCurrency = (cents: number) =>
@@ -38,6 +47,7 @@ const CmsDashboard = () => {
   const [orders, setOrders] = useState<PaidOrder[]>([]);
   const [doorStaffCount, setDoorStaffCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [modeFilter, setModeFilter] = useState<PaymentModeFilter>('live');
 
   useEffect(() => {
     const load = async () => {
@@ -46,7 +56,7 @@ const CmsDashboard = () => {
         supabase
           .from('site_orders')
           .select(
-            'id, event_id, customer_name, customer_email, amount_total_cents, quantity, checked_in_at, created_at',
+            'id, event_id, customer_name, customer_email, amount_total_cents, quantity, checked_in_at, created_at, stripe_checkout_session_id',
           )
           .eq('status', 'paid'),
         supabase.from('door_staff').select('id', { count: 'exact', head: true }),
@@ -61,33 +71,40 @@ const CmsDashboard = () => {
     load();
   }, []);
 
+  const paidOrders = useMemo(
+    () =>
+      modeFilter === 'all'
+        ? orders
+        : orders.filter((o) => sessionMode(o.stripe_checkout_session_id) === modeFilter),
+    [orders, modeFilter],
+  );
+
   const kpis = useMemo(() => {
     const now = new Date();
     const todayStart = startOfDay(now);
     const weekStart = subDays(now, 7);
 
-    const totalRevenue = orders.reduce((sum, o) => sum + o.amount_total_cents, 0);
-    const revenueToday = orders
+    const totalRevenue = paidOrders.reduce((sum, o) => sum + o.amount_total_cents, 0);
+    const revenueToday = paidOrders
       .filter((o) => isAfter(new Date(o.created_at), todayStart))
       .reduce((sum, o) => sum + o.amount_total_cents, 0);
-    const revenueWeek = orders
+    const revenueWeek = paidOrders
       .filter((o) => isAfter(new Date(o.created_at), weekStart))
       .reduce((sum, o) => sum + o.amount_total_cents, 0);
-    const ticketsSold = orders.reduce((sum, o) => sum + o.quantity, 0);
-    const ticketsCheckedIn = orders.filter((o) => o.checked_in_at).length;
+    const ticketsSold = paidOrders.reduce((sum, o) => sum + o.quantity, 0);
+    const ticketsCheckedIn = paidOrders.filter((o) => o.checked_in_at).length;
 
-    let totalCapacity = 0;
-    let totalSold = 0;
-    events.forEach((e) => {
-      e.site_ticket_tiers.forEach((t) => {
-        totalCapacity += t.capacity;
-        totalSold += t.sold_count;
-      });
-    });
-    const occupancy = totalCapacity > 0 ? Math.round((totalSold / totalCapacity) * 100) : 0;
+    // Capacity is mode-independent (it's a fixed tier setting), but "sold" is derived
+    // from the mode-filtered orders themselves rather than the tier's blended sold_count
+    // column - otherwise switching Live/Test wouldn't change the occupancy number.
+    const totalCapacity = events.reduce(
+      (sum, e) => sum + e.site_ticket_tiers.reduce((s, t) => s + t.capacity, 0),
+      0,
+    );
+    const occupancy = totalCapacity > 0 ? Math.round((ticketsSold / totalCapacity) * 100) : 0;
 
     return { totalRevenue, revenueToday, revenueWeek, ticketsSold, ticketsCheckedIn, occupancy };
-  }, [orders, events]);
+  }, [paidOrders, events]);
 
   const trend = useMemo(() => {
     const days = 14;
@@ -95,20 +112,20 @@ const CmsDashboard = () => {
     for (let i = days - 1; i >= 0; i--) {
       buckets[format(startOfDay(subDays(new Date(), i)), 'MMM d')] = 0;
     }
-    orders.forEach((o) => {
+    paidOrders.forEach((o) => {
       const key = format(startOfDay(new Date(o.created_at)), 'MMM d');
       if (key in buckets) buckets[key] += o.amount_total_cents / 100;
     });
     return Object.entries(buckets).map(([date, revenue]) => ({ date, revenue }));
-  }, [orders]);
+  }, [paidOrders]);
 
   const eventPerformance = useMemo(
     () =>
       events
         .map((e) => {
           const capacity = e.site_ticket_tiers.reduce((s, t) => s + t.capacity, 0);
-          const sold = e.site_ticket_tiers.reduce((s, t) => s + t.sold_count, 0);
-          const eventOrders = orders.filter((o) => o.event_id === e.id);
+          const eventOrders = paidOrders.filter((o) => o.event_id === e.id);
+          const sold = eventOrders.reduce((s, o) => s + o.quantity, 0);
           const revenue = eventOrders.reduce((s, o) => s + o.amount_total_cents, 0);
           const checkedIn = eventOrders.filter((o) => o.checked_in_at).length;
           return {
@@ -123,12 +140,12 @@ const CmsDashboard = () => {
           };
         })
         .sort((a, b) => b.revenue - a.revenue),
-    [events, orders],
+    [events, paidOrders],
   );
 
   const topCustomers = useMemo(() => {
     const map = new Map<string, { name: string; email: string; orders: number; spend: number }>();
-    orders.forEach((o) => {
+    paidOrders.forEach((o) => {
       const existing = map.get(o.customer_email) ?? {
         name: o.customer_name,
         email: o.customer_email,
@@ -142,7 +159,7 @@ const CmsDashboard = () => {
     return Array.from(map.values())
       .sort((a, b) => b.spend - a.spend)
       .slice(0, 10);
-  }, [orders]);
+  }, [paidOrders]);
 
   const cards = [
     { label: 'Total Revenue', value: formatCurrency(kpis.totalRevenue) },
@@ -161,7 +178,19 @@ const CmsDashboard = () => {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="mb-6 text-2xl font-bold text-white">Dashboard</h1>
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+          <Select value={modeFilter} onValueChange={(v) => setModeFilter(v as PaymentModeFilter)}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="live">Live payments</SelectItem>
+              <SelectItem value="test">Test payments</SelectItem>
+              <SelectItem value="all">All</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {cards.map((card) => (
             <Card key={card.label} className="border-gray-800 bg-gray-900/50">
