@@ -1,5 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@17';
 import { corsHeadersFor, handleOptions } from '../_shared/cors.ts';
+import { fulfillTicketOrder, fulfillTableBooking } from '../_shared/fulfillment.ts';
 
 // Public, unauthenticated lookup by Stripe checkout session id (the booking-success page's
 // only signal). site_orders has no public RLS select policy - it holds customer PII (name,
@@ -29,28 +31,74 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
+    // Self-heal: normally the Stripe webhook is what marks an order/booking paid and
+    // sends the ticket. If that webhook hasn't fired yet - misconfigured endpoint,
+    // wrong signing secret, a transient outage, doesn't matter what - this page would
+    // otherwise poll forever showing "still confirming" even though Stripe already
+    // charged the card. So the moment we see a not-yet-paid row here, ask Stripe
+    // directly whether the session actually completed, and if so, do the webhook's
+    // job ourselves. Safe to call repeatedly: fulfillment is idempotent.
+    const verifyAndFulfillIfPaid = async (kind: 'order' | 'booking', id: string) => {
+      const stripeSecretKey = session_id.startsWith('cs_live_')
+        ? (Deno.env.get('STRIPE_SECRET_KEY_LIVE') ?? Deno.env.get('STRIPE_SECRET_KEY'))
+        : (Deno.env.get('STRIPE_SECRET_KEY_TEST') ?? Deno.env.get('test_SK') ?? Deno.env.get('STRIPE_SECRET_KEY'));
+      if (!stripeSecretKey) return;
+
+      try {
+        const stripe = new Stripe(stripeSecretKey, {
+          apiVersion: '2024-06-20',
+          httpClient: Stripe.createFetchHttpClient(),
+        });
+        const session = await stripe.checkout.sessions.retrieve(session_id);
+        if (session.payment_status !== 'paid') return;
+
+        const paymentIntentId =
+          (typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id) ?? null;
+
+        if (kind === 'order') {
+          await fulfillTicketOrder(supabase, id, paymentIntentId);
+        } else {
+          await fulfillTableBooking(supabase, id, paymentIntentId);
+        }
+      } catch (err) {
+        console.error('site-booking-status: Stripe verification failed', session_id, err);
+      }
+    };
+
+    const orderSelect =
+      'id, status, ticket_code, customer_name, quantity, site_ticket_tiers(name), site_events(title, venue_name, start_date)';
+
     const { data: order } = await supabase
       .from('site_orders')
-      .select(
-        'status, ticket_code, customer_name, quantity, site_ticket_tiers(name), site_events(title, venue_name, start_date)',
-      )
+      .select(orderSelect)
       .eq('stripe_checkout_session_id', session_id)
       .maybeSingle();
 
     if (order) {
-      if (order.status !== 'paid' || !order.ticket_code) {
-        return json({ status: order.status });
+      let current = order;
+      if (current.status !== 'paid' || !current.ticket_code) {
+        await verifyAndFulfillIfPaid('order', current.id);
+        const { data: refreshed } = await supabase
+          .from('site_orders')
+          .select(orderSelect)
+          .eq('stripe_checkout_session_id', session_id)
+          .maybeSingle();
+        if (refreshed) current = refreshed;
       }
 
-      const tier = order.site_ticket_tiers as unknown as { name: string } | null;
-      const event = order.site_events as unknown as { title: string; venue_name: string; start_date: string } | null;
+      if (current.status !== 'paid' || !current.ticket_code) {
+        return json({ status: current.status });
+      }
+
+      const tier = current.site_ticket_tiers as unknown as { name: string } | null;
+      const event = current.site_events as unknown as { title: string; venue_name: string; start_date: string } | null;
 
       return json({
         status: 'paid',
         ticket: {
-          ticketCode: order.ticket_code,
-          customerName: order.customer_name,
-          quantity: order.quantity,
+          ticketCode: current.ticket_code,
+          customerName: current.customer_name,
+          quantity: current.quantity,
           tierName: tier?.name ?? '',
           eventTitle: event?.title ?? 'Your event',
           venueName: event?.venue_name ?? '',
@@ -59,11 +107,12 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const bookingSelect =
+      'id, status, confirmation_code, customer_name, guest_count, booking_date, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)';
+
     const { data: booking, error: bookingError } = await supabase
       .from('site_table_bookings')
-      .select(
-        'status, confirmation_code, customer_name, guest_count, booking_date, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)',
-      )
+      .select(bookingSelect)
       .eq('stripe_checkout_session_id', session_id)
       .maybeSingle();
 
@@ -71,23 +120,34 @@ Deno.serve(async (req: Request) => {
       return json({ status: 'not_found' });
     }
 
-    if (booking.status !== 'paid' || !booking.confirmation_code) {
-      return json({ status: booking.status });
+    let currentBooking = booking;
+    if (currentBooking.status !== 'paid' || !currentBooking.confirmation_code) {
+      await verifyAndFulfillIfPaid('booking', currentBooking.id);
+      const { data: refreshed } = await supabase
+        .from('site_table_bookings')
+        .select(bookingSelect)
+        .eq('stripe_checkout_session_id', session_id)
+        .maybeSingle();
+      if (refreshed) currentBooking = refreshed;
     }
 
-    const tableType = booking.site_table_types as unknown as { name: string } | null;
-    const venue = booking.site_venues as unknown as { name: string } | null;
-    const timeSlot = booking.site_venue_time_slots as unknown as { start_time: string } | null;
+    if (currentBooking.status !== 'paid' || !currentBooking.confirmation_code) {
+      return json({ status: currentBooking.status });
+    }
+
+    const tableType = currentBooking.site_table_types as unknown as { name: string } | null;
+    const venue = currentBooking.site_venues as unknown as { name: string } | null;
+    const timeSlot = currentBooking.site_venue_time_slots as unknown as { start_time: string } | null;
 
     return json({
       status: 'paid',
       booking: {
-        confirmationCode: booking.confirmation_code,
-        customerName: booking.customer_name,
-        guestCount: booking.guest_count,
+        confirmationCode: currentBooking.confirmation_code,
+        customerName: currentBooking.customer_name,
+        guestCount: currentBooking.guest_count,
         tableTypeName: tableType?.name ?? '',
         venueName: venue?.name ?? '',
-        bookingDate: booking.booking_date,
+        bookingDate: currentBooking.booking_date,
         startTime: timeSlot?.start_time ?? '',
       },
     });
