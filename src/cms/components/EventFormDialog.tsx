@@ -12,6 +12,16 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -59,7 +69,21 @@ const emptyForm = {
   show_ticket_count: true,
 };
 
-const toDatetimeLocal = (iso: string | null) => (iso ? iso.slice(0, 16) : '');
+// Converts a stored UTC timestamp to the value a <input type="datetime-local">
+// (and DateTimePicker, which treats its string as browser-local wall-clock time)
+// expects. This MUST go through Date's local getters, not a raw slice of the ISO
+// string - slicing "2026-08-27T02:00:00+00:00" gives "2026-08-27T02:00" even when
+// that instant is 10pm on the 26th in Toronto, so the form silently shows the wrong
+// day. Worse, saving that unedited value back re-encodes it as 2am *local* time,
+// pushing the stored UTC timestamp forward every single save - which is exactly the
+// "date keeps drifting" bug this replaces.
+const toDatetimeLocal = (iso: string | null) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialogProps) => {
   const { toast } = useToast();
@@ -70,6 +94,8 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
+  const [dateChangeConfirmOpen, setDateChangeConfirmOpen] = useState(false);
+  const [paidOrderCount, setPaidOrderCount] = useState(0);
 
   useEffect(() => {
     if (!open) return;
@@ -164,6 +190,33 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
       return;
     }
 
+    // Prevention: an event's date silently changing after tickets already went out
+    // is exactly the incident this guards against - if the date is actually moving
+    // and people have already paid for the old one, make the admin confirm rather
+    // than let it slip through as a side effect of an unrelated edit.
+    if (event) {
+      // Compare actual instants, not raw strings - Postgres and toISOString() format
+      // timestamps differently even for the exact same moment, so a string compare
+      // here would "detect" a date change on every save and nag needlessly.
+      const dateActuallyChanged = new Date(form.start_date).getTime() !== new Date(event.start_date).getTime();
+      if (dateActuallyChanged) {
+        const { count } = await supabase
+          .from('site_orders')
+          .select('id', { count: 'exact', head: true })
+          .eq('event_id', event.id)
+          .eq('status', 'paid');
+        if (count && count > 0) {
+          setPaidOrderCount(count);
+          setDateChangeConfirmOpen(true);
+          return;
+        }
+      }
+    }
+
+    await performSave();
+  };
+
+  const performSave = async () => {
     setSaving(true);
     try {
       const totalCapacity = tiers.reduce((sum, t) => sum + (parseInt(t.capacity, 10) || 0), 0);
@@ -484,6 +537,31 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <AlertDialog open={dateChangeConfirmOpen} onOpenChange={setDateChangeConfirmOpen}>
+        <AlertDialogContent className="border-gray-800 bg-gray-950">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white">Change the date on a sold event?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {paidOrderCount} {paidOrderCount === 1 ? 'ticket has' : 'tickets have'} already been sold for this
+              event's current date. Changing it won't automatically notify those customers or resend their
+              tickets - you may want to email them separately. Continue anyway?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setDateChangeConfirmOpen(false);
+                performSave();
+              }}
+              className="bg-gradient-orange text-black font-bold hover:opacity-90"
+            >
+              Change Date Anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 };

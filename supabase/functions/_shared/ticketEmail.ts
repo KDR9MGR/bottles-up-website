@@ -26,12 +26,17 @@ export async function sendTicketEmail(opts: {
     return { sent: false, error: 'RESEND_API_KEY not set' };
   }
 
+  // Explicit timeZone matters here: this runs on the Edge Function server (UTC),
+  // not in the venue's timezone, so without it the printed date/time would be
+  // whatever the server's clock says - e.g. showing the 27th for a 10pm-on-the-26th
+  // Toronto event.
   const formattedDate = new Date(opts.startDate).toLocaleString('en-US', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    timeZone: 'America/Toronto',
   });
 
   const html = `
