@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Mail } from 'lucide-react';
+import { Mail, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { sessionMode, type PaymentModeFilter } from '../lib/paymentMode';
@@ -41,6 +41,7 @@ const CmsTableBookings = () => {
   const [modeFilter, setModeFilter] = useState<PaymentModeFilter>('live');
   const [loading, setLoading] = useState(true);
   const [resendingId, setResendingId] = useState<string | null>(null);
+  const [checkingId, setCheckingId] = useState<string | null>(null);
 
   const loadBookings = async () => {
     setLoading(true);
@@ -80,6 +81,34 @@ const CmsTableBookings = () => {
     } else {
       toast({ title: 'Confirmation email resent' });
       loadBookings();
+    }
+  };
+
+  // Same self-heal fallback the booking-success page uses automatically - lets an
+  // admin manually re-check a stuck pending booking against Stripe on demand.
+  const handleCheckStripe = async (booking: BookingRow) => {
+    if (!booking.stripe_checkout_session_id) {
+      toast({ title: 'No Stripe session on this booking', variant: 'destructive' });
+      return;
+    }
+    setCheckingId(booking.id);
+    const { data, error } = await supabase.functions.invoke('site-booking-status', {
+      body: { session_id: booking.stripe_checkout_session_id },
+    });
+    setCheckingId(null);
+
+    if (error) {
+      toast({ title: 'Failed to check with Stripe', description: error.message, variant: 'destructive' });
+      return;
+    }
+    if (data?.status === 'paid') {
+      toast({ title: 'Stripe confirms this was paid', description: 'Booking marked paid and confirmation sent.' });
+      loadBookings();
+    } else {
+      toast({
+        title: 'Stripe confirms this was not completed',
+        description: 'No successful charge found for this checkout session - the customer likely never finished paying.',
+      });
     }
   };
 
@@ -148,6 +177,17 @@ const CmsTableBookings = () => {
                   </TableCell>
                   <TableCell className="font-mono text-xs">{booking.confirmation_code ?? '-'}</TableCell>
                   <TableCell className="text-right">
+                    {booking.status === 'pending' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={checkingId === booking.id}
+                        onClick={() => handleCheckStripe(booking)}
+                      >
+                        <RefreshCw className="mr-1 h-3 w-3" />
+                        {checkingId === booking.id ? 'Checking...' : 'Check with Stripe'}
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"

@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Mail } from 'lucide-react';
+import { Mail, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { sessionMode, type PaymentModeFilter } from '../lib/paymentMode';
@@ -41,6 +41,7 @@ const CmsBookings = () => {
   const [modeFilter, setModeFilter] = useState<PaymentModeFilter>('live');
   const [loading, setLoading] = useState(true);
   const [resendingId, setResendingId] = useState<string | null>(null);
+  const [checkingId, setCheckingId] = useState<string | null>(null);
 
   const loadOrders = async () => {
     setLoading(true);
@@ -80,6 +81,37 @@ const CmsBookings = () => {
     } else {
       toast({ title: 'Ticket email resent' });
       loadOrders();
+    }
+  };
+
+  // A pending order can mean the webhook that normally marks it paid hasn't run yet
+  // (or never will, if it's misconfigured) even though Stripe already has a real
+  // charge. This re-uses the same check-with-Stripe fallback the booking-success
+  // page calls automatically, so an admin can trigger it manually for any order
+  // that's stuck instead of waiting on the customer to reload their success page.
+  const handleCheckStripe = async (order: OrderRow) => {
+    if (!order.stripe_checkout_session_id) {
+      toast({ title: 'No Stripe session on this order', variant: 'destructive' });
+      return;
+    }
+    setCheckingId(order.id);
+    const { data, error } = await supabase.functions.invoke('site-booking-status', {
+      body: { session_id: order.stripe_checkout_session_id },
+    });
+    setCheckingId(null);
+
+    if (error) {
+      toast({ title: 'Failed to check with Stripe', description: error.message, variant: 'destructive' });
+      return;
+    }
+    if (data?.status === 'paid') {
+      toast({ title: 'Stripe confirms this was paid', description: 'Order marked paid and ticket sent.' });
+      loadOrders();
+    } else {
+      toast({
+        title: 'Stripe confirms this was not completed',
+        description: 'No successful charge found for this checkout session - the customer likely never finished paying.',
+      });
     }
   };
 
@@ -146,6 +178,17 @@ const CmsBookings = () => {
                   </TableCell>
                   <TableCell className="font-mono text-xs">{order.ticket_code ?? '-'}</TableCell>
                   <TableCell className="text-right">
+                    {order.status === 'pending' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={checkingId === order.id}
+                        onClick={() => handleCheckStripe(order)}
+                      >
+                        <RefreshCw className="mr-1 h-3 w-3" />
+                        {checkingId === order.id ? 'Checking...' : 'Check with Stripe'}
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
