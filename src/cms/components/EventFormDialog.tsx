@@ -77,6 +77,12 @@ const emptyForm = {
 // day. Worse, saving that unedited value back re-encodes it as 2am *local* time,
 // pushing the stored UTC timestamp forward every single save - which is exactly the
 // "date keeps drifting" bug this replaces.
+// Once tickets are sold, an event's date shouldn't be able to quietly shift right
+// before people are due to show up - this is the threshold for locking it outright.
+const DATE_LOCK_WINDOW_DAYS = 7;
+
+const daysUntil = (iso: string) => (new Date(iso).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+
 const toDatetimeLocal = (iso: string | null) => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -133,12 +139,22 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
           );
           setOriginalTierIds(rows.map((t) => t.id));
         });
+
+      supabase
+        .from('site_orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('event_id', event.id)
+        .eq('status', 'paid')
+        .then(({ count }) => setPaidOrderCount(count ?? 0));
     } else {
       setForm(emptyForm);
       setTiers([{ name: 'General Admission', priceDollars: '', capacity: '' }]);
       setOriginalTierIds([]);
+      setPaidOrderCount(0);
     }
   }, [event, open]);
+
+  const isDateLocked = !!event && paidOrderCount > 0 && daysUntil(event.start_date) <= DATE_LOCK_WINDOW_DAYS;
 
   const updateField = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -193,23 +209,25 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
     // Prevention: an event's date silently changing after tickets already went out
     // is exactly the incident this guards against - if the date is actually moving
     // and people have already paid for the old one, make the admin confirm rather
-    // than let it slip through as a side effect of an unrelated edit.
-    if (event) {
+    // than let it slip through as a side effect of an unrelated edit. Once the event
+    // is inside the lock window the field itself is disabled, but this is a defense-
+    // in-depth check in case that state changed mid-session.
+    if (event && paidOrderCount > 0) {
       // Compare actual instants, not raw strings - Postgres and toISOString() format
       // timestamps differently even for the exact same moment, so a string compare
       // here would "detect" a date change on every save and nag needlessly.
       const dateActuallyChanged = new Date(form.start_date).getTime() !== new Date(event.start_date).getTime();
       if (dateActuallyChanged) {
-        const { count } = await supabase
-          .from('site_orders')
-          .select('id', { count: 'exact', head: true })
-          .eq('event_id', event.id)
-          .eq('status', 'paid');
-        if (count && count > 0) {
-          setPaidOrderCount(count);
-          setDateChangeConfirmOpen(true);
+        if (isDateLocked) {
+          toast({
+            title: 'Date is locked',
+            description: `This event has paid tickets and starts within ${DATE_LOCK_WINDOW_DAYS} days, so the date can't be changed here. Contact affected customers directly if it truly has to move.`,
+            variant: 'destructive',
+          });
           return;
         }
+        setDateChangeConfirmOpen(true);
+        return;
       }
     }
 
@@ -327,7 +345,18 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Start Date/Time</Label>
-              <DateTimePicker value={form.start_date} onChange={(v) => updateField('start_date', v)} placeholder="Select start date & time" />
+              <DateTimePicker
+                value={form.start_date}
+                onChange={(v) => updateField('start_date', v)}
+                placeholder="Select start date & time"
+                disabled={isDateLocked}
+              />
+              {isDateLocked && (
+                <p className="text-xs text-orange-400">
+                  Locked: {paidOrderCount} {paidOrderCount === 1 ? 'ticket has' : 'tickets have'} been sold and this
+                  event starts within {DATE_LOCK_WINDOW_DAYS} days.
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>End Date/Time (optional)</Label>

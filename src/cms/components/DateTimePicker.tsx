@@ -16,10 +16,12 @@ export default function DateTimePicker({
   value,
   onChange,
   placeholder,
+  disabled,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   const date = useMemo(() => (value ? fromValue(value) : null), [value]);
   const time = value?.slice(11, 16) || '20:00';
@@ -28,8 +30,13 @@ export default function DateTimePicker({
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button type="button" variant="outline" className="w-full justify-start border-gray-800 bg-gray-950 text-white">
+      <PopoverTrigger asChild disabled={disabled}>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={disabled}
+          className="w-full justify-start border-gray-800 bg-gray-950 text-white disabled:opacity-60"
+        >
           {label}
         </Button>
       </PopoverTrigger>
