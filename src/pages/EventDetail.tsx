@@ -122,30 +122,32 @@ const EventDetail = () => {
       <Header />
 
       <section className="container mx-auto px-4 pt-24 lg:px-6 lg:pt-32">
-        <Link
-          to="/events"
-          className="mb-4 inline-flex items-center gap-2 text-sm text-gray-300 transition-colors hover:text-primary"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Events
-        </Link>
-
-        <div className="relative flex items-center justify-center overflow-hidden rounded-2xl border border-border bg-black/40">
-          <img
-            src={event.banner_image_url ?? event.cover_image_url ?? '/placeholder.svg'}
-            alt={event.title}
-            className="max-h-[60vh] w-full object-contain sm:max-h-[70vh]"
-          />
+        <div className="mb-4 flex items-center justify-between">
+          <Link
+            to="/events"
+            className="inline-flex items-center gap-2 text-sm text-gray-300 transition-colors hover:text-primary"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Events
+          </Link>
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={handleShare}
-            className="absolute right-4 top-4 border-white/20 bg-black/60 text-white backdrop-blur-md hover:bg-black/80"
+            className="border-border bg-transparent text-white hover:bg-white/10"
           >
             <Share2 className="mr-1.5 h-4 w-4" />
             Share
           </Button>
+        </div>
+
+        <div className="flex items-center justify-center overflow-hidden rounded-2xl border border-border bg-black/40">
+          <img
+            src={event.banner_image_url ?? event.cover_image_url ?? '/placeholder.svg'}
+            alt={event.title}
+            className="max-h-[60vh] w-full object-contain sm:max-h-[70vh]"
+          />
         </div>
 
         <div className="mt-6">
