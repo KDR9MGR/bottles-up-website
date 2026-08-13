@@ -37,6 +37,7 @@ export interface Database {
           description: string;
           venue_name: string;
           address: string | null;
+          venue_id: string | null;
           start_date: string;
           end_date: string | null;
           cover_image_url: string | null;

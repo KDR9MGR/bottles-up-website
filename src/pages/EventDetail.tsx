@@ -12,10 +12,12 @@ import BookingDialog from '@/components/BookingDialog';
 import Lightbox from '@/components/Lightbox';
 import type { EventWithTiers } from '@/components/PopularEvents';
 
+type EventWithVenue = EventWithTiers & { linked_venue: { slug: string | null } | null };
+
 const EventDetail = () => {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
-  const [event, setEvent] = useState<EventWithTiers | null>(null);
+  const [event, setEvent] = useState<EventWithVenue | null>(null);
   const [relatedEvents, setRelatedEvents] = useState<EventWithTiers[]>([]);
   const [loading, setLoading] = useState(true);
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -31,7 +33,7 @@ const EventDetail = () => {
       // First try with slug
       let { data } = await supabase
         .from('site_events')
-        .select('*, ticket_tiers:site_ticket_tiers(*)')
+        .select('*, ticket_tiers:site_ticket_tiers(*), linked_venue:site_venues(slug)')
         .eq('slug', id)
         .eq('status', 'published')
         .maybeSingle();
@@ -40,13 +42,13 @@ const EventDetail = () => {
         // If no event by slug, try id
         ({ data } = await supabase
           .from('site_events')
-          .select('*, ticket_tiers:site_ticket_tiers(*)')
+          .select('*, ticket_tiers:site_ticket_tiers(*), linked_venue:site_venues(slug)')
           .eq('id', id)
           .eq('status', 'published')
           .maybeSingle());
       }
 
-      const loaded = data as EventWithTiers | null;
+      const loaded = data as EventWithVenue | null;
       setEvent(loaded);
       setLoading(false);
 
@@ -209,7 +211,9 @@ const EventDetail = () => {
                       </p>
                     </div>
                     <Button asChild variant="outline" className="shrink-0 border-border">
-                      <Link to="/vip-tables">Browse VIP Tables</Link>
+                      <Link to={event.linked_venue?.slug ? `/venues/${event.linked_venue.slug}#select-table` : '/vip-tables'}>
+                        Browse VIP Tables
+                      </Link>
                     </Button>
                   </CardContent>
                 </Card>

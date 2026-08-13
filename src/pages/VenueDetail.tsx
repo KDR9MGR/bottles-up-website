@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, MapPin, Users, Wine, Crown, Music2 } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
@@ -26,6 +26,7 @@ type VenueWithNested = VenueRow & {
 
 const VenueDetail = () => {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const [venue, setVenue] = useState<VenueWithNested | null>(null);
   const [loading, setLoading] = useState(true);
   const [previewTable, setPreviewTable] = useState<TableTypeRow | null>(null);
@@ -64,6 +65,18 @@ const VenueDetail = () => {
 
     loadVenue();
   }, [id]);
+
+  // Someone arriving from an event's "Browse VIP Tables" link (or any other
+  // deep link ending in #select-table) should land on the table picker, not
+  // the top of the page - but the element only exists once venue data has
+  // loaded, and ScrollToTop's own scroll-to-0 on route change happens first,
+  // so this has to run after both of those.
+  useEffect(() => {
+    if (loading || !venue) return;
+    if (location.hash === '#select-table') {
+      document.getElementById('select-table')?.scrollIntoView();
+    }
+  }, [loading, venue, location.hash]);
 
   if (loading) {
     return (

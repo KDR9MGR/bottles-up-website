@@ -67,6 +67,7 @@ const emptyForm = {
   gallery: [] as string[],
   slug: '' as string | null,
   show_ticket_count: true,
+  venue_id: 'none' as string,
 };
 
 // Converts a stored UTC timestamp to the value a <input type="datetime-local">
@@ -102,6 +103,15 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [dateChangeConfirmOpen, setDateChangeConfirmOpen] = useState(false);
   const [paidOrderCount, setPaidOrderCount] = useState(0);
+  const [venueOptions, setVenueOptions] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    supabase
+      .from('site_venues')
+      .select('id, name')
+      .order('name')
+      .then(({ data }) => setVenueOptions(data ?? []));
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -121,6 +131,7 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
         gallery: event.gallery ?? [],
         slug: event.slug ?? '',
         show_ticket_count: event.show_ticket_count,
+        venue_id: event.venue_id ?? 'none',
       });
 
       supabase
@@ -254,6 +265,7 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
         gallery: form.gallery,
         capacity: totalCapacity || null,
         show_ticket_count: form.show_ticket_count,
+        venue_id: form.venue_id === 'none' ? null : form.venue_id,
       };
 
       let eventId = event?.id;
@@ -340,6 +352,27 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
               <Label>Address</Label>
               <Input value={form.address} onChange={(e) => updateField('address', e.target.value)} />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Linked VIP Tables Venue (optional)</Label>
+            <p className="text-xs text-gray-500">
+              If this event is at a venue that also has VIP tables set up, link it here - "Browse VIP Tables" on the
+              event page will then go straight to that venue's table selection instead of the general listing.
+            </p>
+            <Select value={form.venue_id} onValueChange={(v) => updateField('venue_id', v)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Not linked</SelectItem>
+                {venueOptions.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
