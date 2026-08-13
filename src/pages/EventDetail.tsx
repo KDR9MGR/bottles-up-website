@@ -130,38 +130,22 @@ const EventDetail = () => {
           Back to Events
         </Link>
 
-        <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-          {/* The small thumbnail only makes sense alongside the wide banner in the
-              two-column desktop layout - on mobile, showing both stacked just looks
-              like two near-duplicate hero images, so it's hidden below lg. */}
-          <div className="hidden overflow-hidden rounded-2xl border border-border lg:block">
-            <div className="relative h-full w-full bg-black/40">
-              <img
-                src={event.cover_image_url ?? '/placeholder.svg'}
-                alt={event.title}
-                className="h-full w-full object-contain"
-              />
-            </div>
-          </div>
-
-          <div className="relative overflow-hidden rounded-2xl border border-border">
-            <img
-              src={event.banner_image_url ?? event.cover_image_url ?? '/placeholder.svg'}
-              alt={event.title}
-              className="h-52 w-full object-cover lg:h-full"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleShare}
-              className="absolute right-4 top-4 border-white/20 bg-black/60 text-white backdrop-blur-md hover:bg-black/80"
-            >
-              <Share2 className="mr-1.5 h-4 w-4" />
-              Share
-            </Button>
-          </div>
+        <div className="relative flex items-center justify-center overflow-hidden rounded-2xl border border-border bg-black/40">
+          <img
+            src={event.banner_image_url ?? event.cover_image_url ?? '/placeholder.svg'}
+            alt={event.title}
+            className="max-h-[60vh] w-full object-contain sm:max-h-[70vh]"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleShare}
+            className="absolute right-4 top-4 border-white/20 bg-black/60 text-white backdrop-blur-md hover:bg-black/80"
+          >
+            <Share2 className="mr-1.5 h-4 w-4" />
+            Share
+          </Button>
         </div>
 
         <div className="mt-6">

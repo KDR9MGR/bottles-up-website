@@ -62,54 +62,58 @@ const PopularEvents = () => {
                 className="group animate-fade-in hover-lift overflow-hidden rounded-3xl border-white/10 bg-white/[0.03] backdrop-blur-xl transition-all duration-300 hover:border-orange-500/40"
                 style={{ animationDelay: `${index * 0.1}s` }}
               >
-                <div className="relative bg-black/40">
-                  <img
-                    src={event.cover_image_url ?? '/placeholder.svg'}
-                    alt={event.title}
-                    className="h-52 w-full object-contain transition-transform duration-500 group-hover:scale-105"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                <Link to={`/events/${event.slug || event.id}`} className="block">
+                  <div className="relative bg-black/40">
+                    <img
+                      src={event.cover_image_url ?? '/placeholder.svg'}
+                      alt={event.title}
+                      className="h-52 w-full object-contain transition-transform duration-500 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
 
-                  <div className="absolute left-3 top-3 flex w-14 flex-col items-center rounded-2xl border border-white/10 bg-black/70 py-2 text-center backdrop-blur-xl">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-orange-500">
-                      {start.toLocaleDateString(undefined, { month: 'short' })}
-                    </span>
-                    <span className="text-lg font-bold leading-none text-white">{start.getDate()}</span>
-                  </div>
-
-                  {formatPriceFrom(event.ticket_tiers) && (
-                    <div className="absolute bottom-3 right-3 rounded-full bg-gradient-orange px-3 py-1 text-sm font-bold text-black shadow-lg">
-                      From {formatPriceFrom(event.ticket_tiers)}
+                    <div className="absolute left-3 top-3 flex w-14 flex-col items-center rounded-2xl border border-white/10 bg-black/70 py-2 text-center backdrop-blur-xl">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-orange-500">
+                        {start.toLocaleDateString(undefined, { month: 'short' })}
+                      </span>
+                      <span className="text-lg font-bold leading-none text-white">{start.getDate()}</span>
                     </div>
-                  )}
-                </div>
+
+                    {formatPriceFrom(event.ticket_tiers) && (
+                      <div className="absolute bottom-3 right-3 rounded-full bg-gradient-orange px-3 py-1 text-sm font-bold text-black shadow-lg">
+                        From {formatPriceFrom(event.ticket_tiers)}
+                      </div>
+                    )}
+                  </div>
+                </Link>
 
                 <CardContent className="p-6">
-                  <h3 className="mb-3 text-xl font-semibold text-white transition-colors group-hover:text-orange-500">
-                    {event.title}
-                  </h3>
+                  <Link to={`/events/${event.slug || event.id}`} className="block">
+                    <h3 className="mb-3 text-xl font-semibold text-white transition-colors group-hover:text-orange-500">
+                      {event.title}
+                    </h3>
 
-                  <div className="mb-5 space-y-2 text-sm text-gray-400">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-orange-500" />
-                      <span>{event.venue_name}</span>
+                    <div className="mb-5 space-y-2 text-sm text-gray-400">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-orange-500" />
+                        <span>{event.venue_name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-orange-500" />
+                        <span>
+                          {start.toLocaleDateString(undefined, {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                          })}{' '}
+                          •{' '}
+                          {start.toLocaleTimeString(undefined, {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-orange-500" />
-                      <span>
-                        {start.toLocaleDateString(undefined, {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                        })}{' '}
-                        •{' '}
-                        {start.toLocaleTimeString(undefined, {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
-                      </span>
-                    </div>
-                  </div>
+                  </Link>
 
                   <div className="flex gap-2">
                     <Button asChild variant="outline" className="flex-1 rounded-full border-white/15 bg-white/5">

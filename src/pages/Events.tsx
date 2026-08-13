@@ -169,40 +169,44 @@ const Events = () => {
                   key={event.id}
                   className="overflow-hidden border-border bg-card transition-all duration-300 hover:border-primary/50"
                 >
-                  <div className="relative h-48 w-full bg-black/40">
-                    <img
-                      src={event.cover_image_url ?? '/placeholder.svg'}
-                      alt={event.title}
-                      className="h-full w-full object-contain"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-                    <div className="absolute left-3 top-3 flex w-14 flex-col items-center rounded-2xl border border-white/10 bg-black/70 py-2 text-center backdrop-blur-xl">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">
-                        {start.toLocaleDateString(undefined, { month: 'short' })}
-                      </span>
-                      <span className="text-lg font-bold leading-none text-white">{start.getDate()}</span>
-                    </div>
-                    {priceFromCents !== null && (
-                      <div className="absolute bottom-3 right-3 rounded-full bg-gradient-orange px-3 py-1 text-sm font-bold text-black shadow-lg">
-                        From ${(priceFromCents / 100).toFixed(0)}
-                      </div>
-                    )}
-                  </div>
-                  <CardContent className="p-6">
-                    <h3 className="mb-3 text-xl font-semibold text-white">{event.title}</h3>
-                    <div className="mb-5 space-y-2 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-primary" />
-                        <span>{event.venue_name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-primary" />
-                        <span>
-                          {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} •{' '}
-                          {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                  <Link to={`/events/${event.slug || event.id}`} className="block">
+                    <div className="relative h-48 w-full bg-black/40">
+                      <img
+                        src={event.cover_image_url ?? '/placeholder.svg'}
+                        alt={event.title}
+                        className="h-full w-full object-contain"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                      <div className="absolute left-3 top-3 flex w-14 flex-col items-center rounded-2xl border border-white/10 bg-black/70 py-2 text-center backdrop-blur-xl">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">
+                          {start.toLocaleDateString(undefined, { month: 'short' })}
                         </span>
+                        <span className="text-lg font-bold leading-none text-white">{start.getDate()}</span>
                       </div>
+                      {priceFromCents !== null && (
+                        <div className="absolute bottom-3 right-3 rounded-full bg-gradient-orange px-3 py-1 text-sm font-bold text-black shadow-lg">
+                          From ${(priceFromCents / 100).toFixed(0)}
+                        </div>
+                      )}
                     </div>
+                  </Link>
+                  <CardContent className="p-6">
+                    <Link to={`/events/${event.slug || event.id}`} className="block">
+                      <h3 className="mb-3 text-xl font-semibold text-white">{event.title}</h3>
+                      <div className="mb-5 space-y-2 text-sm text-muted-foreground">
+                        <div className="flex items-center gap-2">
+                          <MapPin className="h-4 w-4 text-primary" />
+                          <span>{event.venue_name}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4 text-primary" />
+                          <span>
+                            {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} •{' '}
+                            {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
                     <div className="flex gap-2">
                       <Button asChild variant="outline" className="flex-1 border-border">
                         <Link to={`/events/${event.slug || event.id}`}>
