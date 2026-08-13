@@ -103,6 +103,19 @@ const VenueFloorPlanPicker = ({ venue, floors, tableTypes, timeSlots, onSelectTa
     }
   }, [floorsWithTables, selectedFloorId]);
 
+  // Switching floors just swaps the <img> src - without warming the browser's
+  // cache first, that means showing the previous floor's plan (with the new
+  // floor's hotspots already overlaid on it) until the new image finishes
+  // downloading, which reads as "changes slowly" on anything but a fast
+  // connection. There are only ever a couple of floors, so preload them all
+  // up front rather than waiting for someone to actually switch.
+  useEffect(() => {
+    floorsWithTables.forEach((f) => {
+      const img = new Image();
+      img.src = f.image_url;
+    });
+  }, [floorsWithTables]);
+
   const activeFloor = floorsWithTables.find((f) => f.id === selectedFloorId);
   const hotspotTables = activeFloor ? positionedTableTypes.filter((t) => t.floor_id === activeFloor.id) : [];
 
