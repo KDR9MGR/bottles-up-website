@@ -19,5 +19,6 @@ export const SITE_CONTENT_DEFAULTS: SiteContent = {
   hero_headline: null,
   hero_subtext: null,
   payments_mode: 'test',
+  bottlesup_fee_bps: 0,
   updated_at: '',
 };

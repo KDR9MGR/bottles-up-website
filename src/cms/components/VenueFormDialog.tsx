@@ -32,6 +32,7 @@ type VenueRow = Database['public']['Tables']['site_venues']['Row'];
 type TimeSlotRow = Database['public']['Tables']['site_venue_time_slots']['Row'];
 type TableTypeRow = Database['public']['Tables']['site_table_types']['Row'];
 type FloorRow = Database['public']['Tables']['site_venue_floors']['Row'];
+type BottleRow = Database['public']['Tables']['site_bottles']['Row'];
 
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -76,6 +77,19 @@ interface TableTypeDraft {
   policyNote: string;
 }
 
+interface BottleDraft {
+  id?: string;
+  name: string;
+  size: string;
+  description: string;
+  priceDollars: string;
+  category: string;
+  imageUrl: string | null;
+  isAvailable: boolean;
+  isSoldOut: boolean;
+  stockQuantity: string;
+}
+
 interface VenueFormDialogProps {
   venue: VenueRow | null;
   open: boolean;
@@ -109,6 +123,18 @@ const emptyTableType: TableTypeDraft = {
   policyNote: '',
 };
 
+const emptyBottle: BottleDraft = {
+  name: '',
+  size: '',
+  description: '',
+  priceDollars: '',
+  category: '',
+  imageUrl: null,
+  isAvailable: true,
+  isSoldOut: false,
+  stockQuantity: '',
+};
+
 const VENUE_CATEGORIES = ['Nightclub', 'Rooftop', 'Lounge', 'Restaurant', 'Beach Club', 'Patio'];
 const PRIVACY_LEVELS = ['Private', 'Semi-Private', 'Open'];
 
@@ -129,6 +155,8 @@ const emptyForm = {
   musicGenres: '',
   bookingStartDate: '',
   bookingEndDate: '',
+  taxRatePercent: '',
+  showBottleImages: true,
 };
 
 const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialogProps) => {
@@ -140,11 +168,14 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
   const [originalFloorIds, setOriginalFloorIds] = useState<string[]>([]);
   const [tableTypes, setTableTypes] = useState<TableTypeDraft[]>([]);
   const [originalTableTypeIds, setOriginalTableTypeIds] = useState<string[]>([]);
+  const [bottles, setBottles] = useState<BottleDraft[]>([]);
+  const [originalBottleIds, setOriginalBottleIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [uploadingTableImage, setUploadingTableImage] = useState<number | null>(null);
   const [uploadingFloorImage, setUploadingFloorImage] = useState<number | null>(null);
+  const [uploadingBottleImage, setUploadingBottleImage] = useState<number | null>(null);
   const [placementIndex, setPlacementIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -168,6 +199,8 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         musicGenres: venue.music_genres ?? '',
         bookingStartDate: venue.booking_start_date ?? '',
         bookingEndDate: venue.booking_end_date ?? '',
+        taxRatePercent: venue.tax_rate_bps ? (venue.tax_rate_bps / 100).toString() : '',
+        showBottleImages: venue.show_bottle_images,
       });
 
       supabase
@@ -235,6 +268,30 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
           );
           setOriginalTableTypeIds(rows.map((t) => t.id));
         });
+
+      supabase
+        .from('site_bottles')
+        .select('*')
+        .eq('venue_id', venue.id)
+        .order('sort_order', { ascending: true })
+        .then(({ data }) => {
+          const rows = (data ?? []) as BottleRow[];
+          setBottles(
+            rows.map((b) => ({
+              id: b.id,
+              name: b.name,
+              size: b.size ?? '',
+              description: b.description ?? '',
+              priceDollars: (b.price_cents / 100).toString(),
+              category: b.category ?? '',
+              imageUrl: b.image_url,
+              isAvailable: b.is_available,
+              isSoldOut: b.is_sold_out,
+              stockQuantity: b.stock_quantity?.toString() ?? '',
+            })),
+          );
+          setOriginalBottleIds(rows.map((b) => b.id));
+        });
     } else {
       setForm(emptyForm);
       setSlots([{ dayOfWeek: '5', startTime: '22:00', label: '' }]);
@@ -243,6 +300,8 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
       setOriginalFloorIds([]);
       setTableTypes([{ ...emptyTableType }]);
       setOriginalTableTypeIds([]);
+      setBottles([]);
+      setOriginalBottleIds([]);
     }
   }, [venue, open]);
 
@@ -318,6 +377,23 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
     }
   };
 
+  const addBottle = () => setBottles((prev) => [...prev, { ...emptyBottle }]);
+  const removeBottle = (index: number) => setBottles((prev) => prev.filter((_, i) => i !== index));
+  const updateBottle = (index: number, patch: Partial<BottleDraft>) =>
+    setBottles((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
+
+  const handleBottleImageUpload = async (index: number, file: File) => {
+    setUploadingBottleImage(index);
+    try {
+      const url = await uploadEventMedia(file);
+      updateBottle(index, { imageUrl: url });
+    } catch (error) {
+      toast({ title: 'Upload failed', description: String(error), variant: 'destructive' });
+    } finally {
+      setUploadingBottleImage(null);
+    }
+  };
+
   const handleSave = async () => {
     if (!form.name) {
       toast({ title: 'Missing required fields', description: 'Venue name is required.', variant: 'destructive' });
@@ -365,6 +441,19 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
       return;
     }
 
+    const incompleteBottleIndex = bottles.findIndex((b) => {
+      const started = b.name || b.description || b.priceDollars || b.category || b.imageUrl;
+      return started && (!b.name || !b.priceDollars);
+    });
+    if (incompleteBottleIndex !== -1) {
+      toast({
+        title: `Bottle #${incompleteBottleIndex + 1} is incomplete`,
+        description: 'Name and price are required for every bottle you start filling in.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       // slug is intentionally omitted - a DB trigger (set_venue_slug) generates it
@@ -385,6 +474,8 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         music_genres: form.musicGenres || null,
         booking_start_date: form.bookingStartDate || null,
         booking_end_date: form.bookingEndDate || null,
+        tax_rate_bps: Math.round((parseFloat(form.taxRatePercent) || 0) * 100),
+        show_bottle_images: form.showBottleImages,
       };
 
       let venueId = venue?.id;
@@ -506,6 +597,36 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
           if (error) throw error;
         } else {
           const { error } = await supabase.from('site_table_types').insert(tableTypePayload);
+          if (error) throw error;
+        }
+      }
+
+      const keptBottleIds = new Set(bottles.filter((b) => b.id).map((b) => b.id!));
+      const removedBottleIds = originalBottleIds.filter((id) => !keptBottleIds.has(id));
+      if (removedBottleIds.length > 0) {
+        const { error } = await supabase.from('site_bottles').delete().in('id', removedBottleIds);
+        if (error) throw error;
+      }
+      for (const [index, bottle] of bottles.entries()) {
+        if (!bottle.name || !bottle.priceDollars) continue;
+        const bottlePayload: Database['public']['Tables']['site_bottles']['Insert'] = {
+          venue_id: venueId!,
+          name: bottle.name,
+          size: bottle.size || null,
+          description: bottle.description || null,
+          price_cents: Math.round((parseFloat(bottle.priceDollars) || 0) * 100),
+          category: bottle.category || null,
+          image_url: bottle.imageUrl,
+          is_available: bottle.isAvailable,
+          is_sold_out: bottle.isSoldOut,
+          stock_quantity: bottle.stockQuantity ? parseInt(bottle.stockQuantity, 10) : null,
+          sort_order: index,
+        };
+        if (bottle.id) {
+          const { error } = await supabase.from('site_bottles').update(bottlePayload).eq('id', bottle.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from('site_bottles').insert(bottlePayload);
           if (error) throw error;
         }
       }
@@ -652,6 +773,24 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
                 <Input type="date" value={form.bookingEndDate} onChange={(e) => updateField('bookingEndDate', e.target.value)} />
               </div>
             </div>
+          </div>
+
+          <div className="space-y-2 rounded-lg border border-gray-800 p-4">
+            <div>
+              <Label>Sales Tax Rate (%, optional)</Label>
+              <p className="text-xs text-gray-500">
+                Applied to the deposit + bottle subtotal at checkout, on top of the platform-wide BottlesUp fee (set in
+                Site Content).
+              </p>
+            </div>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.taxRatePercent}
+              onChange={(e) => updateField('taxRatePercent', e.target.value)}
+              placeholder="e.g. 13"
+            />
           </div>
 
           <div className="space-y-3 rounded-lg border border-gray-800 p-4">
@@ -1061,6 +1200,124 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
               );
             })}
           </div>
+
+          <div className="space-y-3 rounded-lg border border-gray-800 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Bottle Menu</Label>
+                <p className="text-xs text-gray-500">Bottles guests can pre-order onto their table at checkout.</p>
+              </div>
+              <Button type="button" size="sm" variant="outline" onClick={addBottle}>
+                <Plus className="mr-1 h-3 w-3" />
+                Add Bottle
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={form.showBottleImages}
+                onCheckedChange={(checked) => updateField('showBottleImages', checked)}
+              />
+              <Label className="text-xs text-gray-400">Show bottle images to customers (off keeps name/price, hides photos)</Label>
+            </div>
+
+            {bottles.map((bottle, i) => (
+              <div key={i} className="space-y-2 rounded-lg border border-gray-800 p-3">
+                <div className="flex items-start gap-3">
+                  {bottle.imageUrl ? (
+                    <img src={bottle.imageUrl} alt="Bottle" className="h-16 w-16 shrink-0 rounded object-cover" />
+                  ) : (
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded border border-dashed border-gray-700 text-[9px] text-gray-600">
+                      No image
+                    </div>
+                  )}
+                  <div className="flex-1 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        placeholder="Name (e.g. Don Julio 1942)"
+                        value={bottle.name}
+                        onChange={(e) => updateBottle(i, { name: e.target.value })}
+                      />
+                      <Button type="button" variant="outline" size="sm" disabled={uploadingBottleImage === i} asChild>
+                        <label className="cursor-pointer">
+                          {uploadingBottleImage === i ? 'Uploading...' : 'Upload Image'}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => e.target.files?.[0] && handleBottleImageUpload(i, e.target.files[0])}
+                          />
+                        </label>
+                      </Button>
+                    </div>
+                    <Input
+                      placeholder="Description (optional)"
+                      value={bottle.description}
+                      onChange={(e) => updateBottle(i, { description: e.target.value })}
+                    />
+                    <div className="grid grid-cols-4 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-gray-500">Size</Label>
+                        <Input
+                          placeholder="e.g. 750ml"
+                          value={bottle.size}
+                          onChange={(e) => updateBottle(i, { size: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-gray-500">Category</Label>
+                        <Input
+                          placeholder="e.g. Tequila"
+                          value={bottle.category}
+                          onChange={(e) => updateBottle(i, { category: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-gray-500">Price $</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={bottle.priceDollars}
+                          onChange={(e) => updateBottle(i, { priceDollars: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-gray-500">Stock (optional)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          placeholder="Unlimited"
+                          value={bottle.stockQuantity}
+                          onChange={(e) => updateBottle(i, { stockQuantity: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 pt-1">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={bottle.isAvailable}
+                          onCheckedChange={(checked) => updateBottle(i, { isAvailable: checked })}
+                        />
+                        <Label className="text-xs text-gray-400">Open for pre-order</Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={bottle.isSoldOut}
+                          onCheckedChange={(checked) => updateBottle(i, { isSoldOut: checked })}
+                        />
+                        <Label className="text-xs text-gray-400">Sold out</Label>
+                      </div>
+                    </div>
+                  </div>
+                  <Button type="button" size="icon" variant="ghost" onClick={() => removeBottle(i)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+            {bottles.length === 0 && <p className="text-xs text-gray-600">No bottles yet - table-only bookings still work fine.</p>}
+          </div>
         </div>
 
         <DialogFooter>
@@ -1069,7 +1326,14 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
           </Button>
           <Button
             onClick={handleSave}
-            disabled={saving || uploadingCover || uploadingGallery || uploadingTableImage !== null || uploadingFloorImage !== null}
+            disabled={
+              saving ||
+              uploadingCover ||
+              uploadingGallery ||
+              uploadingTableImage !== null ||
+              uploadingFloorImage !== null ||
+              uploadingBottleImage !== null
+            }
             className="bg-gradient-orange text-black font-bold hover:opacity-90"
           >
             {saving ? 'Saving...' : 'Save Venue'}

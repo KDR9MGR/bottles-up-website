@@ -25,6 +25,7 @@ Deno.serve(async (req: Request) => {
       customer_name,
       customer_email,
       customer_phone,
+      bottles: requestedBottles,
     } = await req.json();
 
     if (!venue_id || !table_type_id || !time_slot_id || !booking_date || !customer_name || !customer_email) {
@@ -38,6 +39,23 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'Invalid booking date' }, 400);
     }
 
+    // Bottles are optional - a plain table-only booking is still valid. When present,
+    // only { bottle_id, quantity } is trusted from the client; name/price are always
+    // re-read from the DB below, same as the table type itself.
+    const bottleRequests: { bottle_id: string; quantity: number }[] = [];
+    if (requestedBottles !== undefined) {
+      if (!Array.isArray(requestedBottles)) {
+        return json({ error: 'Invalid bottles' }, 400);
+      }
+      for (const b of requestedBottles) {
+        const qty = Number(b?.quantity);
+        if (typeof b?.bottle_id !== 'string' || !b.bottle_id || !Number.isInteger(qty) || qty < 1) {
+          return json({ error: 'Invalid bottle selection' }, 400);
+        }
+        bottleRequests.push({ bottle_id: b.bottle_id, quantity: qty });
+      }
+    }
+
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -45,10 +63,11 @@ Deno.serve(async (req: Request) => {
 
     const { data: content } = await supabase
       .from('site_content')
-      .select('payments_mode')
+      .select('payments_mode, bottlesup_fee_bps')
       .eq('id', 1)
       .maybeSingle();
     const paymentsMode = content?.payments_mode === 'live' ? 'live' : 'test';
+    const bottlesupFeeBps = content?.bottlesup_fee_bps ?? 0;
 
     const stripeSecretKey =
       paymentsMode === 'live'
@@ -72,7 +91,7 @@ Deno.serve(async (req: Request) => {
     // the time slot separately and cross-check venue_id in application code instead.
     const { data: tableType, error: tableTypeError } = await supabase
       .from('site_table_types')
-      .select('*, venue:site_venues!inner(id, name, status, booking_start_date, booking_end_date)')
+      .select('*, venue:site_venues!inner(id, name, status, booking_start_date, booking_end_date, tax_rate_bps)')
       .eq('id', table_type_id)
       .eq('venue_id', venue_id)
       .single();
@@ -115,7 +134,7 @@ Deno.serve(async (req: Request) => {
 
     // Hourly-priced tables: the customer picks how many hours, total scales with it.
     // Flat-priced tables charge the fixed deposit, exactly as before.
-    let amountCents: number;
+    let depositCents: number;
     let bookedHours: number | null = null;
     let productLabel: string;
 
@@ -128,11 +147,11 @@ Deno.serve(async (req: Request) => {
       if (!tableType.hourly_rate_cents) {
         return json({ error: 'This table is not configured for booking yet' }, 500);
       }
-      amountCents = tableType.hourly_rate_cents * requestedHours;
+      depositCents = tableType.hourly_rate_cents * requestedHours;
       bookedHours = requestedHours;
       productLabel = `${tableType.venue.name} - ${tableType.name} table (${requestedHours} hour${requestedHours === 1 ? '' : 's'})`;
     } else {
-      amountCents = tableType.deposit_cents;
+      depositCents = tableType.deposit_cents;
       productLabel = `${tableType.venue.name} - ${tableType.name} table (deposit)`;
     }
 
@@ -151,6 +170,65 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'No tables of this type left for that date and time' }, 409);
     }
 
+    // Bottles: re-read from the DB (never trust client-supplied prices), scoped to this
+    // venue, and must currently be orderable. Best-effort stock check against already-paid
+    // orders for bottles that track stock_quantity - same trade-off as the table capacity
+    // check above.
+    type BottleLine = { bottle_id: string; name: string; size: string | null; unit_price_cents: number; quantity: number; line_total_cents: number };
+    const bottleLines: BottleLine[] = [];
+    let bottleSubtotalCents = 0;
+
+    if (bottleRequests.length > 0) {
+      const bottleIds = bottleRequests.map((b) => b.bottle_id);
+      const { data: bottleRows, error: bottlesError } = await supabase
+        .from('site_bottles')
+        .select('id, venue_id, name, size, price_cents, currency, is_available, is_sold_out, stock_quantity')
+        .in('id', bottleIds);
+
+      if (bottlesError) {
+        console.error('bottles lookup error:', bottlesError);
+        return json({ error: 'Failed to load bottles' }, 500);
+      }
+
+      const bottleById = new Map((bottleRows ?? []).map((b) => [b.id, b]));
+
+      for (const bottleReq of bottleRequests) {
+        const bottle = bottleById.get(bottleReq.bottle_id);
+        if (!bottle || bottle.venue_id !== venue_id || !bottle.is_available || bottle.is_sold_out) {
+          return json({ error: 'One of the selected bottles is no longer available' }, 400);
+        }
+
+        if (bottle.stock_quantity !== null) {
+          const { data: paidLines } = await supabase
+            .from('site_table_booking_bottles')
+            .select('quantity, booking:site_table_bookings!inner(status)')
+            .eq('bottle_id', bottle.id)
+            .eq('booking.status', 'paid');
+          const soldSoFar = (paidLines ?? []).reduce((sum: number, l: { quantity: number }) => sum + l.quantity, 0);
+          if (soldSoFar + bottleReq.quantity > bottle.stock_quantity) {
+            return json({ error: `Not enough "${bottle.name}" left in stock` }, 409);
+          }
+        }
+
+        const lineTotal = bottle.price_cents * bottleReq.quantity;
+        bottleSubtotalCents += lineTotal;
+        bottleLines.push({
+          bottle_id: bottle.id,
+          name: bottle.name,
+          size: bottle.size,
+          unit_price_cents: bottle.price_cents,
+          quantity: bottleReq.quantity,
+          line_total_cents: lineTotal,
+        });
+      }
+    }
+
+    const preTaxSubtotalCents = depositCents + bottleSubtotalCents;
+    const taxRateBps = tableType.venue.tax_rate_bps ?? 0;
+    const taxCents = Math.round((preTaxSubtotalCents * taxRateBps) / 10000);
+    const bottlesUpFeeCents = Math.round((preTaxSubtotalCents * bottlesupFeeBps) / 10000);
+    const totalCents = preTaxSubtotalCents + taxCents + bottlesUpFeeCents;
+
     const { data: booking, error: bookingError } = await supabase
       .from('site_table_bookings')
       .insert({
@@ -163,7 +241,11 @@ Deno.serve(async (req: Request) => {
         customer_phone: customer_phone ?? null,
         guest_count: guests,
         hours: bookedHours,
-        amount_total_cents: amountCents,
+        deposit_cents: depositCents,
+        bottle_subtotal_cents: bottleSubtotalCents,
+        tax_cents: taxCents,
+        bottlesup_fee_cents: bottlesUpFeeCents,
+        amount_total_cents: totalCents,
         currency: tableType.currency,
         status: 'pending',
       })
@@ -175,25 +257,65 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'Failed to start booking' }, 500);
     }
 
+    if (bottleLines.length > 0) {
+      const { error: lineItemsError } = await supabase.from('site_table_booking_bottles').insert(
+        bottleLines.map((b) => ({
+          booking_id: booking.id,
+          bottle_id: b.bottle_id,
+          bottle_name: b.name,
+          size: b.size,
+          unit_price_cents: b.unit_price_cents,
+          quantity: b.quantity,
+          line_total_cents: b.line_total_cents,
+        })),
+      );
+      if (lineItemsError) {
+        console.error('booking bottle line items insert error:', lineItemsError);
+        return json({ error: 'Failed to start booking' }, 500);
+      }
+    }
+
     const origin = req.headers.get('origin') ?? '';
     const allowedOrigins = (Deno.env.get('ALLOWED_ORIGIN') ?? '').split(',').map((o: string) => o.trim());
     const siteUrl = allowedOrigins.includes(origin) || isPreviewOrLocalOrigin(origin)
       ? origin
       : (Deno.env.get('SITE_URL') ?? 'http://localhost:5173');
 
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+      {
+        price_data: {
+          currency: tableType.currency,
+          product_data: { name: productLabel },
+          unit_amount: depositCents,
+        },
+        quantity: 1,
+      },
+      ...bottleLines.map((b) => ({
+        price_data: {
+          currency: tableType.currency,
+          product_data: { name: b.size ? `${b.name} (${b.size})` : b.name },
+          unit_amount: b.unit_price_cents,
+        },
+        quantity: b.quantity,
+      })),
+    ];
+
+    const taxAndFeeCents = taxCents + bottlesUpFeeCents;
+    if (taxAndFeeCents > 0) {
+      lineItems.push({
+        price_data: {
+          currency: tableType.currency,
+          product_data: { name: 'Taxes & fees' },
+          unit_amount: taxAndFeeCents,
+        },
+        quantity: 1,
+      });
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       customer_email,
-      line_items: [
-        {
-          price_data: {
-            currency: tableType.currency,
-            product_data: { name: productLabel },
-            unit_amount: amountCents,
-          },
-          quantity: 1,
-        },
-      ],
+      line_items: lineItems,
       adaptive_pricing: { enabled: false },
       metadata: { booking_id: booking.id },
       success_url: `${siteUrl}/booking/success?session_id={CHECKOUT_SESSION_ID}`,

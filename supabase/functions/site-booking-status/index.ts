@@ -108,7 +108,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const bookingSelect =
-      'id, status, confirmation_code, customer_name, guest_count, booking_date, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)';
+      'id, status, confirmation_code, customer_name, guest_count, booking_date, deposit_cents, bottle_subtotal_cents, tax_cents, bottlesup_fee_cents, amount_total_cents, currency, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)';
 
     const { data: booking, error: bookingError } = await supabase
       .from('site_table_bookings')
@@ -139,6 +139,11 @@ Deno.serve(async (req: Request) => {
     const venue = currentBooking.site_venues as unknown as { name: string } | null;
     const timeSlot = currentBooking.site_venue_time_slots as unknown as { start_time: string } | null;
 
+    const { data: bottleLines } = await supabase
+      .from('site_table_booking_bottles')
+      .select('bottle_name, size, quantity, unit_price_cents, line_total_cents')
+      .eq('booking_id', currentBooking.id);
+
     return json({
       status: 'paid',
       booking: {
@@ -149,6 +154,19 @@ Deno.serve(async (req: Request) => {
         venueName: venue?.name ?? '',
         bookingDate: currentBooking.booking_date,
         startTime: timeSlot?.start_time ?? '',
+        depositCents: currentBooking.deposit_cents,
+        bottleSubtotalCents: currentBooking.bottle_subtotal_cents,
+        taxCents: currentBooking.tax_cents,
+        bottlesupFeeCents: currentBooking.bottlesup_fee_cents,
+        totalCents: currentBooking.amount_total_cents,
+        currency: currentBooking.currency,
+        bottles: (bottleLines ?? []).map((b) => ({
+          name: b.bottle_name,
+          size: b.size,
+          quantity: b.quantity,
+          unitPriceCents: b.unit_price_cents,
+          lineTotalCents: b.line_total_cents,
+        })),
       },
     });
   } catch (error) {

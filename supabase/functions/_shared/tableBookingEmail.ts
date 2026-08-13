@@ -17,6 +17,14 @@ export function generateConfirmationCode(): string {
   return code;
 }
 
+export interface BottleLineItem {
+  bottle_name: string;
+  size: string | null;
+  quantity: number;
+  unit_price_cents: number;
+  line_total_cents: number;
+}
+
 export async function sendTableBookingEmail(opts: {
   toEmail: string;
   toName: string;
@@ -26,6 +34,11 @@ export async function sendTableBookingEmail(opts: {
   timeSlotLabel: string; // e.g. "10:00 PM"
   guestCount: number;
   depositCents: number;
+  bottleSubtotalCents?: number;
+  taxCents?: number;
+  bottlesupFeeCents?: number;
+  totalCents: number;
+  bottles?: BottleLineItem[];
   currency: string;
   hours?: number | null;
   confirmationCode: string;
@@ -42,11 +55,42 @@ export async function sendTableBookingEmail(opts: {
     day: 'numeric',
     timeZone: 'UTC',
   });
-  const amountFormatted = `$${(opts.depositCents / 100).toFixed(2)} ${opts.currency.toUpperCase()}`;
-  const amountLabel = opts.hours ? 'Total paid' : 'Deposit paid';
+  const money = (cents: number) => `$${(cents / 100).toFixed(2)} ${opts.currency.toUpperCase()}`;
+  const depositLabel = opts.hours ? `Table (${opts.hours} hour${opts.hours === 1 ? '' : 's'})` : 'Table deposit';
   const durationLine = opts.hours
     ? `<br/>Duration: ${opts.hours} hour${opts.hours === 1 ? '' : 's'}`
     : '';
+
+  const bottleRows = (opts.bottles ?? [])
+    .map(
+      (b) => `
+        <tr>
+          <td style="padding: 4px 0; color: #ccc;">${b.bottle_name}${b.size ? ` (${b.size})` : ''} &times; ${b.quantity}</td>
+          <td style="padding: 4px 0; color: #ccc; text-align: right;">${money(b.line_total_cents)}</td>
+        </tr>`,
+    )
+    .join('');
+
+  const summaryRow = (label: string, cents: number | undefined) =>
+    cents
+      ? `<tr><td style="padding: 4px 0; color: #ccc;">${label}</td><td style="padding: 4px 0; color: #ccc; text-align: right;">${money(cents)}</td></tr>`
+      : '';
+
+  const orderSummaryHtml = `
+    <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
+      <tr>
+        <td style="padding: 4px 0; color: #ccc;">${depositLabel}</td>
+        <td style="padding: 4px 0; color: #ccc; text-align: right;">${money(opts.depositCents)}</td>
+      </tr>
+      ${bottleRows}
+      ${summaryRow('Tax', opts.taxCents)}
+      ${summaryRow('BottlesUp fee', opts.bottlesupFeeCents)}
+      <tr>
+        <td style="padding: 8px 0 0; color: #fff; font-weight: bold; border-top: 1px solid #333;">Total paid</td>
+        <td style="padding: 8px 0 0; color: #fff; font-weight: bold; text-align: right; border-top: 1px solid #333;">${money(opts.totalCents)}</td>
+      </tr>
+    </table>
+  `;
 
   const html = `
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0a0a0a; color: #fff; border-radius: 16px;">
@@ -55,7 +99,8 @@ export async function sendTableBookingEmail(opts: {
       <p>You're confirmed for:</p>
       <h2 style="margin-bottom: 4px;">${opts.tableTypeName} - ${opts.venueName}</h2>
       <p style="color: #999; margin-top: 0;">${formattedDate}<br/>Arrival: ${opts.timeSlotLabel}${durationLine}</p>
-      <p><strong>${opts.guestCount}</strong> guests &middot; ${amountLabel}: <strong>${amountFormatted}</strong></p>
+      <p><strong>${opts.guestCount}</strong> guests</p>
+      ${orderSummaryHtml}
       <div style="text-align: center; margin: 24px 0;">
         <img src="cid:qrcode" alt="Booking QR code" width="200" height="200" style="background: #fff; padding: 12px; border-radius: 8px;" />
       </div>

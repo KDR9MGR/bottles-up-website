@@ -134,6 +134,11 @@ export async function fulfillTableBooking(
 
   if (!confirmationCode) return;
 
+  const { data: bottleLines } = await supabase
+    .from('site_table_booking_bottles')
+    .select('bottle_name, size, quantity, unit_price_cents, line_total_cents')
+    .eq('booking_id', bookingId);
+
   const qrDataUrl = await QRCode.toDataURL(confirmationCode, { width: 400, margin: 1 });
   const tableType = booking.table_type as { name: string };
   const venue = booking.venue as { name: string };
@@ -147,7 +152,12 @@ export async function fulfillTableBooking(
     bookingDate: booking.booking_date,
     timeSlotLabel: formatTimeSlot(timeSlot.start_time),
     guestCount: booking.guest_count,
-    depositCents: booking.amount_total_cents,
+    depositCents: booking.deposit_cents,
+    bottleSubtotalCents: booking.bottle_subtotal_cents,
+    taxCents: booking.tax_cents,
+    bottlesupFeeCents: booking.bottlesup_fee_cents,
+    totalCents: booking.amount_total_cents,
+    bottles: bottleLines ?? [],
     currency: booking.currency,
     hours: booking.hours,
     confirmationCode,

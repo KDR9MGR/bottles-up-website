@@ -15,7 +15,16 @@ type PaidBooking = {
   venueName: string;
   bookingDate: string;
   startTime: string;
+  depositCents: number;
+  bottleSubtotalCents: number;
+  taxCents: number;
+  bottlesupFeeCents: number;
+  totalCents: number;
+  currency: string;
+  bottles: { name: string; size: string | null; quantity: number; unitPriceCents: number; lineTotalCents: number }[];
 };
+
+const money = (cents: number, currency: string) => `$${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
 
 const REDIRECT_SECONDS = 15;
 
@@ -101,6 +110,40 @@ const BookingSuccess = () => {
         </p>
 
         {cardData && <TicketCard ticket={cardData} label={booking ? 'VIP Table Reservation' : undefined} />}
+
+        {booking && (
+          <div className="mt-4 w-full max-w-sm space-y-2 rounded-2xl border border-gray-800 bg-gray-950 p-5 text-left text-sm">
+            <div className="flex justify-between text-gray-300">
+              <span>{booking.tableTypeName}</span>
+              <span>{money(booking.depositCents, booking.currency)}</span>
+            </div>
+            {booking.bottles.map((b, i) => (
+              <div key={i} className="flex justify-between text-gray-300">
+                <span>
+                  {b.name}
+                  {b.size ? ` (${b.size})` : ''} &times; {b.quantity}
+                </span>
+                <span>{money(b.lineTotalCents, booking.currency)}</span>
+              </div>
+            ))}
+            {booking.taxCents > 0 && (
+              <div className="flex justify-between text-gray-500">
+                <span>Tax</span>
+                <span>{money(booking.taxCents, booking.currency)}</span>
+              </div>
+            )}
+            {booking.bottlesupFeeCents > 0 && (
+              <div className="flex justify-between text-gray-500">
+                <span>BottlesUp fee</span>
+                <span>{money(booking.bottlesupFeeCents, booking.currency)}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t border-gray-800 pt-2 font-semibold text-white">
+              <span>Total paid</span>
+              <span>{money(booking.totalCents, booking.currency)}</span>
+            </div>
+          </div>
+        )}
 
         <p className="mt-6 text-sm text-gray-500">
           Taking you back home in {secondsLeft}s...

@@ -57,6 +57,11 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'Booking has no confirmation to resend (not paid yet)' }, 400);
     }
 
+    const { data: bottleLines } = await supabase
+      .from('site_table_booking_bottles')
+      .select('bottle_name, size, quantity, unit_price_cents, line_total_cents')
+      .eq('booking_id', booking_id);
+
     const qrDataUrl = await QRCode.toDataURL(booking.confirmation_code, { width: 400, margin: 1 });
     const tableType = booking.table_type as { name: string };
     const venue = booking.venue as { name: string };
@@ -70,7 +75,12 @@ Deno.serve(async (req: Request) => {
       bookingDate: booking.booking_date,
       timeSlotLabel: formatTimeSlot(timeSlot.start_time),
       guestCount: booking.guest_count,
-      depositCents: booking.amount_total_cents,
+      depositCents: booking.deposit_cents,
+      bottleSubtotalCents: booking.bottle_subtotal_cents,
+      taxCents: booking.tax_cents,
+      bottlesupFeeCents: booking.bottlesup_fee_cents,
+      totalCents: booking.amount_total_cents,
+      bottles: bottleLines ?? [],
       currency: booking.currency,
       hours: booking.hours,
       confirmationCode: booking.confirmation_code,

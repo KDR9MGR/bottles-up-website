@@ -146,6 +146,24 @@ const CmsContent = () => {
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-2">
+            <Label className="text-gray-300">BottlesUp Fee (%)</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.1"
+              value={((form.bottlesup_fee_bps ?? 0) / 100).toString()}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  bottlesup_fee_bps: Math.round((parseFloat(e.target.value) || 0) * 100),
+                }))
+              }
+            />
+            <p className="text-xs text-gray-500">
+              Added to every VIP table deposit + bottle order at checkout, on top of each venue's tax rate.
+            </p>
+          </div>
         </CardContent>
       </Card>
 

@@ -7,6 +7,7 @@ export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 export type PaymentsMode = 'test' | 'live';
 export type ScanResult = 'ok' | 'already_checked_in' | 'not_paid' | 'not_found' | 'expired';
 export type PricingMode = 'flat' | 'hourly';
+export type FulfillmentStatus = 'confirmed' | 'preparing' | 'served' | 'completed';
 
 export interface Database {
   public: {
@@ -187,11 +188,39 @@ export interface Database {
           dress_code: string | null;
           capacity: number | null;
           music_genres: string | null;
+          tax_rate_bps: number;
+          show_bottle_images: boolean;
           created_at: string;
           updated_at: string;
         };
         Insert: Partial<Database['public']['Tables']['site_venues']['Row']> & { name: string };
         Update: Partial<Database['public']['Tables']['site_venues']['Row']>;
+        Relationships: [];
+      };
+      site_bottles: {
+        Row: {
+          id: string;
+          venue_id: string;
+          name: string;
+          size: string | null;
+          description: string | null;
+          price_cents: number;
+          currency: string;
+          category: string | null;
+          image_url: string | null;
+          is_available: boolean;
+          is_sold_out: boolean;
+          stock_quantity: number | null;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['site_bottles']['Row']> & {
+          venue_id: string;
+          name: string;
+          price_cents: number;
+        };
+        Update: Partial<Database['public']['Tables']['site_bottles']['Row']>;
         Relationships: [];
       };
       site_venue_floors: {
@@ -284,11 +313,16 @@ export interface Database {
           customer_phone: string | null;
           guest_count: number;
           amount_total_cents: number;
+          deposit_cents: number;
+          bottle_subtotal_cents: number;
+          tax_cents: number;
+          bottlesup_fee_cents: number;
           currency: string;
           hours: number | null;
           stripe_checkout_session_id: string | null;
           stripe_payment_intent_id: string | null;
           status: OrderStatus;
+          fulfillment_status: FulfillmentStatus;
           confirmation_code: string | null;
           confirmation_sent_at: string | null;
           checked_in_at: string | null;
@@ -307,6 +341,28 @@ export interface Database {
           amount_total_cents: number;
         };
         Update: Partial<Database['public']['Tables']['site_table_bookings']['Row']>;
+        Relationships: [];
+      };
+      site_table_booking_bottles: {
+        Row: {
+          id: string;
+          booking_id: string;
+          bottle_id: string | null;
+          bottle_name: string;
+          size: string | null;
+          unit_price_cents: number;
+          quantity: number;
+          line_total_cents: number;
+          created_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['site_table_booking_bottles']['Row']> & {
+          booking_id: string;
+          bottle_name: string;
+          unit_price_cents: number;
+          quantity: number;
+          line_total_cents: number;
+        };
+        Update: Partial<Database['public']['Tables']['site_table_booking_bottles']['Row']>;
         Relationships: [];
       };
       audit_log: {
@@ -365,6 +421,7 @@ export interface Database {
           hero_headline: string | null;
           hero_subtext: string | null;
           payments_mode: PaymentsMode;
+          bottlesup_fee_bps: number;
           updated_at: string;
         };
         Insert: Partial<Database['public']['Tables']['site_content']['Row']>;

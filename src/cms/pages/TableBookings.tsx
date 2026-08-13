@@ -20,11 +20,12 @@ import { Mail, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { sessionMode, type PaymentModeFilter } from '../lib/paymentMode';
-import type { Database, OrderStatus } from '@/types/database';
+import type { Database, FulfillmentStatus, OrderStatus } from '@/types/database';
 
 type BookingRow = Database['public']['Tables']['site_table_bookings']['Row'] & {
   site_venues: { name: string } | null;
   site_table_types: { name: string } | null;
+  site_table_booking_bottles: { bottle_name: string; size: string | null; quantity: number }[];
 };
 
 const statusVariant: Record<OrderStatus, 'default' | 'secondary' | 'destructive'> = {
@@ -32,6 +33,13 @@ const statusVariant: Record<OrderStatus, 'default' | 'secondary' | 'destructive'
   pending: 'secondary',
   failed: 'destructive',
   refunded: 'destructive',
+};
+
+const FULFILLMENT_LABELS: Record<FulfillmentStatus, string> = {
+  confirmed: 'Confirmed',
+  preparing: 'Preparing',
+  served: 'Served',
+  completed: 'Completed',
 };
 
 const CmsTableBookings = () => {
@@ -47,10 +55,19 @@ const CmsTableBookings = () => {
     setLoading(true);
     const { data } = await supabase
       .from('site_table_bookings')
-      .select('*, site_venues(name), site_table_types(name)')
+      .select('*, site_venues(name), site_table_types(name), site_table_booking_bottles(bottle_name, size, quantity)')
       .order('created_at', { ascending: false });
     setBookings((data as BookingRow[]) ?? []);
     setLoading(false);
+  };
+
+  const handleFulfillmentChange = async (bookingId: string, status: FulfillmentStatus) => {
+    const { error } = await supabase.from('site_table_bookings').update({ fulfillment_status: status }).eq('id', bookingId);
+    if (error) {
+      toast({ title: 'Failed to update status', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setBookings((prev) => prev.map((b) => (b.id === bookingId ? { ...b, fulfillment_status: status } : b)));
   };
 
   useEffect(() => {
@@ -154,8 +171,10 @@ const CmsTableBookings = () => {
                 <TableHead>Table</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Guests</TableHead>
-                <TableHead>Deposit</TableHead>
+                <TableHead>Bottles</TableHead>
+                <TableHead>Total</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Fulfillment</TableHead>
                 <TableHead>Code</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -171,9 +190,32 @@ const CmsTableBookings = () => {
                   <TableCell>{booking.site_table_types?.name ?? '-'}</TableCell>
                   <TableCell>{booking.booking_date}</TableCell>
                   <TableCell>{booking.guest_count}</TableCell>
+                  <TableCell className="max-w-[180px] text-xs text-gray-400">
+                    {booking.site_table_booking_bottles.length === 0
+                      ? '-'
+                      : booking.site_table_booking_bottles.map((b) => `${b.bottle_name} x${b.quantity}`).join(', ')}
+                  </TableCell>
                   <TableCell>${(booking.amount_total_cents / 100).toFixed(2)}</TableCell>
                   <TableCell>
                     <Badge variant={statusVariant[booking.status]}>{booking.status}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Select
+                      value={booking.fulfillment_status}
+                      onValueChange={(v) => handleFulfillmentChange(booking.id, v as FulfillmentStatus)}
+                      disabled={booking.status !== 'paid'}
+                    >
+                      <SelectTrigger className="h-8 w-32 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(FULFILLMENT_LABELS) as FulfillmentStatus[]).map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {FULFILLMENT_LABELS[s]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{booking.confirmation_code ?? '-'}</TableCell>
                   <TableCell className="text-right">
@@ -202,7 +244,7 @@ const CmsTableBookings = () => {
               ))}
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-gray-500">
+                  <TableCell colSpan={11} className="text-center text-gray-500">
                     No table bookings yet.
                   </TableCell>
                 </TableRow>
