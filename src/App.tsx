@@ -31,6 +31,9 @@ import Venues from "./pages/Venues";
 import VenueDetail from "./pages/VenueDetail";
 import TableDetail from "./pages/TableDetail";
 import MyTickets from "./pages/MyTickets";
+import UserDashboard from "./pages/UserDashboard";
+import UserProfile from "./pages/UserProfile";
+import UserBookingDetail from "./pages/UserBookingDetail";
 import RequireDoorAuth from "./door/RequireDoorAuth";
 import DoorLogin from "./door/pages/DoorLogin";
 import ScanTickets from "./door/pages/ScanTickets";
@@ -57,6 +60,9 @@ const App = () => {
             <Route path="/booking/success" element={<BookingSuccess />} />
             <Route path="/booking/cancel" element={<BookingCancel />} />
             <Route path="/my-tickets" element={<MyTickets />} />
+            <Route path="/dashboard" element={<UserDashboard />} />
+            <Route path="/profile" element={<UserProfile />} />
+            <Route path="/bookings/:id" element={<UserBookingDetail />} />
             <Route path="/door/login" element={<DoorLogin />} />
             <Route
               path="/door/scan"
