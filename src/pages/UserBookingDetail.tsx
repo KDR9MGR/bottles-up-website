@@ -4,59 +4,128 @@ import { format, parseISO } from 'date-fns';
 import { QRCodeSVG } from 'qrcode.react';
 import { ArrowLeft, Calendar, MapPin, Users, Clock, Download, Share2, Loader2, Ticket, TableIcon, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { useUserAuth } from '@/hooks/useUserAuth';
 import Header from '@/components/Header';
 
-interface Booking {
-  id: string;
-  booking_id: string | null;
-  event_id: string | null;
-  amount: string;
-  currency: string;
+type BookingType = 'ticket' | 'table';
+
+interface DetailData {
+  code: string;
+  title: string;
+  venue: string;
+  date: string | null;
+  time: string;
+  guestCount?: number;
   status: string;
-  payment_type: string;
-  metadata: Record<string, unknown>;
-  created_at: string;
+  currency: string;
+  lineItems: { label: string; amountCents: number }[];
+  totalCents: number;
+  createdAt: string;
 }
 
-const formatMoney = (amount: string, currency: string) =>
-  `$${parseFloat(amount).toFixed(2)} ${currency.toUpperCase()}`;
+const formatMoney = (cents: number, currency: string) => `$${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
 
 const statusConfig: Record<string, { icon: typeof CheckCircle2; color: string; label: string }> = {
   paid:      { icon: CheckCircle2, color: 'text-green-400',  label: 'Paid' },
-  confirmed: { icon: CheckCircle2, color: 'text-green-400',  label: 'Confirmed' },
   pending:   { icon: AlertCircle,  color: 'text-yellow-400', label: 'Pending' },
   cancelled: { icon: AlertCircle,  color: 'text-red-400',    label: 'Cancelled' },
+  refunded:  { icon: AlertCircle,  color: 'text-red-400',    label: 'Refunded' },
 };
 
 export default function UserBookingDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { type, id } = useParams<{ type: BookingType; id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { session, loading: authLoading } = useUserAuth();
-  const [booking, setBooking] = useState<Booking | null>(null);
+  const [data, setData] = useState<DetailData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (authLoading || !session || !id) return;
-    supabase
-      .from('payment_transactions')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', session.user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        setBooking(data as Booking | null);
-        setLoading(false);
-      });
-  }, [authLoading, session, id]);
+    if (authLoading || !session || !id || !type) return;
+
+    const load = async () => {
+      if (type === 'ticket') {
+        const { data: order } = await supabase
+          .from('site_orders')
+          .select('id, status, ticket_code, quantity, amount_total_cents, currency, created_at, site_ticket_tiers(name), site_events(title, venue_name, start_date)')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (!order) { setData(null); setLoading(false); return; }
+
+        const tier = order.site_ticket_tiers as unknown as { name: string } | null;
+        const event = order.site_events as unknown as { title: string; venue_name: string; start_date: string } | null;
+        let time = '';
+        if (event?.start_date) {
+          try { time = format(parseISO(event.start_date), 'h:mm a'); } catch { time = ''; }
+        }
+
+        setData({
+          code: order.ticket_code ?? order.id.slice(0, 8).toUpperCase(),
+          title: event?.title ?? 'Event Ticket',
+          venue: event?.venue_name ?? '',
+          date: event?.start_date ?? null,
+          time,
+          status: order.status,
+          currency: order.currency,
+          lineItems: [{ label: `${tier?.name ?? 'Ticket'} × ${order.quantity}`, amountCents: order.amount_total_cents }],
+          totalCents: order.amount_total_cents,
+          createdAt: order.created_at,
+        });
+      } else {
+        const { data: booking } = await supabase
+          .from('site_table_bookings')
+          .select('id, status, confirmation_code, guest_count, booking_date, deposit_cents, bottle_subtotal_cents, tax_cents, bottlesup_fee_cents, amount_total_cents, currency, created_at, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (!booking) { setData(null); setLoading(false); return; }
+
+        const { data: bottles } = await supabase
+          .from('site_table_booking_bottles')
+          .select('bottle_name, size, quantity, line_total_cents')
+          .eq('booking_id', booking.id);
+
+        const tableType = booking.site_table_types as unknown as { name: string } | null;
+        const venue = booking.site_venues as unknown as { name: string } | null;
+        const timeSlot = booking.site_venue_time_slots as unknown as { start_time: string } | null;
+
+        const lineItems = [
+          { label: tableType?.name ?? 'Table', amountCents: booking.deposit_cents },
+          ...(bottles ?? []).map((b) => ({
+            label: `${b.bottle_name}${b.size ? ` (${b.size})` : ''} × ${b.quantity}`,
+            amountCents: b.line_total_cents,
+          })),
+          ...(booking.tax_cents > 0 ? [{ label: 'Tax', amountCents: booking.tax_cents }] : []),
+          ...(booking.bottlesup_fee_cents > 0 ? [{ label: 'BottlesUp fee', amountCents: booking.bottlesup_fee_cents }] : []),
+        ];
+
+        setData({
+          code: booking.confirmation_code ?? booking.id.slice(0, 8).toUpperCase(),
+          title: tableType?.name ?? 'VIP Table',
+          venue: venue?.name ?? '',
+          date: booking.booking_date,
+          time: timeSlot?.start_time ?? '',
+          guestCount: booking.guest_count,
+          status: booking.status,
+          currency: booking.currency,
+          lineItems,
+          totalCents: booking.amount_total_cents,
+          createdAt: booking.created_at,
+        });
+      }
+      setLoading(false);
+    };
+
+    load();
+  }, [authLoading, session, id, type]);
 
   const handleShare = async () => {
-    const text = `BottlesUp Booking: ${getLabel()} — ${getDateStr()}`;
+    if (!data) return;
+    const text = `BottlesUp Booking: ${data.title} — ${data.date ? format(parseISO(data.date), 'MMM d, yyyy') : ''}`;
     if (navigator.share) {
       await navigator.share({ title: 'BottlesUp Booking', text });
     } else {
@@ -90,7 +159,7 @@ export default function UserBookingDetail() {
     return null;
   }
 
-  if (!booking) {
+  if (!data) {
     return (
       <>
         <Header />
@@ -104,30 +173,15 @@ export default function UserBookingDetail() {
     );
   }
 
-  const meta = booking.metadata;
-  const isTable = booking.payment_type === 'tableBooking';
-  const qrData = booking.booking_id ?? booking.id;
-  const confirmationCode = (booking.booking_id ?? booking.id).slice(0, 8).toUpperCase();
-
-  const getLabel = () => String(meta.event_name ?? meta.club_name ?? 'Booking');
-  const getVenue = () => String(meta.club_name ?? '');
-  const getDateStr = () => {
-    const raw = String(meta.event_date ?? meta.date ?? '');
-    if (!raw) return '';
-    try { return format(parseISO(raw), 'EEEE, MMMM d, yyyy'); } catch { return raw; }
-  };
-  const getTime = () => String(meta.event_time ?? meta.time_slot ?? '');
-
-  const StatusIcon = (statusConfig[booking.status] ?? statusConfig.pending).icon;
-  const statusColor = (statusConfig[booking.status] ?? statusConfig.pending).color;
-  const statusLabel = (statusConfig[booking.status] ?? statusConfig.pending).label;
+  const isTable = type === 'table';
+  const dateStr = data.date ? (() => { try { return format(parseISO(data.date!), 'EEEE, MMMM d, yyyy'); } catch { return data.date; } })() : '';
+  const { icon: StatusIcon, color: statusColor, label: statusLabel } = statusConfig[data.status] ?? statusConfig.pending;
 
   return (
     <>
       <Header />
       <div className="min-h-screen bg-black pt-24 pb-16 px-4">
         <div className="mx-auto max-w-lg">
-          {/* Back */}
           <button
             onClick={() => navigate('/dashboard')}
             className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-colors"
@@ -136,7 +190,6 @@ export default function UserBookingDetail() {
             Back to Dashboard
           </button>
 
-          {/* QR Code card */}
           <div className="rounded-2xl border border-white/10 bg-zinc-900 overflow-hidden">
             <div className="bg-gradient-to-br from-orange-500/20 to-zinc-900 p-6 flex flex-col items-center">
               <div className="flex items-center gap-2 mb-4">
@@ -150,21 +203,15 @@ export default function UserBookingDetail() {
                 </span>
               </div>
 
-              <h1 className="text-xl font-bold text-white text-center mb-1">{getLabel()}</h1>
-              {getVenue() && <p className="text-gray-400 text-sm mb-4">{getVenue()}</p>}
+              <h1 className="text-xl font-bold text-white text-center mb-1">{data.title}</h1>
+              {data.venue && <p className="text-gray-400 text-sm mb-4">{data.venue}</p>}
 
-              {/* QR Code */}
               <div id="booking-qr" className="bg-white p-4 rounded-2xl mb-4">
-                <QRCodeSVG
-                  value={qrData}
-                  size={200}
-                  level="H"
-                  includeMargin={false}
-                />
+                <QRCodeSVG value={data.code} size={200} level="H" includeMargin={false} />
               </div>
 
               <p className="text-xs text-gray-500 mb-1">Confirmation Code</p>
-              <p className="text-2xl font-mono font-bold text-white tracking-widest">{confirmationCode}</p>
+              <p className="text-2xl font-mono font-bold text-white tracking-widest">{data.code}</p>
 
               <div className="flex items-center gap-2 mt-3">
                 <StatusIcon className={`h-4 w-4 ${statusColor}`} />
@@ -178,65 +225,54 @@ export default function UserBookingDetail() {
 
             <Separator className="bg-white/5" />
 
-            {/* Event details */}
             <div className="p-5 space-y-3">
-              {getDateStr() && (
+              {dateStr && (
                 <div className="flex items-center gap-3 text-sm">
                   <Calendar className="h-4 w-4 text-gray-500 shrink-0" />
-                  <span className="text-gray-300">{getDateStr()}</span>
+                  <span className="text-gray-300">{dateStr}</span>
                 </div>
               )}
-              {getTime() && (
+              {data.time && (
                 <div className="flex items-center gap-3 text-sm">
                   <Clock className="h-4 w-4 text-gray-500 shrink-0" />
-                  <span className="text-gray-300">{getTime()}</span>
+                  <span className="text-gray-300">{data.time}</span>
                 </div>
               )}
-              {getVenue() && (
+              {data.venue && (
                 <div className="flex items-center gap-3 text-sm">
                   <MapPin className="h-4 w-4 text-gray-500 shrink-0" />
-                  <span className="text-gray-300">{getVenue()}</span>
+                  <span className="text-gray-300">{data.venue}</span>
                 </div>
               )}
-              {meta.guest_count && (
+              {data.guestCount != null && (
                 <div className="flex items-center gap-3 text-sm">
                   <Users className="h-4 w-4 text-gray-500 shrink-0" />
-                  <span className="text-gray-300">{String(meta.guest_count)} guests</span>
+                  <span className="text-gray-300">{data.guestCount} guests</span>
                 </div>
               )}
 
               <Separator className="bg-white/5 my-2" />
 
-              {/* Price breakdown */}
               <div className="space-y-1.5">
-                {meta.ticket_quantity && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-400">Tickets × {String(meta.ticket_quantity)}</span>
-                    <span className="text-gray-300">{formatMoney(booking.amount, booking.currency)}</span>
+                {data.lineItems.map((item, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-gray-400">{item.label}</span>
+                    <span className="text-gray-300">{formatMoney(item.amountCents, data.currency)}</span>
                   </div>
-                )}
+                ))}
                 <div className="flex justify-between text-sm font-bold pt-1">
                   <span className="text-white">Total</span>
-                  <span className="text-orange-500">{formatMoney(booking.amount, booking.currency)}</span>
+                  <span className="text-orange-500">{formatMoney(data.totalCents, data.currency)}</span>
                 </div>
               </div>
             </div>
 
-            {/* Actions */}
             <div className="px-5 pb-5 grid grid-cols-2 gap-3">
-              <Button
-                variant="outline"
-                className="border-white/10 text-white hover:bg-white/5"
-                onClick={handleDownload}
-              >
+              <Button variant="outline" className="border-white/10 text-white hover:bg-white/5" onClick={handleDownload}>
                 <Download className="mr-2 h-4 w-4" />
                 Save QR
               </Button>
-              <Button
-                variant="outline"
-                className="border-white/10 text-white hover:bg-white/5"
-                onClick={handleShare}
-              >
+              <Button variant="outline" className="border-white/10 text-white hover:bg-white/5" onClick={handleShare}>
                 <Share2 className="mr-2 h-4 w-4" />
                 Share
               </Button>
@@ -244,7 +280,7 @@ export default function UserBookingDetail() {
           </div>
 
           <p className="text-center text-xs text-gray-600 mt-4">
-            Booked on {format(parseISO(booking.created_at), 'MMM d, yyyy')}
+            Booked on {format(parseISO(data.createdAt), 'MMM d, yyyy')}
           </p>
         </div>
       </div>

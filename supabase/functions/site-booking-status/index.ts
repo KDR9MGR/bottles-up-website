@@ -66,7 +66,7 @@ Deno.serve(async (req: Request) => {
     };
 
     const orderSelect =
-      'id, status, ticket_code, customer_name, quantity, site_ticket_tiers(name), site_events(title, venue_name, start_date)';
+      'id, status, ticket_code, customer_name, customer_email, quantity, site_ticket_tiers(name), site_events(title, venue_name, start_date)';
 
     const { data: order } = await supabase
       .from('site_orders')
@@ -98,6 +98,7 @@ Deno.serve(async (req: Request) => {
         ticket: {
           ticketCode: current.ticket_code,
           customerName: current.customer_name,
+          customerEmail: current.customer_email,
           quantity: current.quantity,
           tierName: tier?.name ?? '',
           eventTitle: event?.title ?? 'Your event',
@@ -108,7 +109,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const bookingSelect =
-      'id, status, confirmation_code, customer_name, guest_count, booking_date, deposit_cents, bottle_subtotal_cents, tax_cents, bottlesup_fee_cents, amount_total_cents, currency, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)';
+      'id, status, confirmation_code, customer_name, customer_email, guest_count, booking_date, deposit_cents, bottle_subtotal_cents, tax_cents, bottlesup_fee_cents, amount_total_cents, currency, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)';
 
     const { data: booking, error: bookingError } = await supabase
       .from('site_table_bookings')
@@ -149,6 +150,7 @@ Deno.serve(async (req: Request) => {
       booking: {
         confirmationCode: currentBooking.confirmation_code,
         customerName: currentBooking.customer_name,
+        customerEmail: currentBooking.customer_email,
         guestCount: currentBooking.guest_count,
         tableTypeName: tableType?.name ?? '',
         venueName: venue?.name ?? '',

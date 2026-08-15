@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { CheckCircle2, Loader2, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
+import { useToast } from '@/hooks/use-toast';
+import { useUserAuth, userSignUp } from '@/hooks/useUserAuth';
 import TicketCard, { type TicketCardData } from '@/components/TicketCard';
 
-type PaidTicket = TicketCardData;
+type PaidTicket = TicketCardData & { customerEmail?: string };
 
 type PaidBooking = {
   confirmationCode: string;
   customerName: string;
+  customerEmail?: string;
   guestCount: number;
   tableTypeName: string;
   venueName: string;
@@ -28,9 +33,85 @@ const money = (cents: number, currency: string) => `$${(cents / 100).toFixed(2)}
 
 const REDIRECT_SECONDS = 15;
 
+function CreateAccountPrompt({ email, name }: { email: string; name: string }) {
+  const { toast } = useToast();
+  const [password, setPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  if (dismissed) return null;
+
+  if (done) {
+    return (
+      <div className="mt-6 w-full max-w-sm rounded-2xl border border-orange-500/20 bg-orange-500/5 p-5 text-center">
+        <p className="text-sm text-white font-medium">Account created 🎉</p>
+        <p className="mt-1 text-xs text-gray-400">
+          Check <span className="text-white">{email}</span> to confirm, then sign in to see this booking on your dashboard.
+        </p>
+      </div>
+    );
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password.length < 6) {
+      toast({ title: 'Password must be at least 6 characters', variant: 'destructive' });
+      return;
+    }
+    setSaving(true);
+    try {
+      await userSignUp(name, email, password);
+      setDone(true);
+    } catch (err: unknown) {
+      toast({ title: 'Could not create account', description: (err as Error).message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-6 w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-950 p-5 text-left">
+      <p className="text-sm font-semibold text-white">Save this booking to an account</p>
+      <p className="mt-1 text-xs text-gray-400">
+        Track all your bookings, get QR tickets in one place, and manage everything from your dashboard.
+      </p>
+      <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">Email</Label>
+          <Input value={email} disabled className="bg-zinc-900 border-white/10 text-gray-400" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">Create a Password</Label>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Min. 6 characters"
+              className="pl-9 bg-zinc-900 border-white/10 text-white"
+              required
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 pt-1">
+          <Button type="button" variant="ghost" size="sm" className="flex-1 text-gray-500 hover:text-gray-300" onClick={() => setDismissed(true)}>
+            No thanks
+          </Button>
+          <Button type="submit" size="sm" disabled={saving} className="flex-1 bg-gradient-orange text-black font-bold hover:opacity-90">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create Account'}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 const BookingSuccess = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { session, loading: authLoading } = useUserAuth();
   const sessionId = searchParams.get('session_id');
   const [status, setStatus] = useState<'checking' | 'paid' | 'pending'>('checking');
   const [ticket, setTicket] = useState<PaidTicket | null>(null);
@@ -74,15 +155,19 @@ const BookingSuccess = () => {
     };
   }, [sessionId]);
 
+  // Pause the auto-redirect countdown while the account-creation prompt is
+  // showing so an unauthenticated customer isn't yanked to "/" mid-signup.
+  const showAccountPrompt = !authLoading && !session && (ticket?.customerEmail || booking?.customerEmail);
+
   useEffect(() => {
-    if (status !== 'paid') return;
+    if (status !== 'paid' || showAccountPrompt) return;
     if (secondsLeft <= 0) {
       navigate('/');
       return;
     }
     const t = setTimeout(() => setSecondsLeft((s) => s - 1), 1000);
     return () => clearTimeout(t);
-  }, [status, secondsLeft, navigate]);
+  }, [status, secondsLeft, navigate, showAccountPrompt]);
 
   if (status === 'paid' && (ticket || booking)) {
     const cardData: TicketCardData | null = ticket
@@ -98,6 +183,9 @@ const BookingSuccess = () => {
             tierName: 'Guests',
           }
         : null;
+
+    const customerEmail = ticket?.customerEmail ?? booking?.customerEmail ?? '';
+    const customerName = ticket?.customerName ?? booking?.customerName ?? '';
 
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-black px-4 py-12 text-center">
@@ -145,9 +233,15 @@ const BookingSuccess = () => {
           </div>
         )}
 
-        <p className="mt-6 text-sm text-gray-500">
-          Taking you back home in {secondsLeft}s...
-        </p>
+        {showAccountPrompt && customerEmail && (
+          <CreateAccountPrompt email={customerEmail} name={customerName} />
+        )}
+
+        {!showAccountPrompt && (
+          <p className="mt-6 text-sm text-gray-500">
+            Taking you back home in {secondsLeft}s...
+          </p>
+        )}
         <Button
           asChild
           variant="outline"

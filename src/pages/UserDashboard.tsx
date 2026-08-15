@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { format, parseISO, isAfter } from 'date-fns';
-import { Loader2, Calendar, MapPin, Users, ChevronDown, ChevronUp, Ticket, TableIcon, ArrowLeft } from 'lucide-react';
+import { Loader2, Calendar, MapPin, Users, ChevronDown, ChevronUp, Ticket, TableIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
@@ -9,98 +9,76 @@ import { useUserAuth } from '@/hooks/useUserAuth';
 import UserAuthModal from '@/components/UserAuthModal';
 import Header from '@/components/Header';
 
-interface Booking {
+interface UnifiedBooking {
   id: string;
-  booking_id: string | null;
-  event_id: string | null;
-  amount: string;
+  type: 'ticket' | 'table';
+  title: string;
+  venue: string;
+  date: string | null; // ISO date
+  time: string;
+  amountCents: number;
   currency: string;
   status: string;
-  payment_type: string;
-  metadata: Record<string, unknown>;
-  created_at: string;
+  guestCount?: number;
 }
 
-const formatMoney = (amount: string, currency: string) =>
-  `$${parseFloat(amount).toFixed(2)} ${currency.toUpperCase()}`;
+const formatMoney = (cents: number, currency: string) => `$${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
 
-const getBookingDate = (b: Booking): Date | null => {
-  const meta = b.metadata;
-  const raw = (meta.event_date ?? meta.date) as string | undefined;
-  if (!raw) return null;
-  try { return parseISO(raw); } catch { return null; }
-};
-
-const getBookingLabel = (b: Booking): string => {
-  const meta = b.metadata;
-  return ((meta.event_name ?? meta.club_name ?? 'Booking') as string);
-};
-
-const getBookingVenue = (b: Booking): string => {
-  const meta = b.metadata;
-  return ((meta.club_name ?? '') as string);
-};
-
-const getBookingTime = (b: Booking): string => {
-  const meta = b.metadata;
-  return ((meta.event_time ?? meta.time_slot ?? '') as string);
-};
-
-const isUpcoming = (b: Booking) => {
-  const d = getBookingDate(b);
-  return d ? isAfter(d, new Date()) : false;
+const isUpcoming = (b: UnifiedBooking) => {
+  if (!b.date) return false;
+  try { return isAfter(parseISO(b.date), new Date()); } catch { return false; }
 };
 
 const statusColor: Record<string, string> = {
   paid: 'bg-green-500/20 text-green-400 border-green-500/30',
-  confirmed: 'bg-green-500/20 text-green-400 border-green-500/30',
   pending: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
   cancelled: 'bg-red-500/20 text-red-400 border-red-500/30',
+  refunded: 'bg-red-500/20 text-red-400 border-red-500/30',
 };
 
-function BookingCard({ booking }: { booking: Booking }) {
-  const date = getBookingDate(booking);
-  const isTable = booking.payment_type === 'tableBooking';
+function BookingCard({ booking }: { booking: UnifiedBooking }) {
+  let date: Date | null = null;
+  try { date = booking.date ? parseISO(booking.date) : null; } catch { date = null; }
 
   return (
     <Link
-      to={`/bookings/${booking.id}`}
+      to={`/bookings/${booking.type}/${booking.id}`}
       className="block rounded-xl border border-white/10 bg-zinc-900 p-4 hover:border-orange-500/40 hover:bg-zinc-800 transition-all"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
           <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-500/10">
-            {isTable ? (
+            {booking.type === 'table' ? (
               <TableIcon className="h-4 w-4 text-orange-500" />
             ) : (
               <Ticket className="h-4 w-4 text-orange-500" />
             )}
           </div>
           <div className="min-w-0">
-            <p className="font-semibold text-white truncate">{getBookingLabel(booking)}</p>
-            {getBookingVenue(booking) && (
+            <p className="font-semibold text-white truncate">{booking.title}</p>
+            {booking.venue && (
               <p className="text-sm text-gray-400 flex items-center gap-1 mt-0.5">
                 <MapPin className="h-3 w-3 shrink-0" />
-                {getBookingVenue(booking)}
+                {booking.venue}
               </p>
             )}
             {date && (
               <p className="text-sm text-gray-400 flex items-center gap-1 mt-0.5">
                 <Calendar className="h-3 w-3 shrink-0" />
                 {format(date, 'MMM d, yyyy')}
-                {getBookingTime(booking) && ` · ${getBookingTime(booking)}`}
+                {booking.time && ` · ${booking.time}`}
               </p>
             )}
-            {booking.metadata.guest_count && (
+            {booking.guestCount != null && (
               <p className="text-sm text-gray-400 flex items-center gap-1 mt-0.5">
                 <Users className="h-3 w-3 shrink-0" />
-                {String(booking.metadata.guest_count)} guests
+                {booking.guestCount} guests
               </p>
             )}
           </div>
         </div>
         <div className="text-right shrink-0">
-          <p className="font-bold text-white">{formatMoney(booking.amount, booking.currency)}</p>
+          <p className="font-bold text-white">{formatMoney(booking.amountCents, booking.currency)}</p>
           <Badge
             variant="outline"
             className={`mt-1 text-xs capitalize ${statusColor[booking.status] ?? 'border-white/20 text-gray-400'}`}
@@ -117,22 +95,75 @@ export default function UserDashboard() {
   const navigate = useNavigate();
   const { session, profile, loading } = useUserAuth();
   const [authOpen, setAuthOpen] = useState(false);
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookings, setBookings] = useState<UnifiedBooking[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [showPast, setShowPast] = useState(false);
 
   useEffect(() => {
     if (!session) return;
     setLoadingBookings(true);
-    supabase
-      .from('payment_transactions')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setBookings((data ?? []) as Booking[]);
-        setLoadingBookings(false);
+
+    // RLS scopes both queries to rows whose customer_email matches this
+    // user's verified auth email - no explicit filter needed (see the
+    // "own orders/bookings by verified email" policies).
+    Promise.all([
+      supabase
+        .from('site_orders')
+        .select('id, status, quantity, amount_total_cents, currency, created_at, site_ticket_tiers(name), site_events(title, venue_name, start_date)')
+        .eq('status', 'paid')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('site_table_bookings')
+        .select('id, status, guest_count, amount_total_cents, currency, booking_date, created_at, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)')
+        .eq('status', 'paid')
+        .order('created_at', { ascending: false }),
+    ]).then(([ordersRes, tableRes]) => {
+      const orders: UnifiedBooking[] = (ordersRes.data ?? []).map((o) => {
+        const event = o.site_events as unknown as { title: string; venue_name: string; start_date: string } | null;
+        let time = '';
+        if (event?.start_date) {
+          try { time = format(parseISO(event.start_date), 'h:mm a'); } catch { time = ''; }
+        }
+        return {
+          id: o.id,
+          type: 'ticket' as const,
+          title: event?.title ?? 'Event Ticket',
+          venue: event?.venue_name ?? '',
+          date: event?.start_date ?? null,
+          time,
+          amountCents: o.amount_total_cents,
+          currency: o.currency,
+          status: o.status,
+        };
       });
+
+      const tables: UnifiedBooking[] = (tableRes.data ?? []).map((b) => {
+        const tableType = b.site_table_types as unknown as { name: string } | null;
+        const venue = b.site_venues as unknown as { name: string } | null;
+        const timeSlot = b.site_venue_time_slots as unknown as { start_time: string } | null;
+        return {
+          id: b.id,
+          type: 'table' as const,
+          title: tableType?.name ?? 'VIP Table',
+          venue: venue?.name ?? '',
+          date: b.booking_date,
+          time: timeSlot?.start_time ?? '',
+          amountCents: b.amount_total_cents,
+          currency: b.currency,
+          status: b.status,
+          guestCount: b.guest_count,
+        };
+      });
+
+      const all = [...orders, ...tables].sort((a, b) => {
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      });
+
+      setBookings(all);
+      setLoadingBookings(false);
+    });
   }, [session]);
 
   if (loading) {
@@ -218,7 +249,7 @@ export default function UserDashboard() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {upcoming.map((b) => <BookingCard key={b.id} booking={b} />)}
+                    {upcoming.map((b) => <BookingCard key={`${b.type}-${b.id}`} booking={b} />)}
                   </div>
                 )}
               </section>
@@ -235,7 +266,7 @@ export default function UserDashboard() {
                   </button>
                   {showPast && (
                     <div className="space-y-3 opacity-70">
-                      {past.map((b) => <BookingCard key={b.id} booking={b} />)}
+                      {past.map((b) => <BookingCard key={`${b.type}-${b.id}`} booking={b} />)}
                     </div>
                   )}
                 </section>
@@ -243,14 +274,6 @@ export default function UserDashboard() {
 
               {/* Quick links */}
               <div className="mt-10 flex gap-3">
-                <Button
-                  variant="outline"
-                  className="border-white/10 text-white hover:bg-white/5"
-                  onClick={() => navigate('/my-tickets')}
-                >
-                  <Ticket className="mr-2 h-4 w-4" />
-                  Event Tickets
-                </Button>
                 <Button
                   variant="outline"
                   className="border-white/10 text-white hover:bg-white/5"
