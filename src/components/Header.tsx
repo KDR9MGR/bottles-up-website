@@ -112,8 +112,12 @@ const Header = () => {
               {session ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="h-9 w-9 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-black text-sm font-bold flex items-center justify-center hover:opacity-90 transition-opacity">
-                      {initials}
+                    <button className="h-9 w-9 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-black text-sm font-bold flex items-center justify-center hover:opacity-90 transition-opacity overflow-hidden">
+                      {profile?.avatar_url ? (
+                        <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        initials
+                      )}
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48 bg-zinc-950 border-white/10 text-white">

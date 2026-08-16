@@ -1,39 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { format, parseISO, isAfter } from 'date-fns';
 import { Loader2, Calendar, MapPin, Users, ChevronDown, ChevronUp, Ticket, TableIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/lib/supabase';
 import { useUserAuth } from '@/hooks/useUserAuth';
+import { useUserBookings, type UnifiedBooking } from '@/hooks/useUserBookings';
+import { formatMoney, statusBadgeClass } from '@/lib/bookingFormat';
 import UserAuthModal from '@/components/UserAuthModal';
 import Header from '@/components/Header';
-
-interface UnifiedBooking {
-  id: string;
-  type: 'ticket' | 'table';
-  title: string;
-  venue: string;
-  date: string | null; // ISO date
-  time: string;
-  amountCents: number;
-  currency: string;
-  status: string;
-  guestCount?: number;
-}
-
-const formatMoney = (cents: number, currency: string) => `$${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
 
 const isUpcoming = (b: UnifiedBooking) => {
   if (!b.date) return false;
   try { return isAfter(parseISO(b.date), new Date()); } catch { return false; }
-};
-
-const statusColor: Record<string, string> = {
-  paid: 'bg-green-500/20 text-green-400 border-green-500/30',
-  pending: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  cancelled: 'bg-red-500/20 text-red-400 border-red-500/30',
-  refunded: 'bg-red-500/20 text-red-400 border-red-500/30',
 };
 
 function BookingCard({ booking }: { booking: UnifiedBooking }) {
@@ -81,7 +60,7 @@ function BookingCard({ booking }: { booking: UnifiedBooking }) {
           <p className="font-bold text-white">{formatMoney(booking.amountCents, booking.currency)}</p>
           <Badge
             variant="outline"
-            className={`mt-1 text-xs capitalize ${statusColor[booking.status] ?? 'border-white/20 text-gray-400'}`}
+            className={`mt-1 text-xs capitalize ${statusBadgeClass[booking.status] ?? 'border-white/20 text-gray-400'}`}
           >
             {booking.status}
           </Badge>
@@ -95,76 +74,8 @@ export default function UserDashboard() {
   const navigate = useNavigate();
   const { session, profile, loading } = useUserAuth();
   const [authOpen, setAuthOpen] = useState(false);
-  const [bookings, setBookings] = useState<UnifiedBooking[]>([]);
-  const [loadingBookings, setLoadingBookings] = useState(false);
+  const { bookings, loading: loadingBookings } = useUserBookings(session);
   const [showPast, setShowPast] = useState(false);
-
-  useEffect(() => {
-    if (!session) return;
-    setLoadingBookings(true);
-
-    // RLS scopes both queries to rows whose customer_email matches this
-    // user's verified auth email - no explicit filter needed (see the
-    // "own orders/bookings by verified email" policies).
-    Promise.all([
-      supabase
-        .from('site_orders')
-        .select('id, status, quantity, amount_total_cents, currency, created_at, site_ticket_tiers(name), site_events(title, venue_name, start_date)')
-        .eq('status', 'paid')
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('site_table_bookings')
-        .select('id, status, guest_count, amount_total_cents, currency, booking_date, created_at, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)')
-        .eq('status', 'paid')
-        .order('created_at', { ascending: false }),
-    ]).then(([ordersRes, tableRes]) => {
-      const orders: UnifiedBooking[] = (ordersRes.data ?? []).map((o) => {
-        const event = o.site_events as unknown as { title: string; venue_name: string; start_date: string } | null;
-        let time = '';
-        if (event?.start_date) {
-          try { time = format(parseISO(event.start_date), 'h:mm a'); } catch { time = ''; }
-        }
-        return {
-          id: o.id,
-          type: 'ticket' as const,
-          title: event?.title ?? 'Event Ticket',
-          venue: event?.venue_name ?? '',
-          date: event?.start_date ?? null,
-          time,
-          amountCents: o.amount_total_cents,
-          currency: o.currency,
-          status: o.status,
-        };
-      });
-
-      const tables: UnifiedBooking[] = (tableRes.data ?? []).map((b) => {
-        const tableType = b.site_table_types as unknown as { name: string } | null;
-        const venue = b.site_venues as unknown as { name: string } | null;
-        const timeSlot = b.site_venue_time_slots as unknown as { start_time: string } | null;
-        return {
-          id: b.id,
-          type: 'table' as const,
-          title: tableType?.name ?? 'VIP Table',
-          venue: venue?.name ?? '',
-          date: b.booking_date,
-          time: timeSlot?.start_time ?? '',
-          amountCents: b.amount_total_cents,
-          currency: b.currency,
-          status: b.status,
-          guestCount: b.guest_count,
-        };
-      });
-
-      const all = [...orders, ...tables].sort((a, b) => {
-        if (!a.date) return 1;
-        if (!b.date) return -1;
-        return new Date(b.date).getTime() - new Date(a.date).getTime();
-      });
-
-      setBookings(all);
-      setLoadingBookings(false);
-    });
-  }, [session]);
 
   if (loading) {
     return (
@@ -196,8 +107,9 @@ export default function UserDashboard() {
     );
   }
 
-  const upcoming = bookings.filter(isUpcoming);
-  const past = bookings.filter((b) => !isUpcoming(b));
+  const paid = bookings.filter((b) => b.status === 'paid');
+  const upcoming = paid.filter(isUpcoming);
+  const past = paid.filter((b) => !isUpcoming(b));
   const displayName = profile?.name ?? session.user.email?.split('@')[0] ?? 'there';
 
   return (
