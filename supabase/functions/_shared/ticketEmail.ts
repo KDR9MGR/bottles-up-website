@@ -20,6 +20,8 @@ export async function sendTicketEmail(opts: {
   quantity: number;
   ticketCode: string;
   qrDataUrl: string;
+  discountCents?: number;
+  promoCode?: string | null;
 }) {
   if (!resendApiKey) {
     console.warn('RESEND_API_KEY not set - skipping ticket email send');
@@ -47,6 +49,11 @@ export async function sendTicketEmail(opts: {
       <h2 style="margin-bottom: 4px;">${opts.eventTitle}</h2>
       <p style="color: #999; margin-top: 0;">${opts.venueName}<br/>${formattedDate}</p>
       <p><strong>${opts.tierName}</strong> &times; ${opts.quantity}</p>
+      ${
+        opts.discountCents
+          ? `<p style="color: #4ade80;">Promo${opts.promoCode ? ` code ${opts.promoCode}` : ''} applied &mdash; saved $${(opts.discountCents / 100).toFixed(2)}</p>`
+          : ''
+      }
       <div style="text-align: center; margin: 24px 0;">
         <img src="cid:qrcode" alt="Ticket QR code" width="200" height="200" style="background: #fff; padding: 12px; border-radius: 8px;" />
       </div>

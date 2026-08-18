@@ -37,6 +37,8 @@ export async function sendTableBookingEmail(opts: {
   bottleSubtotalCents?: number;
   taxCents?: number;
   bottlesupFeeCents?: number;
+  discountCents?: number;
+  promoCode?: string | null;
   totalCents: number;
   bottles?: BottleLineItem[];
   currency: string;
@@ -76,6 +78,10 @@ export async function sendTableBookingEmail(opts: {
       ? `<tr><td style="padding: 4px 0; color: #ccc;">${label}</td><td style="padding: 4px 0; color: #ccc; text-align: right;">${money(cents)}</td></tr>`
       : '';
 
+  const discountRow = opts.discountCents
+    ? `<tr><td style="padding: 4px 0; color: #4ade80;">Promo${opts.promoCode ? ` (${opts.promoCode})` : ''}</td><td style="padding: 4px 0; color: #4ade80; text-align: right;">-${money(opts.discountCents)}</td></tr>`
+    : '';
+
   const orderSummaryHtml = `
     <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
       <tr>
@@ -83,6 +89,7 @@ export async function sendTableBookingEmail(opts: {
         <td style="padding: 4px 0; color: #ccc; text-align: right;">${money(opts.depositCents)}</td>
       </tr>
       ${bottleRows}
+      ${discountRow}
       ${summaryRow('Tax', opts.taxCents)}
       ${summaryRow('BottlesUp fee', opts.bottlesupFeeCents)}
       <tr>

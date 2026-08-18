@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tag, X, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import type { EventWithTiers } from './PopularEvents';
@@ -38,6 +39,11 @@ const BookingDialog = ({ event, open, onOpenChange }: BookingDialogProps) => {
   const [quantity, setQuantity] = useState('1');
   const [submitting, setSubmitting] = useState(false);
 
+  const [promoInput, setPromoInput] = useState('');
+  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discountCents: number } | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [applyingPromo, setApplyingPromo] = useState(false);
+
   useEffect(() => {
     if (event && event.ticket_tiers.length > 0) {
       setTierId(event.ticket_tiers[0].id);
@@ -47,13 +53,57 @@ const BookingDialog = ({ event, open, onOpenChange }: BookingDialogProps) => {
     setConfirmEmail('');
     setPhone('');
     setQuantity('1');
+    setPromoInput('');
+    setAppliedPromo(null);
+    setPromoError(null);
   }, [event]);
+
+  // A percentage discount depends on the subtotal it was validated against -
+  // clear it if the tier or quantity changes so a stale amount can never be charged.
+  useEffect(() => {
+    setAppliedPromo(null);
+    setPromoError(null);
+  }, [tierId, quantity]);
 
   if (!event) return null;
 
   const selectedTier = event.ticket_tiers.find((t) => t.id === tierId);
   const qty = parseInt(quantity, 10) || 0;
-  const total = selectedTier ? (selectedTier.price_cents * qty) / 100 : 0;
+  const fullAmountCents = selectedTier ? selectedTier.price_cents * qty : 0;
+  const discountCents = appliedPromo?.discountCents ?? 0;
+  const total = Math.max(0, fullAmountCents - discountCents) / 100;
+
+  const handleApplyPromo = async () => {
+    if (!promoInput.trim() || !selectedTier) return;
+    setApplyingPromo(true);
+    setPromoError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('validate-promo-code', {
+        body: {
+          code: promoInput,
+          applies_to: 'tickets',
+          venue_id: event.venue_id ?? null,
+          subtotal_cents: fullAmountCents,
+        },
+      });
+      if (error) throw error;
+      if (!data?.valid) {
+        setPromoError(data?.message ?? 'Invalid promo code');
+        return;
+      }
+      setAppliedPromo({ code: promoInput.trim().toUpperCase(), discountCents: data.discountCents });
+      setPromoInput('');
+    } catch (err) {
+      setPromoError(err instanceof Error ? err.message : 'Could not validate promo code');
+    } finally {
+      setApplyingPromo(false);
+    }
+  };
+
+  const handleRemovePromo = () => {
+    setAppliedPromo(null);
+    setPromoError(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,6 +131,7 @@ const BookingDialog = ({ event, open, onOpenChange }: BookingDialogProps) => {
           customer_name: name,
           customer_email: email,
           customer_phone: phone || null,
+          promo_code: appliedPromo?.code,
         },
       });
 
@@ -158,8 +209,52 @@ const BookingDialog = ({ event, open, onOpenChange }: BookingDialogProps) => {
             </div>
           </div>
 
-          <div className="text-right text-lg font-semibold text-white">
-            Total: ${total.toFixed(2)}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1.5 text-sm">
+              <Tag className="h-3.5 w-3.5" />
+              Promo Code
+            </Label>
+            {appliedPromo ? (
+              <div className="flex items-center justify-between rounded-lg border border-green-800/50 bg-green-950/30 px-3 py-2">
+                <span className="font-mono text-sm text-green-400">{appliedPromo.code} applied</span>
+                <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={handleRemovePromo}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Input
+                  value={promoInput}
+                  onChange={(e) => {
+                    setPromoInput(e.target.value.toUpperCase());
+                    setPromoError(null);
+                  }}
+                  placeholder="Enter code"
+                  className="font-mono uppercase"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="shrink-0"
+                  disabled={applyingPromo || !promoInput.trim()}
+                  onClick={handleApplyPromo}
+                >
+                  {applyingPromo ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Apply'}
+                </Button>
+              </div>
+            )}
+            {promoError && <p className="text-xs text-red-400">{promoError}</p>}
+          </div>
+
+          <div className="space-y-1 text-right">
+            {discountCents > 0 && (
+              <div className="text-sm text-green-400">
+                -${(discountCents / 100).toFixed(2)} promo discount
+              </div>
+            )}
+            <div className="text-lg font-semibold text-white">
+              Total: ${total.toFixed(2)}
+            </div>
           </div>
 
           <DialogFooter>

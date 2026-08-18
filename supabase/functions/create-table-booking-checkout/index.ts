@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { corsHeadersFor, handleOptions, isPreviewOrLocalOrigin } from '../_shared/cors.ts';
+import { validatePromoCode } from '../_shared/promoCode.ts';
 
 Deno.serve(async (req: Request) => {
   const preflight = handleOptions(req);
@@ -26,6 +27,7 @@ Deno.serve(async (req: Request) => {
       customer_email,
       customer_phone,
       bottles: requestedBottles,
+      promo_code,
     } = await req.json();
 
     if (!venue_id || !table_type_id || !time_slot_id || !booking_date || !customer_name || !customer_email) {
@@ -224,10 +226,30 @@ Deno.serve(async (req: Request) => {
     }
 
     const preTaxSubtotalCents = depositCents + bottleSubtotalCents;
+
+    // Re-validate the promo code from scratch against this exact order - the client
+    // never gets to say what the discount is, only which code it wants applied.
+    let promoCodeId: string | null = null;
+    let discountCents = 0;
+    if (typeof promo_code === 'string' && promo_code.trim()) {
+      const promoResult = await validatePromoCode(supabase, {
+        code: promo_code,
+        appliesTo: 'tables',
+        venueId: venue_id,
+        subtotalCents: preTaxSubtotalCents,
+      });
+      if (!promoResult.valid) {
+        return json({ error: promoResult.message }, 400);
+      }
+      promoCodeId = promoResult.promoCodeId!;
+      discountCents = promoResult.discountCents!;
+    }
+
+    const discountedSubtotalCents = preTaxSubtotalCents - discountCents;
     const taxRateBps = tableType.venue.tax_rate_bps ?? 0;
-    const taxCents = Math.round((preTaxSubtotalCents * taxRateBps) / 10000);
-    const bottlesUpFeeCents = Math.round((preTaxSubtotalCents * bottlesupFeeBps) / 10000);
-    const totalCents = preTaxSubtotalCents + taxCents + bottlesUpFeeCents;
+    const taxCents = Math.round((discountedSubtotalCents * taxRateBps) / 10000);
+    const bottlesUpFeeCents = Math.round((discountedSubtotalCents * bottlesupFeeBps) / 10000);
+    const totalCents = discountedSubtotalCents + taxCents + bottlesUpFeeCents;
 
     const { data: booking, error: bookingError } = await supabase
       .from('site_table_bookings')
@@ -248,6 +270,8 @@ Deno.serve(async (req: Request) => {
         amount_total_cents: totalCents,
         currency: tableType.currency,
         status: 'pending',
+        promo_code_id: promoCodeId,
+        discount_cents: discountCents,
       })
       .select('id')
       .single();
@@ -312,10 +336,27 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Line items above stay at full price - the discount is applied as a
+    // session-level Stripe coupon instead of hand-editing line amounts, so
+    // Stripe's own checkout summary shows it as a clearly labeled line item.
+    // It's created fresh per checkout ("once") rather than reused, since the
+    // amount is specific to this order's subtotal.
+    let discounts: Stripe.Checkout.SessionCreateParams.Discount[] | undefined;
+    if (discountCents > 0) {
+      const coupon = await stripe.coupons.create({
+        amount_off: discountCents,
+        currency: tableType.currency,
+        duration: 'once',
+        name: 'Promo code',
+      });
+      discounts = [{ coupon: coupon.id }];
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       customer_email,
       line_items: lineItems,
+      ...(discounts ? { discounts } : {}),
       adaptive_pricing: { enabled: false },
       metadata: { booking_id: booking.id },
       success_url: `${siteUrl}/booking/success?session_id={CHECKOUT_SESSION_ID}`,

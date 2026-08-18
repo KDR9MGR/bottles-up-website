@@ -8,6 +8,8 @@ export type PaymentsMode = 'test' | 'live';
 export type ScanResult = 'ok' | 'already_checked_in' | 'not_paid' | 'not_found' | 'expired';
 export type PricingMode = 'flat' | 'hourly';
 export type FulfillmentStatus = 'confirmed' | 'preparing' | 'served' | 'completed';
+export type DiscountType = 'percentage' | 'fixed_amount';
+export type PromoAppliesTo = 'tickets' | 'tables' | 'both';
 
 export interface Database {
   public: {
@@ -95,6 +97,8 @@ export interface Database {
           stripe_checkout_session_id: string | null;
           stripe_payment_intent_id: string | null;
           status: OrderStatus;
+          promo_code_id: string | null;
+          discount_cents: number;
           ticket_code: string | null;
           ticket_sent_at: string | null;
           checked_in_at: string | null;
@@ -317,6 +321,8 @@ export interface Database {
           bottle_subtotal_cents: number;
           tax_cents: number;
           bottlesup_fee_cents: number;
+          promo_code_id: string | null;
+          discount_cents: number;
           currency: string;
           hours: number | null;
           stripe_checkout_session_id: string | null;
@@ -405,6 +411,46 @@ export interface Database {
           email: string;
         };
         Update: Partial<Database['public']['Tables']['site_vip_guests']['Row']>;
+        Relationships: [];
+      };
+      promo_codes: {
+        Row: {
+          id: string;
+          code: string;
+          description: string | null;
+          discount_type: DiscountType;
+          discount_value: number;
+          applies_to: PromoAppliesTo;
+          max_uses: number | null;
+          used_count: number;
+          min_purchase_cents: number | null;
+          starts_at: string | null;
+          expires_at: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['promo_codes']['Row']> & {
+          code: string;
+          discount_type: DiscountType;
+          discount_value: number;
+        };
+        Update: Partial<Database['public']['Tables']['promo_codes']['Row']>;
+        Relationships: [];
+      };
+      promo_code_venues: {
+        Row: {
+          promo_code_id: string;
+          venue_id: string;
+        };
+        Insert: {
+          promo_code_id: string;
+          venue_id: string;
+        };
+        Update: Partial<{
+          promo_code_id: string;
+          venue_id: string;
+        }>;
         Relationships: [];
       };
       site_content: {

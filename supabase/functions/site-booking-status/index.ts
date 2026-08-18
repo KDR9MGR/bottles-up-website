@@ -66,7 +66,7 @@ Deno.serve(async (req: Request) => {
     };
 
     const orderSelect =
-      'id, status, ticket_code, customer_name, customer_email, quantity, site_ticket_tiers(name), site_events(title, venue_name, start_date)';
+      'id, status, ticket_code, customer_name, customer_email, quantity, discount_cents, site_ticket_tiers(name), site_events(title, venue_name, start_date)';
 
     const { data: order } = await supabase
       .from('site_orders')
@@ -100,6 +100,7 @@ Deno.serve(async (req: Request) => {
           customerName: current.customer_name,
           customerEmail: current.customer_email,
           quantity: current.quantity,
+          discountCents: current.discount_cents ?? 0,
           tierName: tier?.name ?? '',
           eventTitle: event?.title ?? 'Your event',
           venueName: event?.venue_name ?? '',
@@ -109,7 +110,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const bookingSelect =
-      'id, status, confirmation_code, customer_name, customer_email, guest_count, booking_date, deposit_cents, bottle_subtotal_cents, tax_cents, bottlesup_fee_cents, amount_total_cents, currency, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)';
+      'id, status, confirmation_code, customer_name, customer_email, guest_count, booking_date, deposit_cents, bottle_subtotal_cents, tax_cents, bottlesup_fee_cents, discount_cents, amount_total_cents, currency, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)';
 
     const { data: booking, error: bookingError } = await supabase
       .from('site_table_bookings')
@@ -160,6 +161,7 @@ Deno.serve(async (req: Request) => {
         bottleSubtotalCents: currentBooking.bottle_subtotal_cents,
         taxCents: currentBooking.tax_cents,
         bottlesupFeeCents: currentBooking.bottlesup_fee_cents,
+        discountCents: currentBooking.discount_cents ?? 0,
         totalCents: currentBooking.amount_total_cents,
         currency: currentBooking.currency,
         bottles: (bottleLines ?? []).map((b) => ({

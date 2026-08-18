@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Minus, Plus, Wine } from 'lucide-react';
+import { Minus, Plus, Wine, Tag, X, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
@@ -66,6 +66,11 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
   const [cart, setCart] = useState<Record<string, number>>({});
   const [bottlesupFeeBps, setBottlesupFeeBps] = useState(0);
 
+  const [promoInput, setPromoInput] = useState('');
+  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discountCents: number } | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [applyingPromo, setApplyingPromo] = useState(false);
+
   useEffect(() => {
     setStep('details');
     setName('');
@@ -77,6 +82,9 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
     setGuestCount('2');
     setHours(tableType?.min_hours ? tableType.min_hours.toString() : '1');
     setCart({});
+    setPromoInput('');
+    setAppliedPromo(null);
+    setPromoError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableType]);
 
@@ -137,9 +145,11 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
     .map((b) => ({ bottle: b, quantity: cart[b.id], lineTotalCents: b.price_cents * cart[b.id] }));
   const bottleSubtotalCents = cartLines.reduce((sum, l) => sum + l.lineTotalCents, 0);
   const preTaxSubtotalCents = depositCents + bottleSubtotalCents;
-  const taxCents = Math.round((preTaxSubtotalCents * (tableType.venue.tax_rate_bps ?? 0)) / 10000);
-  const bottlesupFeeCents = Math.round((preTaxSubtotalCents * bottlesupFeeBps) / 10000);
-  const totalCents = preTaxSubtotalCents + taxCents + bottlesupFeeCents;
+  const discountCents = appliedPromo?.discountCents ?? 0;
+  const discountedSubtotalCents = preTaxSubtotalCents - discountCents;
+  const taxCents = Math.round((discountedSubtotalCents * (tableType.venue.tax_rate_bps ?? 0)) / 10000);
+  const bottlesupFeeCents = Math.round((discountedSubtotalCents * bottlesupFeeBps) / 10000);
+  const totalCents = discountedSubtotalCents + taxCents + bottlesupFeeCents;
 
   const setQuantity = (bottleId: string, quantity: number) =>
     setCart((prev) => {
@@ -179,6 +189,38 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
     setStep('bottles');
   };
 
+  const handleApplyPromo = async () => {
+    if (!promoInput.trim()) return;
+    setApplyingPromo(true);
+    setPromoError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('validate-promo-code', {
+        body: {
+          code: promoInput,
+          applies_to: 'tables',
+          venue_id: tableType.venue.id,
+          subtotal_cents: preTaxSubtotalCents,
+        },
+      });
+      if (error) throw error;
+      if (!data?.valid) {
+        setPromoError(data?.message ?? 'Invalid promo code');
+        return;
+      }
+      setAppliedPromo({ code: promoInput.trim().toUpperCase(), discountCents: data.discountCents });
+      setPromoInput('');
+    } catch (err) {
+      setPromoError(err instanceof Error ? err.message : 'Could not validate promo code');
+    } finally {
+      setApplyingPromo(false);
+    }
+  };
+
+  const handleRemovePromo = () => {
+    setAppliedPromo(null);
+    setPromoError(null);
+  };
+
   const handleSubmit = async () => {
     if (!validateDetails()) {
       setStep('details');
@@ -199,6 +241,7 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
           customer_phone: phone || null,
           hours: isHourly ? bookedHours : undefined,
           bottles: cartLines.map((l) => ({ bottle_id: l.bottle.id, quantity: l.quantity })),
+          promo_code: appliedPromo?.code,
         },
       });
 
@@ -431,6 +474,43 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
 
         {step === 'review' && (
           <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5 text-sm">
+                <Tag className="h-3.5 w-3.5" />
+                Promo Code
+              </Label>
+              {appliedPromo ? (
+                <div className="flex items-center justify-between rounded-lg border border-green-800/50 bg-green-950/30 px-3 py-2">
+                  <span className="font-mono text-sm text-green-400">{appliedPromo.code} applied</span>
+                  <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={handleRemovePromo}>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    value={promoInput}
+                    onChange={(e) => {
+                      setPromoInput(e.target.value.toUpperCase());
+                      setPromoError(null);
+                    }}
+                    placeholder="Enter code"
+                    className="font-mono uppercase"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-gray-700 shrink-0"
+                    disabled={applyingPromo || !promoInput.trim()}
+                    onClick={handleApplyPromo}
+                  >
+                    {applyingPromo ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Apply'}
+                  </Button>
+                </div>
+              )}
+              {promoError && <p className="text-xs text-red-400">{promoError}</p>}
+            </div>
+
             <div className="space-y-2 rounded-lg border border-gray-800 p-4 text-sm">
               <div className="flex justify-between text-gray-300">
                 <span>{isHourly ? `Table (${bookedHours} hr)` : 'Table deposit'}</span>
@@ -444,6 +524,12 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
                   <span>{money(l.lineTotalCents)}</span>
                 </div>
               ))}
+              {discountCents > 0 && (
+                <div className="flex justify-between text-green-400">
+                  <span>Promo ({appliedPromo?.code})</span>
+                  <span>-{money(discountCents)}</span>
+                </div>
+              )}
               {taxCents > 0 && (
                 <div className="flex justify-between text-gray-400">
                   <span>Tax</span>
@@ -468,7 +554,15 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
             </p>
 
             <DialogFooter className="gap-2 sm:justify-between">
-              <Button type="button" variant="outline" className="border-gray-800" onClick={() => setStep('bottles')}>
+              <Button
+                type="button"
+                variant="outline"
+                className="border-gray-800"
+                onClick={() => {
+                  handleRemovePromo();
+                  setStep('bottles');
+                }}
+              >
                 Back
               </Button>
               <Button

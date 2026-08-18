@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { corsHeadersFor, handleOptions, isPreviewOrLocalOrigin } from '../_shared/cors.ts';
+import { validatePromoCode } from '../_shared/promoCode.ts';
 
 Deno.serve(async (req: Request) => {
   const preflight = handleOptions(req);
@@ -15,7 +16,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { event_id, tier_id, quantity, customer_name, customer_email, customer_phone } = await req.json();
+    const { event_id, tier_id, quantity, customer_name, customer_email, customer_phone, promo_code } = await req.json();
 
     if (!event_id || !tier_id || !customer_name || !customer_email) {
       return json({ error: 'Missing required fields' }, 400);
@@ -55,7 +56,7 @@ Deno.serve(async (req: Request) => {
     // Re-read the tier + event server-side. The client never gets to say what the price is.
     const { data: tier, error: tierError } = await supabase
       .from('site_ticket_tiers')
-      .select('*, events:site_events!inner(id, title, status)')
+      .select('*, events:site_events!inner(id, title, status, venue_id)')
       .eq('id', tier_id)
       .eq('event_id', event_id)
       .single();
@@ -73,7 +74,27 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'Not enough tickets left in this tier' }, 409);
     }
 
-    const amountTotalCents = tier.price_cents * qty;
+    const fullAmountCents = tier.price_cents * qty;
+
+    // Re-validate the promo code from scratch against this exact order - the client
+    // never gets to say what the discount is, only which code it wants applied.
+    let promoCodeId: string | null = null;
+    let discountCents = 0;
+    if (typeof promo_code === 'string' && promo_code.trim()) {
+      const promoResult = await validatePromoCode(supabase, {
+        code: promo_code,
+        appliesTo: 'tickets',
+        venueId: tier.events.venue_id ?? null,
+        subtotalCents: fullAmountCents,
+      });
+      if (!promoResult.valid) {
+        return json({ error: promoResult.message }, 400);
+      }
+      promoCodeId = promoResult.promoCodeId!;
+      discountCents = promoResult.discountCents!;
+    }
+
+    const amountTotalCents = fullAmountCents - discountCents;
 
     const { data: order, error: orderError } = await supabase
       .from('site_orders')
@@ -87,6 +108,8 @@ Deno.serve(async (req: Request) => {
         amount_total_cents: amountTotalCents,
         currency: tier.currency,
         status: 'pending',
+        promo_code_id: promoCodeId,
+        discount_cents: discountCents,
       })
       .select('id')
       .single();
@@ -105,6 +128,20 @@ Deno.serve(async (req: Request) => {
       ? origin
       : (Deno.env.get('SITE_URL') ?? 'http://localhost:5173');
 
+    // Line item stays at full price - the discount is applied as a session-level
+    // Stripe coupon instead, so Stripe's own checkout summary shows it as a
+    // clearly labeled line. Created fresh per checkout ("once"), not reused.
+    let discounts: Stripe.Checkout.SessionCreateParams.Discount[] | undefined;
+    if (discountCents > 0) {
+      const coupon = await stripe.coupons.create({
+        amount_off: discountCents,
+        currency: tier.currency,
+        duration: 'once',
+        name: 'Promo code',
+      });
+      discounts = [{ coupon: coupon.id }];
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       customer_email,
@@ -118,6 +155,7 @@ Deno.serve(async (req: Request) => {
           quantity: qty,
         },
       ],
+      ...(discounts ? { discounts } : {}),
       // Keep the checkout in the tier's own currency (CAD) - without this, Stripe's
       // Adaptive Pricing shows buyers a "choose a currency" step with a converted price.
       adaptive_pricing: { enabled: false },

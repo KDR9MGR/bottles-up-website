@@ -18,7 +18,7 @@ export async function fulfillTicketOrder(
 ): Promise<void> {
   const { data: order, error } = await supabase
     .from('site_orders')
-    .select('*, ticket_tiers:site_ticket_tiers(*, events:site_events(*))')
+    .select('*, ticket_tiers:site_ticket_tiers(*, events:site_events(*)), promo:promo_codes(code)')
     .eq('id', orderId)
     .single();
 
@@ -43,6 +43,9 @@ export async function fulfillTicketOrder(
     if (claimed) {
       ticketCode = claimed.ticket_code;
       await supabase.rpc('increment_tier_sold', { p_tier_id: order.tier_id, p_qty: order.quantity });
+      if (order.promo_code_id) {
+        await supabase.rpc('increment_promo_code_usage', { p_promo_id: order.promo_code_id });
+      }
     } else {
       // Lost the race - another caller already claimed it. Use their code/state.
       const { data: refreshed } = await supabase
@@ -64,6 +67,7 @@ export async function fulfillTicketOrder(
 
   const qrDataUrl = await QRCode.toDataURL(ticketCode, { width: 400, margin: 1 });
   const tier = order.ticket_tiers as { name: string; events: { title: string; venue_name: string; start_date: string } };
+  const promo = order.promo as { code: string } | null;
 
   const email = await sendTicketEmail({
     toEmail: order.customer_email,
@@ -75,6 +79,8 @@ export async function fulfillTicketOrder(
     quantity: order.quantity,
     ticketCode,
     qrDataUrl,
+    discountCents: order.discount_cents,
+    promoCode: promo?.code ?? null,
   });
 
   if (email.sent) {
@@ -92,7 +98,7 @@ export async function fulfillTableBooking(
 ): Promise<void> {
   const { data: booking, error } = await supabase
     .from('site_table_bookings')
-    .select('*, table_type:site_table_types(*), venue:site_venues(*), time_slot:site_venue_time_slots(*)')
+    .select('*, table_type:site_table_types(*), venue:site_venues(*), time_slot:site_venue_time_slots(*), promo:promo_codes(code)')
     .eq('id', bookingId)
     .single();
 
@@ -116,6 +122,9 @@ export async function fulfillTableBooking(
 
     if (claimed) {
       confirmationCode = claimed.confirmation_code;
+      if (booking.promo_code_id) {
+        await supabase.rpc('increment_promo_code_usage', { p_promo_id: booking.promo_code_id });
+      }
     } else {
       const { data: refreshed } = await supabase
         .from('site_table_bookings')
@@ -143,6 +152,7 @@ export async function fulfillTableBooking(
   const tableType = booking.table_type as { name: string };
   const venue = booking.venue as { name: string };
   const timeSlot = booking.time_slot as { start_time: string };
+  const promo = booking.promo as { code: string } | null;
 
   const email = await sendTableBookingEmail({
     toEmail: booking.customer_email,
@@ -156,6 +166,8 @@ export async function fulfillTableBooking(
     bottleSubtotalCents: booking.bottle_subtotal_cents,
     taxCents: booking.tax_cents,
     bottlesupFeeCents: booking.bottlesup_fee_cents,
+    discountCents: booking.discount_cents,
+    promoCode: promo?.code ?? null,
     totalCents: booking.amount_total_cents,
     bottles: bottleLines ?? [],
     currency: booking.currency,
