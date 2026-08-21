@@ -5,7 +5,16 @@
 export type EventStatus = 'draft' | 'published';
 export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 export type PaymentsMode = 'test' | 'live';
-export type ScanResult = 'ok' | 'already_checked_in' | 'not_paid' | 'not_found' | 'expired';
+export type ScanResult =
+  | 'ok'
+  | 'already_checked_in'
+  | 'not_paid'
+  | 'not_found'
+  | 'expired'
+  | 'code_required'
+  | 'code_incorrect'
+  | 'code_expired'
+  | 'no_code_requested';
 export type PricingMode = 'flat' | 'hourly';
 export type FulfillmentStatus = 'confirmed' | 'preparing' | 'served' | 'completed';
 export type DiscountType = 'percentage' | 'fixed_amount';
@@ -71,6 +80,7 @@ export interface Database {
           currency: string;
           capacity: number;
           sold_count: number;
+          is_non_transferable: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -103,6 +113,9 @@ export interface Database {
           ticket_sent_at: string | null;
           checked_in_at: string | null;
           checked_in_by: string | null;
+          is_non_transferable: boolean;
+          access_code_verified: boolean;
+          access_code_verified_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -171,6 +184,28 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['scan_attempts']['Row']>;
+        Relationships: [];
+      };
+      ticket_otp_codes: {
+        Row: {
+          id: string;
+          order_id: string;
+          code_hash: string;
+          status: 'active' | 'verified' | 'expired';
+          sent_to_email: string;
+          attempts: number;
+          max_attempts: number;
+          created_at: string;
+          expires_at: string;
+          verified_at: string | null;
+          verified_by: string | null;
+        };
+        Insert: Partial<Database['public']['Tables']['ticket_otp_codes']['Row']> & {
+          order_id: string;
+          code_hash: string;
+          sent_to_email: string;
+        };
+        Update: Partial<Database['public']['Tables']['ticket_otp_codes']['Row']>;
         Relationships: [];
       };
       site_venues: {
@@ -485,6 +520,17 @@ export interface Database {
           event_title: string | null;
           tier_name: string | null;
           quantity: number | null;
+        }[];
+      };
+      verify_ticket_otp: {
+        Args: { p_ticket_code: string; p_code: string };
+        Returns: {
+          result: ScanResult;
+          customer_name: string | null;
+          event_title: string | null;
+          tier_name: string | null;
+          quantity: number | null;
+          attempts_remaining: number | null;
         }[];
       };
       get_unavailable_table_types: {

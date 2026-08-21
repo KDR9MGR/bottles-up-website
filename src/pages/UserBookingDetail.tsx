@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowLeft, Calendar, MapPin, Users, Clock, Download, Share2, Loader2, Ticket, TableIcon, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, Users, Clock, Download, Share2, Loader2, Ticket, TableIcon, CheckCircle2, AlertCircle, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
@@ -24,6 +24,7 @@ interface DetailData {
   lineItems: { label: string; amountCents: number }[];
   totalCents: number;
   createdAt: string;
+  isNonTransferable?: boolean;
 }
 
 const formatMoney = (cents: number, currency: string) => `$${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
@@ -42,6 +43,8 @@ export default function UserBookingDetail() {
   const { session, loading: authLoading } = useUserAuth();
   const [data, setData] = useState<DetailData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [requestingCode, setRequestingCode] = useState(false);
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
 
   useEffect(() => {
     if (authLoading || !session || !id || !type) return;
@@ -50,7 +53,7 @@ export default function UserBookingDetail() {
       if (type === 'ticket') {
         const { data: order } = await supabase
           .from('site_orders')
-          .select('id, status, ticket_code, quantity, amount_total_cents, currency, created_at, site_ticket_tiers(name), site_events(title, venue_name, start_date)')
+          .select('id, status, ticket_code, quantity, amount_total_cents, currency, created_at, is_non_transferable, site_ticket_tiers(name), site_events(title, venue_name, start_date)')
           .eq('id', id)
           .maybeSingle();
 
@@ -74,6 +77,7 @@ export default function UserBookingDetail() {
           lineItems: [{ label: `${tier?.name ?? 'Ticket'} × ${order.quantity}`, amountCents: order.amount_total_cents }],
           totalCents: order.amount_total_cents,
           createdAt: order.created_at,
+          isNonTransferable: order.is_non_transferable,
         });
       } else {
         const { data: booking } = await supabase
@@ -131,6 +135,27 @@ export default function UserBookingDetail() {
     } else {
       await navigator.clipboard.writeText(text);
       toast({ title: 'Copied to clipboard' });
+    }
+  };
+
+  const handleRequestCode = async () => {
+    if (!id || requestingCode) return;
+    setRequestingCode(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const { data: result, error } = await supabase.functions.invoke('request-ticket-otp', {
+        body: { order_id: id },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (error || result?.error) {
+        toast({ title: 'Could not send code', description: result?.error ?? error?.message, variant: 'destructive' });
+        return;
+      }
+      setCodeSentTo(result.email_preview ?? null);
+      toast({ title: 'Entry code sent', description: 'Check your email - it expires in 5 minutes.' });
+    } finally {
+      setRequestingCode(false);
     }
   };
 
@@ -221,6 +246,25 @@ export default function UserBookingDetail() {
               <p className="text-xs text-gray-500 mt-3 text-center">
                 Screenshot or save this QR code. Door staff will scan it at entry.
               </p>
+
+              {!isTable && data.isNonTransferable && (
+                <div className="mt-4 w-full rounded-xl border border-orange-500/20 bg-orange-500/5 p-3 text-center">
+                  <p className="text-xs text-gray-400 mb-2">
+                    This ticket is non-transferable. Request your entry code when you arrive at the door.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-orange-500/40 text-orange-400 hover:bg-orange-500/10"
+                    onClick={handleRequestCode}
+                    disabled={requestingCode}
+                  >
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    {requestingCode ? 'Sending...' : 'Get Entry Code'}
+                  </Button>
+                  {codeSentTo && <p className="mt-2 text-xs text-gray-500">Sent to {codeSentTo}</p>}
+                </div>
+              )}
             </div>
 
             <Separator className="bg-white/5" />

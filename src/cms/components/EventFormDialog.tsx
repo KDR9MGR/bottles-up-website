@@ -44,6 +44,7 @@ interface TierDraft {
   name: string;
   priceDollars: string;
   capacity: string;
+  isNonTransferable: boolean;
 }
 
 interface EventFormDialogProps {
@@ -146,6 +147,7 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
               name: t.name,
               priceDollars: (t.price_cents / 100).toString(),
               capacity: t.capacity.toString(),
+              isNonTransferable: t.is_non_transferable,
             })),
           );
           setOriginalTierIds(rows.map((t) => t.id));
@@ -159,7 +161,7 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
         .then(({ count }) => setPaidOrderCount(count ?? 0));
     } else {
       setForm(emptyForm);
-      setTiers([{ name: 'General Admission', priceDollars: '', capacity: '' }]);
+      setTiers([{ name: 'General Admission', priceDollars: '', capacity: '', isNonTransferable: false }]);
       setOriginalTierIds([]);
       setPaidOrderCount(0);
     }
@@ -206,7 +208,8 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
     }
   };
 
-  const addTier = () => setTiers((prev) => [...prev, { name: '', priceDollars: '', capacity: '' }]);
+  const addTier = () =>
+    setTiers((prev) => [...prev, { name: '', priceDollars: '', capacity: '', isNonTransferable: false }]);
   const removeTier = (index: number) => setTiers((prev) => prev.filter((_, i) => i !== index));
   const updateTier = (index: number, patch: Partial<TierDraft>) =>
     setTiers((prev) => prev.map((t, i) => (i === index ? { ...t, ...patch } : t)));
@@ -293,6 +296,7 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
           name: tier.name,
           price_cents: Math.round(parseFloat(tier.priceDollars) * 100),
           capacity: parseInt(tier.capacity, 10),
+          is_non_transferable: tier.isNonTransferable,
         };
         if (tier.id) {
           const { error } = await supabase.from('site_ticket_tiers').update(tierPayload).eq('id', tier.id);
@@ -557,30 +561,41 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
               </Button>
             </div>
             {tiers.map((tier, i) => (
-              <div key={i} className="grid grid-cols-[1fr_100px_100px_auto] gap-2">
-                <Input
-                  placeholder="Name (e.g. GA, VIP)"
-                  value={tier.name}
-                  onChange={(e) => updateTier(i, { name: e.target.value })}
-                />
-                <Input
-                  placeholder="Price $"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={tier.priceDollars}
-                  onChange={(e) => updateTier(i, { priceDollars: e.target.value })}
-                />
-                <Input
-                  placeholder="Capacity"
-                  type="number"
-                  min="0"
-                  value={tier.capacity}
-                  onChange={(e) => updateTier(i, { capacity: e.target.value })}
-                />
-                <Button type="button" size="icon" variant="ghost" onClick={() => removeTier(i)}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+              <div key={i} className="space-y-1.5 rounded-md border border-border/50 p-2">
+                <div className="grid grid-cols-[1fr_100px_100px_auto] gap-2">
+                  <Input
+                    placeholder="Name (e.g. GA, VIP)"
+                    value={tier.name}
+                    onChange={(e) => updateTier(i, { name: e.target.value })}
+                  />
+                  <Input
+                    placeholder="Price $"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={tier.priceDollars}
+                    onChange={(e) => updateTier(i, { priceDollars: e.target.value })}
+                  />
+                  <Input
+                    placeholder="Capacity"
+                    type="number"
+                    min="0"
+                    value={tier.capacity}
+                    onChange={(e) => updateTier(i, { capacity: e.target.value })}
+                  />
+                  <Button type="button" size="icon" variant="ghost" onClick={() => removeTier(i)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2 pl-1">
+                  <Switch
+                    checked={tier.isNonTransferable}
+                    onCheckedChange={(checked) => updateTier(i, { isNonTransferable: checked })}
+                  />
+                  <Label className="text-xs text-muted-foreground font-normal">
+                    Non-transferable (requires email entry code at the door)
+                  </Label>
+                </div>
               </div>
             ))}
           </div>

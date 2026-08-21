@@ -110,6 +110,7 @@ Deno.serve(async (req: Request) => {
         status: 'pending',
         promo_code_id: promoCodeId,
         discount_cents: discountCents,
+        is_non_transferable: tier.is_non_transferable,
       })
       .select('id')
       .single();

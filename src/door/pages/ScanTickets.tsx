@@ -21,6 +21,8 @@ type CheckinResult = {
   event_title: string | null;
   tier_name: string | null;
   quantity: number | null;
+  ticket_code?: string;
+  attempts_remaining?: number | null;
 };
 
 const resultCopy: Record<ClientResult, { label: string; tone: 'ok' | 'warn' | 'error' }> = {
@@ -29,6 +31,10 @@ const resultCopy: Record<ClientResult, { label: string; tone: 'ok' | 'warn' | 'e
   not_paid: { label: 'Not paid', tone: 'error' },
   not_found: { label: 'Ticket not found', tone: 'error' },
   expired: { label: 'Event has ended', tone: 'error' },
+  code_required: { label: 'Entry code required', tone: 'warn' },
+  code_incorrect: { label: 'Code is incorrect', tone: 'error' },
+  code_expired: { label: 'Code expired', tone: 'error' },
+  no_code_requested: { label: 'No code requested yet', tone: 'error' },
   session_expired: { label: 'Session expired', tone: 'error' },
   scan_error: { label: 'Scan failed - try again', tone: 'error' },
 };
@@ -40,15 +46,25 @@ const ScanTickets = () => {
   const lastCodeRef = useRef<{ code: string; at: number } | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState('');
+  const [otpCode, setOtpCode] = useState('');
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<CheckinResult | null>(null);
+
+  const authErrorResult = (): CheckinResult => ({
+    result: 'session_expired',
+    customer_name: null,
+    event_title: null,
+    tier_name: null,
+    quantity: null,
+  });
 
   const runCheckin = async (code: string) => {
     if (!code.trim() || busyRef.current) return;
     busyRef.current = true;
     pausedRef.current = true;
     setChecking(true);
-    const { data, error } = await supabase.rpc('checkin_ticket', { p_ticket_code: code.trim() });
+    const ticketCode = code.trim();
+    const { data, error } = await supabase.rpc('checkin_ticket', { p_ticket_code: ticketCode });
     setChecking(false);
     busyRef.current = false;
 
@@ -57,16 +73,38 @@ const ScanTickets = () => {
       // membership no longer checks out - most commonly an expired session. Surface
       // that distinctly instead of implying the ticket itself is the problem.
       const isAuthError = /not authorized/i.test(error.message ?? '');
-      setResult({
-        result: isAuthError ? 'session_expired' : 'scan_error',
-        customer_name: null,
-        event_title: null,
-        tier_name: null,
-        quantity: null,
-      });
+      setResult(
+        isAuthError
+          ? authErrorResult()
+          : { result: 'scan_error', customer_name: null, event_title: null, tier_name: null, quantity: null },
+      );
       return;
     }
-    setResult((data?.[0] as CheckinResult) ?? null);
+    if (!data?.[0]) {
+      setResult(null);
+      return;
+    }
+    setResult({ ...(data[0] as CheckinResult), ticket_code: ticketCode });
+  };
+
+  const runVerifyOtp = async () => {
+    if (!result?.ticket_code || !otpCode.trim() || busyRef.current) return;
+    busyRef.current = true;
+    setChecking(true);
+    const { data, error } = await supabase.rpc('verify_ticket_otp', {
+      p_ticket_code: result.ticket_code,
+      p_code: otpCode.trim(),
+    });
+    setChecking(false);
+    busyRef.current = false;
+    setOtpCode('');
+
+    if (error) {
+      const isAuthError = /not authorized/i.test(error.message ?? '');
+      setResult(isAuthError ? authErrorResult() : { ...result, result: 'scan_error' });
+      return;
+    }
+    setResult({ ...(data?.[0] as CheckinResult), ticket_code: result.ticket_code });
   };
 
   useEffect(() => {
@@ -106,6 +144,19 @@ const ScanTickets = () => {
   const scanNext = () => {
     pausedRef.current = false;
     setResult(null);
+    setOtpCode('');
+  };
+
+  const needsOtp =
+    result &&
+    (result.result === 'code_required' ||
+      result.result === 'code_incorrect' ||
+      result.result === 'code_expired' ||
+      result.result === 'no_code_requested');
+
+  const handleOtpSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    runVerifyOtp();
   };
 
   const tone = result ? resultCopy[result.result].tone : null;
@@ -145,12 +196,38 @@ const ScanTickets = () => {
           {result.result === 'session_expired' ? (
             <p className="mt-4 text-sm opacity-90">Your login expired. Sign in again to keep scanning.</p>
           ) : null}
-          <Button
-            className="mt-6 w-full bg-gradient-orange text-black font-bold hover:opacity-90"
-            onClick={result.result === 'session_expired' ? () => doorSignOut() : scanNext}
-          >
-            {result.result === 'session_expired' ? 'Sign In Again' : 'Scan Next'}
-          </Button>
+          {needsOtp ? (
+            <>
+              <p className="mt-4 text-sm opacity-90">
+                This ticket is non-transferable. Ask the customer for the entry code from their email
+                {typeof result.attempts_remaining === 'number' ? ` (${result.attempts_remaining} attempts left)` : ''}.
+              </p>
+              <form onSubmit={handleOtpSubmit} className="mt-4 flex gap-2">
+                <Input
+                  placeholder="6-digit code"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value)}
+                  className="text-center font-mono text-white"
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoFocus
+                />
+                <Button type="submit" disabled={checking || !otpCode.trim()}>
+                  Verify
+                </Button>
+              </form>
+              <Button variant="ghost" size="sm" className="mt-2 w-full text-gray-400" onClick={scanNext}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button
+              className="mt-6 w-full bg-gradient-orange text-black font-bold hover:opacity-90"
+              onClick={result.result === 'session_expired' ? () => doorSignOut() : scanNext}
+            >
+              {result.result === 'session_expired' ? 'Sign In Again' : 'Scan Next'}
+            </Button>
+          )}
         </div>
       ) : (
         <div className="w-full max-w-sm">
