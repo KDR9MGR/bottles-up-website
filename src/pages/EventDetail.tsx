@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, MapPin, Ticket, Crown, Share2, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, Ticket, Crown, Share2, CheckCircle2, Lock } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
@@ -107,9 +107,8 @@ const EventDetail = () => {
     );
   }
 
-  const priceFrom = event.ticket_tiers.length
-    ? Math.min(...event.ticket_tiers.map((t) => t.price_cents))
-    : null;
+  const unlockedTiers = event.ticket_tiers.filter((t) => !t.requires_access_code);
+  const priceFrom = unlockedTiers.length ? Math.min(...unlockedTiers.map((t) => t.price_cents)) : null;
   const soldOut =
     event.ticket_tiers.length > 0 && event.ticket_tiers.every((t) => t.sold_count >= t.capacity);
   const tags = (event.category ?? '')
@@ -271,7 +270,14 @@ const EventDetail = () => {
                           )}
                           <div className="flex items-center justify-between">
                             <div className="text-sm font-medium text-white">{tier.name}</div>
-                            <div className="font-semibold text-white">${(tier.price_cents / 100).toFixed(2)}</div>
+                            {tier.requires_access_code ? (
+                              <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                                <Lock className="h-3 w-3" />
+                                Access code required
+                              </div>
+                            ) : (
+                              <div className="font-semibold text-white">${(tier.price_cents / 100).toFixed(2)}</div>
+                            )}
                           </div>
                           {event.show_ticket_count && (
                             <div className="text-xs text-muted-foreground">
@@ -312,8 +318,9 @@ const EventDetail = () => {
             <h2 className="mb-6 text-xl font-semibold text-white">You Might Also Like</h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {relatedEvents.map((related) => {
-                const relatedPriceFrom = related.ticket_tiers.length
-                  ? Math.min(...related.ticket_tiers.map((t) => t.price_cents))
+                const relatedUnlockedTiers = related.ticket_tiers.filter((t) => !t.requires_access_code);
+                const relatedPriceFrom = relatedUnlockedTiers.length
+                  ? Math.min(...relatedUnlockedTiers.map((t) => t.price_cents))
                   : null;
                 return (
                   <Link

@@ -45,6 +45,12 @@ interface TierDraft {
   priceDollars: string;
   capacity: string;
   isNonTransferable: boolean;
+  requiresAccessCode: boolean;
+  accessCodeInput: string;
+  // Whether this tier already had the gate on when the form loaded - lets save
+  // validation tell "newly gated, needs a code" apart from "already gated,
+  // blank input just means keep the existing code".
+  wasGatedOnLoad: boolean;
 }
 
 interface EventFormDialogProps {
@@ -148,6 +154,9 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
               priceDollars: (t.price_cents / 100).toString(),
               capacity: t.capacity.toString(),
               isNonTransferable: t.is_non_transferable,
+              requiresAccessCode: t.requires_access_code,
+              accessCodeInput: '',
+              wasGatedOnLoad: t.requires_access_code,
             })),
           );
           setOriginalTierIds(rows.map((t) => t.id));
@@ -161,7 +170,7 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
         .then(({ count }) => setPaidOrderCount(count ?? 0));
     } else {
       setForm(emptyForm);
-      setTiers([{ name: 'General Admission', priceDollars: '', capacity: '', isNonTransferable: false }]);
+      setTiers([{ name: 'General Admission', priceDollars: '', capacity: '', isNonTransferable: false, requiresAccessCode: false, accessCodeInput: '', wasGatedOnLoad: false }]);
       setOriginalTierIds([]);
       setPaidOrderCount(0);
     }
@@ -209,7 +218,10 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
   };
 
   const addTier = () =>
-    setTiers((prev) => [...prev, { name: '', priceDollars: '', capacity: '', isNonTransferable: false }]);
+    setTiers((prev) => [
+      ...prev,
+      { name: '', priceDollars: '', capacity: '', isNonTransferable: false, requiresAccessCode: false, accessCodeInput: '', wasGatedOnLoad: false },
+    ]);
   const removeTier = (index: number) => setTiers((prev) => prev.filter((_, i) => i !== index));
   const updateTier = (index: number, patch: Partial<TierDraft>) =>
     setTiers((prev) => prev.map((t, i) => (i === index ? { ...t, ...patch } : t)));
@@ -217,6 +229,18 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
   const handleSave = async () => {
     if (!form.title || !form.description || !form.venue_name || !form.start_date) {
       toast({ title: 'Missing required fields', description: 'Title, description, venue, and start date are required.', variant: 'destructive' });
+      return;
+    }
+
+    const newlyGatedWithoutCode = tiers.find(
+      (t) => t.requiresAccessCode && !t.wasGatedOnLoad && !t.accessCodeInput.trim(),
+    );
+    if (newlyGatedWithoutCode) {
+      toast({
+        title: 'Access code required',
+        description: `Set an access code for "${newlyGatedWithoutCode.name || 'the gated tier'}" - otherwise nobody will be able to unlock it.`,
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -297,13 +321,29 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
           price_cents: Math.round(parseFloat(tier.priceDollars) * 100),
           capacity: parseInt(tier.capacity, 10),
           is_non_transferable: tier.isNonTransferable,
+          requires_access_code: tier.requiresAccessCode,
         };
+        let savedTierId = tier.id;
         if (tier.id) {
           const { error } = await supabase.from('site_ticket_tiers').update(tierPayload).eq('id', tier.id);
           if (error) throw error;
         } else {
-          const { error } = await supabase.from('site_ticket_tiers').insert(tierPayload);
+          const { data, error } = await supabase.from('site_ticket_tiers').insert(tierPayload).select('id').single();
           if (error) throw error;
+          savedTierId = data?.id;
+        }
+
+        // The access code itself is write-only (hashed server-side, never
+        // read back) - only touch it when the admin actually typed something.
+        // Leaving the field blank on an existing gated tier keeps its old code.
+        if (tier.requiresAccessCode && tier.accessCodeInput.trim() && savedTierId) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const token = sessionData.session?.access_token;
+          const { error: codeError } = await supabase.functions.invoke('set-tier-access-code', {
+            body: { tier_id: savedTierId, code: tier.accessCodeInput.trim() },
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
+          if (codeError) throw codeError;
         }
       }
 
@@ -596,6 +636,23 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
                     Non-transferable (requires email entry code at the door)
                   </Label>
                 </div>
+                <div className="flex items-center gap-2 pl-1">
+                  <Switch
+                    checked={tier.requiresAccessCode}
+                    onCheckedChange={(checked) => updateTier(i, { requiresAccessCode: checked })}
+                  />
+                  <Label className="text-xs text-muted-foreground font-normal">
+                    Requires access code to purchase (price hidden until unlocked)
+                  </Label>
+                </div>
+                {tier.requiresAccessCode && (
+                  <Input
+                    placeholder={tier.wasGatedOnLoad ? 'Leave blank to keep the existing code' : 'Set access code (e.g. MEMBERS26)'}
+                    value={tier.accessCodeInput}
+                    onChange={(e) => updateTier(i, { accessCodeInput: e.target.value })}
+                    className="font-mono"
+                  />
+                )}
               </div>
             ))}
           </div>

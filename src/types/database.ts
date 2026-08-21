@@ -81,6 +81,7 @@ export interface Database {
           capacity: number;
           sold_count: number;
           is_non_transferable: boolean;
+          requires_access_code: boolean;
           created_at: string;
           updated_at: string;
         };

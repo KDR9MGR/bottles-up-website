@@ -2,6 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { corsHeadersFor, handleOptions, isPreviewOrLocalOrigin } from '../_shared/cors.ts';
 import { validatePromoCode } from '../_shared/promoCode.ts';
+import { validateTierAccessCode } from '../_shared/tierAccessCode.ts';
 
 Deno.serve(async (req: Request) => {
   const preflight = handleOptions(req);
@@ -16,7 +17,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { event_id, tier_id, quantity, customer_name, customer_email, customer_phone, promo_code } = await req.json();
+    const { event_id, tier_id, quantity, customer_name, customer_email, customer_phone, promo_code, access_code } = await req.json();
 
     if (!event_id || !tier_id || !customer_name || !customer_email) {
       return json({ error: 'Missing required fields' }, 400);
@@ -66,6 +67,15 @@ Deno.serve(async (req: Request) => {
     }
     if (tier.events.status !== 'published') {
       return json({ error: 'This event is not currently on sale' }, 400);
+    }
+    // The client never gets to just claim it already unlocked this tier - the
+    // access code (if the tier requires one) is re-checked from scratch here,
+    // same trust model as the promo code re-validation below.
+    if (tier.requires_access_code) {
+      const codeResult = await validateTierAccessCode(supabase, tier_id, access_code);
+      if (!codeResult.valid) {
+        return json({ error: codeResult.message }, 403);
+      }
     }
     // Best-effort capacity check against tickets already confirmed paid. Not airtight under
     // heavy concurrent checkouts (sold_count only increments on webhook fulfillment, not at

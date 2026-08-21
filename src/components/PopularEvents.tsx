@@ -12,8 +12,9 @@ type TierRow = Database['public']['Tables']['site_ticket_tiers']['Row'];
 export type EventWithTiers = EventRow & { ticket_tiers: TierRow[] };
 
 const formatPriceFrom = (tiers: TierRow[]) => {
-  if (tiers.length === 0) return null;
-  const min = Math.min(...tiers.map((t) => t.price_cents));
+  const unlocked = tiers.filter((t) => !t.requires_access_code);
+  if (unlocked.length === 0) return null;
+  const min = Math.min(...unlocked.map((t) => t.price_cents));
   return `$${(min / 100).toFixed(0)}`;
 };
 
