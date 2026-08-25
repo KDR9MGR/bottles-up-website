@@ -2,11 +2,12 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import Header from '@/components/Header';
 import Hero from '@/components/Hero';
-import Features from '@/components/Features';
+import HotRightNow from '@/components/HotRightNow';
 import PopularEvents from '@/components/PopularEvents';
-import HowItWorks from '@/components/HowItWorks';
+import FourTapsToTheTable from '@/components/FourTapsToTheTable';
 import PopularVipTables from '@/components/PopularVipTables';
-import TrustedByVenues from '@/components/TrustedByVenues';
+import AppDownloadTeaser from '@/components/AppDownloadTeaser';
+import PartnersCTA from '@/components/PartnersCTA';
 import EmailCollection from '@/components/EmailCollection';
 import Footer from '@/components/Footer';
 
@@ -33,11 +34,12 @@ const Index = () => {
     <div className="min-h-screen bg-black">
       <Header />
       <Hero />
-      <Features />
+      <HotRightNow />
       <PopularEvents />
-      <HowItWorks />
+      <FourTapsToTheTable />
       <PopularVipTables />
-      <TrustedByVenues />
+      <AppDownloadTeaser />
+      <PartnersCTA />
       <EmailCollection />
       <Footer />
     </div>

@@ -88,13 +88,13 @@ const Footer = () => {
           </div>
 
           {/* For Partners */}
-          <div id="partners">
+          <div>
             <h3 className="mb-5 text-sm font-semibold uppercase tracking-wide text-white">For Partners</h3>
             <ul className="space-y-3">
-              <li><a href="mailto:partners@bottlesupapp.com" className={linkClass}>Venue Partnership</a></li>
-              <li><a href="mailto:promoters@bottlesupapp.com" className={linkClass}>Promoter Portal</a></li>
-              <li><a href="mailto:events@bottlesupapp.com" className={linkClass}>Event Listing</a></li>
-              <li><a href="mailto:business@bottlesupapp.com" className={linkClass}>Business Inquiries</a></li>
+              <li><Link to="/partners/apply" className={linkClass}>Venue Partnership</Link></li>
+              <li><Link to="/partners/apply" className={linkClass}>Promoter Portal</Link></li>
+              <li><Link to="/partners/apply" className={linkClass}>Event Listing</Link></li>
+              <li><a href="mailto:business@bottlesupapp.com" className={linkClass}>Enterprise Inquiries</a></li>
             </ul>
           </div>
 
@@ -130,13 +130,13 @@ const Footer = () => {
             <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-xl">
               <h4 className="mb-1.5 text-sm font-semibold text-orange-500">Partners &amp; Promoters</h4>
               <p className="mb-3 text-xs text-gray-400">Want to list your venue or event?</p>
-              <a
-                href="mailto:partners@bottlesupapp.com"
+              <Link
+                to="/partners/apply"
                 className="inline-flex items-center gap-1 rounded-full bg-gradient-orange px-4 py-1.5 text-xs font-bold text-black transition-transform duration-300 hover:scale-105"
               >
                 Get Started
                 <ArrowUpRight className="h-3 w-3" />
-              </a>
+              </Link>
             </div>
           </div>
         </div>
