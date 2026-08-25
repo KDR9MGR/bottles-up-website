@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { format, parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,16 +17,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Mail, RefreshCw } from 'lucide-react';
+import { Mail, RefreshCw, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { sessionMode, type PaymentModeFilter } from '../lib/paymentMode';
 import type { Database, OrderStatus } from '@/types/database';
 
 type OrderRow = Database['public']['Tables']['site_orders']['Row'] & {
-  events: { title: string } | null;
+  events: { title: string; start_date: string } | null;
   ticket_tiers: { name: string } | null;
 };
+type EventOption = { id: string; title: string; start_date: string };
 
 const statusVariant: Record<OrderStatus, 'default' | 'secondary' | 'destructive'> = {
   paid: 'default',
@@ -34,22 +36,30 @@ const statusVariant: Record<OrderStatus, 'default' | 'secondary' | 'destructive'
   refunded: 'destructive',
 };
 
+const csvEscape = (value: string) => `"${value.replace(/"/g, '""')}"`;
+
 const CmsBookings = () => {
   const { toast } = useToast();
   const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [events, setEvents] = useState<EventOption[]>([]);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
   const [modeFilter, setModeFilter] = useState<PaymentModeFilter>('live');
+  const [eventFilter, setEventFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [checkingId, setCheckingId] = useState<string | null>(null);
 
   const loadOrders = async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from('site_orders')
-      .select('*, events:site_events(title), ticket_tiers:site_ticket_tiers(name)')
-      .order('created_at', { ascending: false });
-    setOrders((data as OrderRow[]) ?? []);
+    const [ordersRes, eventsRes] = await Promise.all([
+      supabase
+        .from('site_orders')
+        .select('*, events:site_events(title, start_date), ticket_tiers:site_ticket_tiers(name)')
+        .order('created_at', { ascending: false }),
+      supabase.from('site_events').select('id, title, start_date').order('start_date', { ascending: false }),
+    ]);
+    setOrders((ordersRes.data as OrderRow[]) ?? []);
+    setEvents((eventsRes.data as EventOption[]) ?? []);
     setLoading(false);
   };
 
@@ -57,13 +67,37 @@ const CmsBookings = () => {
     loadOrders();
   }, []);
 
-  const filtered = useMemo(
+  // Stat cards ignore the status filter (so all four always show the full
+  // breakdown) but still respect payment mode + event scoping, since those
+  // narrow "which orders are we even looking at" rather than "which subset
+  // of statuses to display".
+  const scoped = useMemo(
     () =>
       orders
-        .filter((o) => statusFilter === 'all' || o.status === statusFilter)
-        .filter((o) => modeFilter === 'all' || sessionMode(o.stripe_checkout_session_id) === modeFilter),
-    [orders, statusFilter, modeFilter],
+        .filter((o) => modeFilter === 'all' || sessionMode(o.stripe_checkout_session_id) === modeFilter)
+        .filter((o) => eventFilter === 'all' || o.event_id === eventFilter),
+    [orders, modeFilter, eventFilter],
   );
+  const filtered = useMemo(
+    () => scoped.filter((o) => statusFilter === 'all' || o.status === statusFilter),
+    [scoped, statusFilter],
+  );
+
+  const stats = useMemo(() => {
+    const sum = (rows: OrderRow[]) => rows.reduce((acc, o) => acc + o.amount_total_cents, 0);
+    const paid = scoped.filter((o) => o.status === 'paid');
+    const pending = scoped.filter((o) => o.status === 'pending');
+    const failed = scoped.filter((o) => o.status === 'failed');
+    const checkedIn = scoped.filter((o) => o.checked_in_at);
+    return {
+      paid: { count: paid.length, cents: sum(paid) },
+      pending: { count: pending.length, cents: sum(pending) },
+      failed: { count: failed.length, cents: sum(failed) },
+      checkedIn: { count: checkedIn.length, ofSold: paid.length },
+    };
+  }, [scoped]);
+
+  const selectedEvent = eventFilter === 'all' ? null : events.find((e) => e.id === eventFilter) ?? null;
 
   const handleResend = async (orderId: string) => {
     setResendingId(orderId);
@@ -89,6 +123,7 @@ const CmsBookings = () => {
   // charge. This re-uses the same check-with-Stripe fallback the booking-success
   // page calls automatically, so an admin can trigger it manually for any order
   // that's stuck instead of waiting on the customer to reload their success page.
+  // Also doubles as "Retry" for a failed order - same recheck, different label.
   const handleCheckStripe = async (order: OrderRow) => {
     if (!order.stripe_checkout_session_id) {
       toast({ title: 'No Stripe session on this order', variant: 'destructive' });
@@ -115,11 +150,54 @@ const CmsBookings = () => {
     }
   };
 
+  const handleExportCsv = () => {
+    const header = ['Customer', 'Email', 'Event', 'Tier', 'Qty', 'Total', 'Status', 'Ticket Code', 'Created At'];
+    const rows = filtered.map((o) => [
+      o.customer_name,
+      o.customer_email,
+      o.events?.title ?? '',
+      o.ticket_tiers?.name ?? '',
+      String(o.quantity),
+      (o.amount_total_cents / 100).toFixed(2),
+      o.status,
+      o.ticket_code ?? '',
+      o.created_at,
+    ]);
+    const csv = [header, ...rows].map((row) => row.map(csvEscape).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bookings-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Bookings ({filtered.length})</h1>
+      <div className="mb-1 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-white">
+          {filtered.length} {filtered.length === 1 ? 'booking' : 'bookings'}
+          {selectedEvent && (
+            <span className="ml-2 text-lg font-normal text-gray-400">
+              · {selectedEvent.title} · {format(parseISO(selectedEvent.start_date), 'EEE d MMM')}
+            </span>
+          )}
+        </h1>
         <div className="flex gap-2">
+          <Select value={eventFilter} onValueChange={setEventFilter}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="All events" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All events</SelectItem>
+              {events.map((e) => (
+                <SelectItem key={e.id} value={e.id}>
+                  {e.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={modeFilter} onValueChange={(v) => setModeFilter(v as PaymentModeFilter)}>
             <SelectTrigger className="w-36">
               <SelectValue />
@@ -142,6 +220,45 @@ const CmsBookings = () => {
               <SelectItem value="refunded">Refunded</SelectItem>
             </SelectContent>
           </Select>
+          <Button variant="outline" onClick={handleExportCsv} disabled={filtered.length === 0}>
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
+          </Button>
+        </div>
+      </div>
+
+      <div className="my-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-lg border border-gray-800 p-4">
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+            Paid
+          </div>
+          <div className="mt-1 text-2xl font-bold text-white">{stats.paid.count}</div>
+          <div className="text-xs text-gray-500">${(stats.paid.cents / 100).toFixed(2)}</div>
+        </div>
+        <div className="rounded-lg border border-gray-800 p-4">
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+            Pending
+          </div>
+          <div className="mt-1 text-2xl font-bold text-white">{stats.pending.count}</div>
+          <div className="text-xs text-gray-500">${(stats.pending.cents / 100).toFixed(2)}</div>
+        </div>
+        <div className="rounded-lg border border-gray-800 p-4">
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+            Failed
+          </div>
+          <div className="mt-1 text-2xl font-bold text-white">{stats.failed.count}</div>
+          <div className="text-xs text-gray-500">${(stats.failed.cents / 100).toFixed(2)}</div>
+        </div>
+        <div className="rounded-lg border border-gray-800 p-4">
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-gray-500" />
+            Checked in
+          </div>
+          <div className="mt-1 text-2xl font-bold text-white">{stats.checkedIn.count}</div>
+          <div className="text-xs text-gray-500">of {stats.checkedIn.ofSold} sold</div>
         </div>
       </div>
 
@@ -178,7 +295,7 @@ const CmsBookings = () => {
                   </TableCell>
                   <TableCell className="font-mono text-xs">{order.ticket_code ?? '-'}</TableCell>
                   <TableCell className="text-right">
-                    {order.status === 'pending' && (
+                    {(order.status === 'pending' || order.status === 'failed') && (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -186,7 +303,11 @@ const CmsBookings = () => {
                         onClick={() => handleCheckStripe(order)}
                       >
                         <RefreshCw className="mr-1 h-3 w-3" />
-                        {checkingId === order.id ? 'Checking...' : 'Check with Stripe'}
+                        {checkingId === order.id
+                          ? 'Checking...'
+                          : order.status === 'failed'
+                            ? 'Retry'
+                            : 'Check with Stripe'}
                       </Button>
                     )}
                     <Button
