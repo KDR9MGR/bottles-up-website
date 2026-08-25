@@ -5,6 +5,8 @@
 export type EventStatus = 'draft' | 'published';
 export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 export type PaymentsMode = 'test' | 'live';
+export type PartnerType = 'venue_operator' | 'promoter' | 'organizer';
+export type PartnerOnboardingStatus = 'pending' | 'active' | 'suspended';
 export type ScanResult =
   | 'ok'
   | 'already_checked_in'
@@ -145,6 +147,26 @@ export interface Database {
           email: string;
         };
         Update: Partial<Database['public']['Tables']['vip_emails']['Row']>;
+        Relationships: [];
+      };
+      partner_accounts: {
+        Row: {
+          id: string;
+          user_type: PartnerType;
+          legal_name: string;
+          date_of_birth: string;
+          onboarding_step: number;
+          onboarding_status: PartnerOnboardingStatus;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['partner_accounts']['Row']> & {
+          id: string;
+          user_type: PartnerType;
+          legal_name: string;
+          date_of_birth: string;
+        };
+        Update: Partial<Database['public']['Tables']['partner_accounts']['Row']>;
         Relationships: [];
       };
       door_staff: {
@@ -513,6 +535,10 @@ export interface Database {
     };
     Views: { [_ in never]: never };
     Functions: {
+      create_partner_account: {
+        Args: { p_user_type: PartnerType; p_legal_name: string; p_date_of_birth: string };
+        Returns: Database['public']['Tables']['partner_accounts']['Row'];
+      };
       checkin_ticket: {
         Args: { p_ticket_code: string };
         Returns: {

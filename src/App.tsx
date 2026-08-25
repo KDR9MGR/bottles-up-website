@@ -38,6 +38,9 @@ import UserBookingDetail from "./pages/UserBookingDetail";
 import RequireDoorAuth from "./door/RequireDoorAuth";
 import DoorLogin from "./door/pages/DoorLogin";
 import ScanTickets from "./door/pages/ScanTickets";
+import PartnerApply from "./partners/pages/PartnerApply";
+import PartnerLogin from "./partners/pages/PartnerLogin";
+import PartnerOnboarding from "./partners/pages/PartnerOnboarding";
 
 const queryClient = new QueryClient();
 
@@ -64,6 +67,9 @@ const App = () => {
             <Route path="/dashboard" element={<UserDashboard />} />
             <Route path="/profile" element={<UserProfile />} />
             <Route path="/bookings/:type/:id" element={<UserBookingDetail />} />
+            <Route path="/partners/apply" element={<PartnerApply />} />
+            <Route path="/partners/login" element={<PartnerLogin />} />
+            <Route path="/partners/onboarding" element={<PartnerOnboarding />} />
             <Route path="/door/login" element={<DoorLogin />} />
             <Route
               path="/door/scan"
