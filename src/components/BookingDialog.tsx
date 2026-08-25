@@ -25,11 +25,12 @@ interface BookingDialogProps {
   event: EventWithTiers | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialTierId?: string | null;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const BookingDialog = ({ event, open, onOpenChange }: BookingDialogProps) => {
+const BookingDialog = ({ event, open, onOpenChange, initialTierId }: BookingDialogProps) => {
   const { toast } = useToast();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -53,7 +54,8 @@ const BookingDialog = ({ event, open, onOpenChange }: BookingDialogProps) => {
 
   useEffect(() => {
     if (event && event.ticket_tiers.length > 0) {
-      setTierId(event.ticket_tiers[0].id);
+      const preselected = initialTierId && event.ticket_tiers.some((t) => t.id === initialTierId);
+      setTierId(preselected ? initialTierId! : event.ticket_tiers[0].id);
     }
     setName('');
     setEmail('');
@@ -66,7 +68,7 @@ const BookingDialog = ({ event, open, onOpenChange }: BookingDialogProps) => {
     setAccessCodeInput('');
     setAccessCodeError(null);
     setUnlockedTiers({});
-  }, [event]);
+  }, [event, initialTierId]);
 
   // A percentage discount depends on the subtotal it was validated against -
   // clear it if the tier or quantity changes so a stale amount can never be charged.

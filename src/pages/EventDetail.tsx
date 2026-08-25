@@ -22,6 +22,7 @@ const EventDetail = () => {
   const [loading, setLoading] = useState(true);
   const [bookingOpen, setBookingOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [selectedTierId, setSelectedTierId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -50,6 +51,7 @@ const EventDetail = () => {
 
       const loaded = data as EventWithVenue | null;
       setEvent(loaded);
+      setSelectedTierId(null);
       setLoading(false);
 
       if (loaded) {
@@ -256,11 +258,18 @@ const EventDetail = () => {
                     {event.ticket_tiers.map((tier, i) => {
                       const remaining = tier.capacity - tier.sold_count;
                       const popular = i === Math.min(1, event.ticket_tiers.length - 1) && event.ticket_tiers.length > 1;
+                      const selected = selectedTierId === tier.id;
                       return (
-                        <div
+                        <button
                           key={tier.id}
-                          className={`relative rounded-lg border px-3 py-2 ${
-                            popular ? 'border-primary bg-primary/5' : 'border-border'
+                          type="button"
+                          onClick={() => setSelectedTierId(tier.id)}
+                          className={`relative w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                            selected
+                              ? 'border-primary bg-primary/10 ring-1 ring-primary'
+                              : popular
+                                ? 'border-primary bg-primary/5'
+                                : 'border-border hover:border-primary/40'
                           }`}
                         >
                           {popular && (
@@ -284,7 +293,7 @@ const EventDetail = () => {
                               {remaining > 0 ? `${remaining} left` : 'Sold out'}
                             </div>
                           )}
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -352,7 +361,12 @@ const EventDetail = () => {
 
       <Footer />
 
-      <BookingDialog event={bookingOpen ? event : null} open={bookingOpen} onOpenChange={setBookingOpen} />
+      <BookingDialog
+        event={bookingOpen ? event : null}
+        open={bookingOpen}
+        onOpenChange={setBookingOpen}
+        initialTierId={selectedTierId}
+      />
 
       {lightboxIndex !== null && (
         <Lightbox
