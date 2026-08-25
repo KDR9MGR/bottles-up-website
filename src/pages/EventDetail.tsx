@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, MapPin, Ticket, Crown, Share2, CheckCircle2, Lock } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, Ticket, Crown, Share2, CheckCircle2, Lock, Music, BadgeCheck, Instagram } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
@@ -8,19 +8,21 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
-import BookingDialog from '@/components/BookingDialog';
+import TicketSelectionForm from '@/components/TicketSelectionForm';
 import Lightbox from '@/components/Lightbox';
 import type { EventWithTiers } from '@/components/PopularEvents';
+import type { Database } from '@/types/database';
 
 type EventWithVenue = EventWithTiers & { linked_venue: { slug: string | null } | null };
+type TableTypeRow = Database['public']['Tables']['site_table_types']['Row'];
 
 const EventDetail = () => {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const [event, setEvent] = useState<EventWithVenue | null>(null);
   const [relatedEvents, setRelatedEvents] = useState<EventWithTiers[]>([]);
+  const [venueTables, setVenueTables] = useState<TableTypeRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [bookingOpen, setBookingOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [selectedTierId, setSelectedTierId] = useState<string | null>(null);
 
@@ -51,7 +53,7 @@ const EventDetail = () => {
 
       const loaded = data as EventWithVenue | null;
       setEvent(loaded);
-      setSelectedTierId(null);
+      setSelectedTierId(loaded?.ticket_tiers[0]?.id ?? null);
       setLoading(false);
 
       if (loaded) {
@@ -63,6 +65,18 @@ const EventDetail = () => {
           .order('start_date', { ascending: true })
           .limit(4);
         setRelatedEvents((related as EventWithTiers[]) ?? []);
+
+        if (loaded.venue_id) {
+          const { data: tables } = await supabase
+            .from('site_table_types')
+            .select('*')
+            .eq('venue_id', loaded.venue_id)
+            .order('deposit_cents', { ascending: true })
+            .limit(3);
+          setVenueTables(tables ?? []);
+        } else {
+          setVenueTables([]);
+        }
       }
     };
 
@@ -218,6 +232,103 @@ const EventDetail = () => {
                     </Button>
                   </CardContent>
                 </Card>
+
+                {venueTables.length > 0 && (
+                  <div>
+                    <h2 className="mb-3 text-xl font-semibold text-white">Bottle Service</h2>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {venueTables.map((table) => (
+                        <div key={table.id} className="rounded-lg border border-border p-4">
+                          <div className="font-medium text-white">{table.name}</div>
+                          <div className="mb-2 text-xs text-muted-foreground">
+                            Seats {table.max_guests}
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-white">${(table.deposit_cents / 100).toFixed(0)}</span>
+                            <Button asChild size="sm" variant="outline" className="border-border">
+                              <Link to={event.linked_venue?.slug ? `/venues/${event.linked_venue.slug}#select-table` : '/vip-tables'}>
+                                Request
+                              </Link>
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {event.lineup.length > 0 && (
+                  <div>
+                    <h2 className="mb-3 text-xl font-semibold text-white">Lineup</h2>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {event.lineup.map((act, i) => (
+                        <div key={i} className="flex items-center gap-3 rounded-lg border border-border p-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                            <Music className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-white">{act.name}</div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              {act.time}
+                              {act.room ? ` · ${act.room}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {event.good_to_know.length > 0 && (
+                  <div>
+                    <h2 className="mb-3 text-xl font-semibold text-white">Good to Know</h2>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {event.good_to_know.map((line, i) => (
+                        <div key={i} className="flex items-start gap-2 rounded-lg border border-border p-3 text-sm text-gray-300">
+                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                          {line}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {event.organizer_name && (
+                  <div>
+                    <h2 className="mb-3 text-xl font-semibold text-white">Organized by</h2>
+                    <div className="flex items-start gap-4 rounded-lg border border-border p-4">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-primary">
+                        {event.organizer_avatar_url ? (
+                          <img src={event.organizer_avatar_url} alt={event.organizer_name} className="h-full w-full object-cover" />
+                        ) : (
+                          event.organizer_name.charAt(0).toUpperCase()
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-white">{event.organizer_name}</span>
+                          {event.organizer_verified && (
+                            <span className="flex items-center gap-1 rounded-full bg-primary/20 px-2 py-0.5 text-[10px] font-bold uppercase text-primary">
+                              <BadgeCheck className="h-3 w-3" />
+                              Verified
+                            </span>
+                          )}
+                        </div>
+                        {event.organizer_bio && <p className="mt-1 text-sm text-muted-foreground">{event.organizer_bio}</p>}
+                        {event.organizer_instagram && (
+                          <a
+                            href={`https://instagram.com/${event.organizer_instagram.replace(/^@/, '')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          >
+                            <Instagram className="h-3.5 w-3.5" />@{event.organizer_instagram.replace(/^@/, '')}
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </TabsContent>
 
               {gallery.length > 0 && (
@@ -305,18 +416,24 @@ const EventDetail = () => {
                   </div>
                 )}
 
-                <Button
-                  className="w-full bg-gradient-orange text-black font-bold hover:opacity-90"
-                  disabled={event.ticket_tiers.length === 0 || soldOut}
-                  onClick={() => setBookingOpen(true)}
-                >
-                  {soldOut
-                    ? 'Sold Out'
-                    : event.ticket_tiers.length === 0
-                      ? 'Tickets Coming Soon'
-                      : 'View Tickets'}
-                </Button>
-                <p className="text-center text-xs text-muted-foreground">Secure checkout via Stripe</p>
+                {soldOut ? (
+                  <Button className="w-full" disabled>
+                    Sold Out
+                  </Button>
+                ) : event.ticket_tiers.length === 0 ? (
+                  <Button className="w-full" disabled>
+                    Tickets Coming Soon
+                  </Button>
+                ) : (
+                  selectedTierId && (
+                    <TicketSelectionForm
+                      event={event}
+                      tierId={selectedTierId}
+                      onTierChange={setSelectedTierId}
+                      showTierList={false}
+                    />
+                  )
+                )}
               </CardContent>
             </Card>
           </div>
@@ -360,13 +477,6 @@ const EventDetail = () => {
       </section>
 
       <Footer />
-
-      <BookingDialog
-        event={bookingOpen ? event : null}
-        open={bookingOpen}
-        onOpenChange={setBookingOpen}
-        initialTierId={selectedTierId}
-      />
 
       {lightboxIndex !== null && (
         <Lightbox

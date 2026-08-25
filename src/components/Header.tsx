@@ -72,9 +72,9 @@ const Header = () => {
 
             {/* Desktop Navigation */}
             <nav className="hidden items-center gap-9 md:flex">
-              <a href="/#features" onClick={goToSection('features')} className={navLinkClass}>
-                Features
-              </a>
+              <Link to="/map" className={navLinkClass}>
+                Map
+              </Link>
               <Link to="/events" className={navLinkClass}>
                 Events
               </Link>
@@ -95,17 +95,18 @@ const Header = () => {
             {/* Desktop CTA */}
             <div className="hidden items-center gap-3 md:flex">
               <Button
+                asChild
                 variant="ghost"
                 className="text-sm text-gray-300 hover:bg-white/5 hover:text-white"
               >
-                Promoter Login
+                <Link to="/partners/login">Promoter Login</Link>
               </Button>
               <Button
-                onClick={() => window.open('https://vendor.bottlesupapp.com/', '_blank')}
+                asChild
                 variant="outline"
                 className="rounded-full border-orange-500/60 text-orange-500 transition-all duration-300 hover:border-orange-500 hover:bg-orange-500/10 hover:text-orange-400"
               >
-                Be Partner
+                <Link to="/partners/apply">Be Partner</Link>
               </Button>
 
               {/* User auth */}
@@ -180,9 +181,9 @@ const Header = () => {
           {isMenuOpen && (
             <div className="animate-fade-in mb-4 rounded-2xl border border-white/10 bg-black/80 p-5 backdrop-blur-2xl md:hidden">
               <nav className="flex flex-col gap-4">
-                <a href="/#features" onClick={goToSection('features')} className="text-gray-300 transition-colors hover:text-orange-500">
-                  Features
-                </a>
+                <Link to="/map" onClick={() => setIsMenuOpen(false)} className="text-gray-300 transition-colors hover:text-orange-500">
+                  Map
+                </Link>
                 <Link to="/events" onClick={() => setIsMenuOpen(false)} className="text-gray-300 transition-colors hover:text-orange-500">
                   Events
                 </Link>
@@ -221,15 +222,15 @@ const Header = () => {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2 pt-3">
-                    <Button variant="outline" className="rounded-full border-orange-500/60 text-orange-500 hover:bg-orange-500/10">
-                      Promoter Login
+                    <Button asChild variant="outline" className="rounded-full border-orange-500/60 text-orange-500 hover:bg-orange-500/10">
+                      <Link to="/partners/login" onClick={() => setIsMenuOpen(false)}>Promoter Login</Link>
                     </Button>
                     <Button
-                      onClick={() => window.open('https://vendor.bottlesupapp.com/', '_blank')}
+                      asChild
                       variant="outline"
                       className="rounded-full border-orange-500/60 text-orange-500 hover:bg-orange-500/10"
                     >
-                      Be Partner
+                      <Link to="/partners/apply" onClick={() => setIsMenuOpen(false)}>Be Partner</Link>
                     </Button>
                     <Button
                       className="rounded-full bg-gradient-orange border-0 font-bold text-black"
