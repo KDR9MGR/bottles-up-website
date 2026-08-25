@@ -65,6 +65,7 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
   const [loadingBottles, setLoadingBottles] = useState(false);
   const [cart, setCart] = useState<Record<string, number>>({});
   const [bottlesupFeeBps, setBottlesupFeeBps] = useState(0);
+  const [signText, setSignText] = useState('');
 
   const [promoInput, setPromoInput] = useState('');
   const [appliedPromo, setAppliedPromo] = useState<{ code: string; discountCents: number } | null>(null);
@@ -82,6 +83,7 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
     setGuestCount('2');
     setHours(tableType?.min_hours ? tableType.min_hours.toString() : '1');
     setCart({});
+    setSignText('');
     setPromoInput('');
     setAppliedPromo(null);
     setPromoError(null);
@@ -242,6 +244,7 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
           hours: isHourly ? bookedHours : undefined,
           bottles: cartLines.map((l) => ({ bottle_id: l.bottle.id, quantity: l.quantity })),
           promo_code: appliedPromo?.code,
+          bottle_sign_text: bottleSubtotalCents > 0 ? signText.trim() || null : null,
         },
       });
 
@@ -456,6 +459,52 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
             )}
 
             {bottleSubtotalCents > 0 && (
+              <div className="rounded-lg border border-gray-800 p-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm">Name on your bottle sign</Label>
+                  <span className="text-xs text-gray-500">{signText.length}/24</span>
+                </div>
+                <p className="mb-2 text-xs text-gray-500">Printed on the LED sign carried to your table.</p>
+                <Input
+                  value={signText}
+                  onChange={(e) => setSignText(e.target.value.slice(0, 24))}
+                  placeholder="e.g. HAPPY BIRTHDAY DAMI"
+                  maxLength={24}
+                  className="mb-2"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-gray-700 text-xs"
+                    onClick={() => setSignText('HAPPY BIRTHDAY')}
+                  >
+                    Birthday
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-gray-700 text-xs"
+                    onClick={() => setSignText('BACHELORETTE')}
+                  >
+                    Bachelorette
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-gray-700 text-xs"
+                    onClick={() => setSignText('')}
+                  >
+                    No sign
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {bottleSubtotalCents > 0 && (
               <div className="text-right text-sm text-gray-400">
                 Bottle subtotal: <span className="font-semibold text-white">{money(bottleSubtotalCents)}</span>
               </div>
@@ -524,6 +573,12 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
                   <span>{money(l.lineTotalCents)}</span>
                 </div>
               ))}
+              {signText.trim() && (
+                <div className="flex justify-between text-gray-400">
+                  <span>Bottle sign</span>
+                  <span className="font-mono">{signText.trim()}</span>
+                </div>
+              )}
               {discountCents > 0 && (
                 <div className="flex justify-between text-green-400">
                   <span>Promo ({appliedPromo?.code})</span>
