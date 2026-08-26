@@ -75,20 +75,7 @@ const emptyForm = {
   slug: '' as string | null,
   show_ticket_count: true,
   venue_id: 'none' as string,
-  good_to_know_text: '',
-  organizer_name: '',
-  organizer_bio: '',
-  organizer_verified: false,
-  organizer_instagram: '',
-  organizer_email: '',
-  organizer_avatar_url: '',
 };
-
-interface LineupActDraft {
-  name: string;
-  time: string;
-  room: string;
-}
 
 // Converts a stored UTC timestamp to the value a <input type="datetime-local">
 // (and DateTimePicker, which treats its string as browser-local wall-clock time)
@@ -116,7 +103,6 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
   const { toast } = useToast();
   const [form, setForm] = useState(emptyForm);
   const [tiers, setTiers] = useState<TierDraft[]>([]);
-  const [lineup, setLineup] = useState<LineupActDraft[]>([]);
   const [originalTierIds, setOriginalTierIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
@@ -153,17 +139,7 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
         slug: event.slug ?? '',
         show_ticket_count: event.show_ticket_count,
         venue_id: event.venue_id ?? 'none',
-        good_to_know_text: (event.good_to_know ?? []).join('\n'),
-        organizer_name: event.organizer_name ?? '',
-        organizer_bio: event.organizer_bio ?? '',
-        organizer_verified: event.organizer_verified,
-        organizer_instagram: event.organizer_instagram ?? '',
-        organizer_email: event.organizer_email ?? '',
-        organizer_avatar_url: event.organizer_avatar_url ?? '',
       });
-      setLineup(
-        (event.lineup ?? []).map((act) => ({ name: act.name, time: act.time, room: act.room ?? '' })),
-      );
 
       supabase
         .from('site_ticket_tiers')
@@ -197,7 +173,6 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
       setTiers([{ name: 'General Admission', priceDollars: '', capacity: '', isNonTransferable: false, requiresAccessCode: false, accessCodeInput: '', wasGatedOnLoad: false }]);
       setOriginalTierIds([]);
       setPaidOrderCount(0);
-      setLineup([]);
     }
   }, [event, open]);
 
@@ -250,11 +225,6 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
   const removeTier = (index: number) => setTiers((prev) => prev.filter((_, i) => i !== index));
   const updateTier = (index: number, patch: Partial<TierDraft>) =>
     setTiers((prev) => prev.map((t, i) => (i === index ? { ...t, ...patch } : t)));
-
-  const addLineupAct = () => setLineup((prev) => [...prev, { name: '', time: '', room: '' }]);
-  const removeLineupAct = (index: number) => setLineup((prev) => prev.filter((_, i) => i !== index));
-  const updateLineupAct = (index: number, patch: Partial<LineupActDraft>) =>
-    setLineup((prev) => prev.map((a, i) => (i === index ? { ...a, ...patch } : a)));
 
   const handleSave = async () => {
     if (!form.title || !form.description || !form.venue_name || !form.start_date) {
@@ -323,19 +293,6 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
         capacity: totalCapacity || null,
         show_ticket_count: form.show_ticket_count,
         venue_id: form.venue_id === 'none' ? null : form.venue_id,
-        good_to_know: form.good_to_know_text
-          .split('\n')
-          .map((s) => s.trim())
-          .filter(Boolean),
-        organizer_name: form.organizer_name.trim() || null,
-        organizer_bio: form.organizer_bio.trim() || null,
-        organizer_verified: form.organizer_verified,
-        organizer_instagram: form.organizer_instagram.trim() || null,
-        organizer_email: form.organizer_email.trim() || null,
-        organizer_avatar_url: form.organizer_avatar_url.trim() || null,
-        lineup: lineup
-          .filter((act) => act.name.trim())
-          .map((act) => ({ name: act.name.trim(), time: act.time.trim(), room: act.room.trim() || undefined })),
       };
 
       let eventId = event?.id;
@@ -699,98 +656,6 @@ const EventFormDialog = ({ event, open, onOpenChange, onSaved }: EventFormDialog
               </div>
             ))}
           </div>
-        </div>
-
-        <div className="mt-4 space-y-4">
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label>Lineup (optional)</Label>
-            <Button type="button" size="sm" variant="outline" onClick={addLineupAct}>
-              <Plus className="mr-1 h-3 w-3" />
-              Add Act
-            </Button>
-          </div>
-          {lineup.map((act, i) => (
-            <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2">
-              <Input
-                placeholder="Artist name"
-                value={act.name}
-                onChange={(e) => updateLineupAct(i, { name: e.target.value })}
-              />
-              <Input
-                placeholder="e.g. 11PM - 1AM"
-                value={act.time}
-                onChange={(e) => updateLineupAct(i, { time: e.target.value })}
-              />
-              <Input
-                placeholder="Room (optional)"
-                value={act.room}
-                onChange={(e) => updateLineupAct(i, { room: e.target.value })}
-              />
-              <Button type="button" size="icon" variant="ghost" onClick={() => removeLineupAct(i)}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          ))}
-        </div>
-
-        <div className="space-y-2">
-          <Label>Good to Know (optional)</Label>
-          <p className="text-xs text-gray-500">One item per line - shown as bullet points on the event page.</p>
-          <Textarea
-            value={form.good_to_know_text}
-            onChange={(e) => updateField('good_to_know_text', e.target.value)}
-            rows={3}
-            placeholder={'19+ with valid government ID - no exceptions.\nDress code: smart. No athletic wear.'}
-          />
-        </div>
-
-        <div className="space-y-3 rounded-lg border border-gray-800 p-4">
-          <Label>Organizer (optional)</Label>
-          <p className="text-xs text-gray-500">Shown as an "Organized by" card on the event page.</p>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-xs">Name</Label>
-              <Input value={form.organizer_name} onChange={(e) => updateField('organizer_name', e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs">Instagram handle</Label>
-              <Input
-                value={form.organizer_instagram}
-                onChange={(e) => updateField('organizer_instagram', e.target.value)}
-                placeholder="@handle"
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs">Bio</Label>
-            <Textarea value={form.organizer_bio} onChange={(e) => updateField('organizer_bio', e.target.value)} rows={2} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-xs">Contact email</Label>
-              <Input
-                type="email"
-                value={form.organizer_email}
-                onChange={(e) => updateField('organizer_email', e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs">Avatar image URL</Label>
-              <Input
-                value={form.organizer_avatar_url}
-                onChange={(e) => updateField('organizer_avatar_url', e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={form.organizer_verified}
-              onCheckedChange={(checked) => updateField('organizer_verified', checked)}
-            />
-            <Label className="text-xs font-normal text-muted-foreground">Show "Verified" badge</Label>
-          </div>
-        </div>
         </div>
 
         <DialogFooter>

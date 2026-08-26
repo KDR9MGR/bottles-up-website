@@ -28,7 +28,6 @@ Deno.serve(async (req: Request) => {
       customer_phone,
       bottles: requestedBottles,
       promo_code,
-      bottle_sign_text,
     } = await req.json();
 
     if (!venue_id || !table_type_id || !time_slot_id || !booking_date || !customer_name || !customer_email) {
@@ -41,10 +40,6 @@ Deno.serve(async (req: Request) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(booking_date)) {
       return json({ error: 'Invalid booking date' }, 400);
     }
-    if (bottle_sign_text !== undefined && bottle_sign_text !== null && typeof bottle_sign_text !== 'string') {
-      return json({ error: 'Invalid bottle sign text' }, 400);
-    }
-    const signText = typeof bottle_sign_text === 'string' ? bottle_sign_text.trim().slice(0, 24) : null;
 
     // Bottles are optional - a plain table-only booking is still valid. When present,
     // only { bottle_id, quantity } is trusted from the client; name/price are always
@@ -277,7 +272,6 @@ Deno.serve(async (req: Request) => {
         status: 'pending',
         promo_code_id: promoCodeId,
         discount_cents: discountCents,
-        bottle_sign_text: signText || null,
       })
       .select('id')
       .single();

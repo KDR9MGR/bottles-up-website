@@ -1,14 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { isToday, addDays } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Calendar, MapPin, Info } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 import BookingDialog from './BookingDialog';
-
-type DateFilter = 'tonight' | 'weekend' | 'all';
 
 type EventRow = Database['public']['Tables']['site_events']['Row'];
 type TierRow = Database['public']['Tables']['site_ticket_tiers']['Row'];
@@ -21,17 +18,10 @@ const formatPriceFrom = (tiers: TierRow[]) => {
   return `$${(min / 100).toFixed(0)}`;
 };
 
-const isThisWeekend = (date: Date) => {
-  const day = date.getDay();
-  const withinWeek = date >= new Date() && date <= addDays(new Date(), 7);
-  return withinWeek && (day === 5 || day === 6 || day === 0);
-};
-
 const PopularEvents = () => {
   const [events, setEvents] = useState<EventWithTiers[]>([]);
   const [loading, setLoading] = useState(true);
   const [bookingEvent, setBookingEvent] = useState<EventWithTiers | null>(null);
-  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
 
   useEffect(() => {
     supabase
@@ -45,14 +35,6 @@ const PopularEvents = () => {
       });
   }, []);
 
-  const filteredEvents = useMemo(() => {
-    if (dateFilter === 'all') return events;
-    return events.filter((e) => {
-      const start = new Date(e.start_date);
-      return dateFilter === 'tonight' ? isToday(start) : isThisWeekend(start);
-    });
-  }, [events, dateFilter]);
-
   if (!loading && events.length === 0) {
     return null;
   }
@@ -60,42 +42,20 @@ const PopularEvents = () => {
   return (
     <section id="events" className="relative bg-black py-20 lg:py-28">
       <div className="container mx-auto px-4 lg:px-6">
-        <div className="mx-auto mb-8 max-w-3xl text-center">
+        <div className="mx-auto mb-14 max-w-3xl text-center">
           <span className="mb-4 inline-block text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
-            This Weekend
+            Trending Events
           </span>
           <h2 className="mb-6 text-4xl font-bold text-white lg:text-5xl">
-            Don't Miss <span className="text-gradient">What's On</span>
+            What's <span className="text-gradient">Hot Right Now</span>
           </h2>
           <p className="text-lg text-gray-400 lg:text-xl">
-            The hottest events in your city. Book now before they sell out!
+            Don't miss out on the hottest events in your city. Book now before they sell out!
           </p>
         </div>
 
-        <div className="mb-10 flex justify-center gap-2">
-          {([
-            ['tonight', 'Tonight'],
-            ['weekend', 'This Weekend'],
-            ['all', 'All'],
-          ] as [DateFilter, string][]).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setDateFilter(value)}
-              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                dateFilter === value ? 'bg-gradient-orange text-black' : 'border border-white/10 text-gray-300 hover:border-orange-500/40'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {filteredEvents.length === 0 ? (
-          <p className="mb-4 text-center text-gray-500">No events match this filter yet.</p>
-        ) : (
         <div className="mb-4 grid gap-6 md:grid-cols-2 lg:grid-cols-3 lg:gap-8">
-          {filteredEvents.map((event, index) => {
+          {events.map((event, index) => {
             const start = new Date(event.start_date);
             return (
               <Card
@@ -176,7 +136,6 @@ const PopularEvents = () => {
             );
           })}
         </div>
-        )}
       </div>
 
       <BookingDialog

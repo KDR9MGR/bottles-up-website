@@ -61,14 +61,6 @@ export interface Database {
           status: EventStatus;
           capacity: number | null;
           show_ticket_count: boolean;
-          lineup: { name: string; time: string; room?: string }[];
-          good_to_know: string[];
-          organizer_name: string | null;
-          organizer_bio: string | null;
-          organizer_verified: boolean;
-          organizer_instagram: string | null;
-          organizer_email: string | null;
-          organizer_avatar_url: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -175,17 +167,6 @@ export interface Database {
           date_of_birth: string;
         };
         Update: Partial<Database['public']['Tables']['partner_accounts']['Row']>;
-        Relationships: [];
-      };
-      partner_leads: {
-        Row: {
-          id: string;
-          email: string;
-          venue_name: string | null;
-          created_at: string;
-        };
-        Insert: Partial<Database['public']['Tables']['partner_leads']['Row']> & { email: string };
-        Update: Partial<Database['public']['Tables']['partner_leads']['Row']>;
         Relationships: [];
       };
       door_staff: {
@@ -410,7 +391,6 @@ export interface Database {
           confirmation_sent_at: string | null;
           checked_in_at: string | null;
           checked_in_by: string | null;
-          bottle_sign_text: string | null;
           created_at: string;
           updated_at: string;
         };

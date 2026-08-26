@@ -27,7 +27,6 @@ import BookingSuccess from "./pages/BookingSuccess";
 import BookingCancel from "./pages/BookingCancel";
 import EventDetail from "./pages/EventDetail";
 import Events from "./pages/Events";
-import LiveMap from "./pages/LiveMap";
 import VipTables from "./pages/VipTables";
 import Venues from "./pages/Venues";
 import VenueDetail from "./pages/VenueDetail";
@@ -57,7 +56,6 @@ const App = () => {
             <Route path="/" element={<Index />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/events" element={<Events />} />
-            <Route path="/map" element={<LiveMap />} />
             <Route path="/events/:id" element={<EventDetail />} />
             <Route path="/vip-tables" element={<VipTables />} />
             <Route path="/venues" element={<Venues />} />

@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { isSameDay, addDays } from 'date-fns';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Calendar, MapPin, Info, Search, ShieldCheck, Sparkles, Ticket, Flame } from 'lucide-react';
+import { Calendar, MapPin, Info, Search, ShieldCheck, Sparkles, Ticket } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import BookingDialog from '@/components/BookingDialog';
 import type { EventWithTiers } from '@/components/PopularEvents';
@@ -17,29 +16,16 @@ const TRUST_POINTS = [
   { icon: Sparkles, label: 'Best Nightlife in Toronto' },
 ];
 
-const SELLING_FAST_OCCUPANCY = 70;
-
 const formatPriceFrom = (tiers: EventWithTiers['ticket_tiers']) => {
-  const unlocked = tiers.filter((t) => !t.requires_access_code);
-  if (unlocked.length === 0) return null;
-  return Math.min(...unlocked.map((t) => t.price_cents));
+  if (tiers.length === 0) return null;
+  return Math.min(...tiers.map((t) => t.price_cents));
 };
-
-const occupancyOf = (tiers: EventWithTiers['ticket_tiers']) => {
-  const capacity = tiers.reduce((sum, t) => sum + t.capacity, 0);
-  if (capacity === 0) return 0;
-  const sold = tiers.reduce((sum, t) => sum + t.sold_count, 0);
-  return Math.round((sold / capacity) * 100);
-};
-
-const DATE_RAIL_DAYS = 7;
 
 const Events = () => {
   const [events, setEvents] = useState<EventWithTiers[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [bookingEvent, setBookingEvent] = useState<EventWithTiers | null>(null);
 
   useEffect(() => {
@@ -66,33 +52,18 @@ const Events = () => {
     return Array.from(set);
   }, [events]);
 
-  const dateRail = useMemo(() => {
-    const days = Array.from({ length: DATE_RAIL_DAYS }, (_, i) => addDays(new Date(), i));
-    return days.map((day) => ({
-      date: day,
-      count: events.filter((e) => isSameDay(new Date(e.start_date), day)).length,
-    }));
-  }, [events]);
-
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return events.filter((event) => {
       const eventCategories = (event.category ?? '').split(',').map((c) => c.trim());
       const matchesCategory = !activeCategory || eventCategories.includes(activeCategory);
-      const matchesDate = !selectedDate || isSameDay(new Date(event.start_date), selectedDate);
       const matchesSearch =
         !term ||
         event.title.toLowerCase().includes(term) ||
         event.venue_name.toLowerCase().includes(term);
-      return matchesCategory && matchesDate && matchesSearch;
+      return matchesCategory && matchesSearch;
     });
-  }, [events, search, activeCategory, selectedDate]);
-
-  // The first upcoming match under the current filters gets pulled out into a
-  // large featured slot instead of appearing twice (once as the hero, again in
-  // the grid below).
-  const featuredEvent = filtered[0] ?? null;
-  const remainingEvents = featuredEvent ? filtered.slice(1) : filtered;
+  }, [events, search, activeCategory]);
 
   const heroImages = events.filter((e) => e.cover_image_url).slice(0, 4);
 
@@ -137,28 +108,6 @@ const Events = () => {
       </section>
 
       <section className="container mx-auto px-4 pb-24 lg:px-6">
-        <div className="mb-6 grid grid-cols-4 gap-2 sm:grid-cols-7">
-          {dateRail.map(({ date, count }, i) => {
-            const active = selectedDate && isSameDay(date, selectedDate);
-            return (
-              <button
-                key={date.toISOString()}
-                type="button"
-                onClick={() => setSelectedDate((prev) => (prev && isSameDay(prev, date) ? null : date))}
-                className={`rounded-xl border px-2 py-2 text-center transition-colors ${
-                  active ? 'border-primary bg-primary/10' : 'border-gray-800 hover:border-primary/40'
-                }`}
-              >
-                <div className="text-[10px] uppercase tracking-wide text-gray-500">
-                  {date.toLocaleDateString(undefined, { weekday: 'short' })}
-                </div>
-                <div className="text-lg font-bold text-white">{date.getDate()}</div>
-                <div className="text-[10px] text-gray-500">{i === 0 ? 'Tonight' : count > 0 ? `${count} events` : '-'}</div>
-              </button>
-            );
-          })}
-        </div>
-
         {categories.length > 0 && (
           <div className="mb-6 flex flex-wrap gap-2">
             <button
@@ -211,61 +160,10 @@ const Events = () => {
         ) : filtered.length === 0 ? (
           <div className="text-center text-gray-400">No events match that search - try a different term or category.</div>
         ) : (
-          <>
-            {featuredEvent && (
-              <div className="mb-10 grid gap-0 overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 to-black md:grid-cols-2">
-                <Link
-                  to={`/events/${featuredEvent.slug || featuredEvent.id}`}
-                  className="relative flex h-56 items-center justify-center bg-black/40 md:h-full"
-                >
-                  <img
-                    src={featuredEvent.cover_image_url ?? '/placeholder.svg'}
-                    alt={featuredEvent.title}
-                    className="h-full w-full object-contain"
-                  />
-                  <span className="absolute left-3 top-3 rounded-full bg-gradient-orange px-3 py-1 text-xs font-bold uppercase text-black">
-                    Featured
-                  </span>
-                </Link>
-                <div className="p-6">
-                  <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-primary">
-                    {new Date(featuredEvent.start_date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                    {' · '}
-                    {new Date(featuredEvent.start_date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                  </div>
-                  <h3 className="mb-1 text-2xl font-bold text-white">{featuredEvent.title}</h3>
-                  <p className="mb-4 text-sm text-gray-400">{featuredEvent.venue_name}</p>
-                  <div className="mb-4 space-y-2">
-                    {featuredEvent.ticket_tiers.slice(0, 3).map((tier) => (
-                      <div key={tier.id} className="flex items-center justify-between rounded-lg border border-gray-800 px-3 py-2 text-sm">
-                        <span className="text-gray-300">{tier.name}</span>
-                        <span className="font-semibold text-white">
-                          {tier.requires_access_code ? 'Access code' : `$${(tier.price_cents / 100).toFixed(2)}`}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      className="flex-1 bg-gradient-orange text-black font-bold hover:opacity-90"
-                      disabled={featuredEvent.ticket_tiers.length === 0}
-                      onClick={() => setBookingEvent(featuredEvent)}
-                    >
-                      Get tickets
-                    </Button>
-                    <Button asChild variant="outline" className="flex-1 border-gray-700">
-                      <Link to={`/events/${featuredEvent.slug || featuredEvent.id}`}>Details</Link>
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {remainingEvents.map((event) => {
+            {filtered.map((event) => {
               const start = new Date(event.start_date);
               const priceFromCents = formatPriceFrom(event.ticket_tiers);
-              const sellingFast = occupancyOf(event.ticket_tiers) >= SELLING_FAST_OCCUPANCY;
               return (
                 <Card
                   key={event.id}
@@ -285,12 +183,6 @@ const Events = () => {
                         </span>
                         <span className="text-lg font-bold leading-none text-white">{start.getDate()}</span>
                       </div>
-                      {sellingFast && (
-                        <div className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-red-600 px-2.5 py-1 text-[10px] font-bold uppercase text-white shadow-lg">
-                          <Flame className="h-3 w-3" />
-                          Selling Fast
-                        </div>
-                      )}
                       {priceFromCents !== null && (
                         <div className="absolute bottom-3 right-3 rounded-full bg-gradient-orange px-3 py-1 text-sm font-bold text-black shadow-lg">
                           From ${(priceFromCents / 100).toFixed(0)}
@@ -335,7 +227,6 @@ const Events = () => {
               );
             })}
           </div>
-          </>
         )}
       </section>
 
