@@ -59,7 +59,7 @@ const Header = () => {
     <>
       <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-black/50 backdrop-blur-2xl">
         <div className="container mx-auto px-4 lg:px-6">
-          <div className="flex h-20 items-center justify-between py-3">
+          <div className="flex h-20 items-center justify-between gap-6 py-3">
             {/* Logo */}
             <Link
               to="/"
