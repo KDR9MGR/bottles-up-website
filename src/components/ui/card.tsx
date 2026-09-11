@@ -1,36 +1,20 @@
 import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
-// Three surface treatments so components stop hand-rolling
-// "bg-white/[0.03] border-white/10 backdrop-blur-xl" strings inline.
-const cardVariants = cva("rounded-lg text-card-foreground", {
-  variants: {
-    variant: {
-      solid: "bg-card border border-border shadow-card",
-      glass: "bg-white/[0.03] border border-white/10 backdrop-blur-xl",
-      elevated: "bg-surface-3 border border-border shadow-elevated",
-    },
-  },
-  defaultVariants: {
-    variant: "solid",
-  },
-})
-
-export interface CardProps
-  extends React.HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof cardVariants> {}
-
-const Card = React.forwardRef<HTMLDivElement, CardProps>(
-  ({ className, variant, ...props }, ref) => (
-    <div
-      ref={ref}
-      className={cn(cardVariants({ variant }), className)}
-      {...props}
-    />
-  )
-)
+const Card = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn(
+      "rounded-lg border bg-card text-card-foreground shadow-sm",
+      className
+    )}
+    {...props}
+  />
+))
 Card.displayName = "Card"
 
 const CardHeader = React.forwardRef<

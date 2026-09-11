@@ -102,7 +102,8 @@ const Header = () => {
               </Button>
               <Button
                 onClick={() => window.open('https://vendor.bottlesupapp.com/', '_blank')}
-                variant="brandOutline"
+                variant="outline"
+                className="rounded-full border-orange-500/60 text-orange-500 transition-all duration-300 hover:border-orange-500 hover:bg-orange-500/10 hover:text-orange-400"
               >
                 Be Partner
               </Button>
@@ -156,7 +157,10 @@ const Header = () => {
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : (
-                <Button onClick={() => setAuthOpen(true)} variant="brand">
+                <Button
+                  onClick={() => setAuthOpen(true)}
+                  className="rounded-full bg-gradient-orange border-0 font-bold text-black shadow-lg shadow-orange-500/20 transition-all duration-300 hover:scale-105 hover:shadow-orange-500/40"
+                >
                   Sign In
                 </Button>
               )}
@@ -217,17 +221,18 @@ const Header = () => {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2 pt-3">
-                    <Button variant="brandOutline">
+                    <Button variant="outline" className="rounded-full border-orange-500/60 text-orange-500 hover:bg-orange-500/10">
                       Promoter Login
                     </Button>
                     <Button
                       onClick={() => window.open('https://vendor.bottlesupapp.com/', '_blank')}
-                      variant="brandOutline"
+                      variant="outline"
+                      className="rounded-full border-orange-500/60 text-orange-500 hover:bg-orange-500/10"
                     >
                       Be Partner
                     </Button>
                     <Button
-                      variant="brand"
+                      className="rounded-full bg-gradient-orange border-0 font-bold text-black"
                       onClick={() => { setIsMenuOpen(false); setAuthOpen(true); }}
                     >
                       Sign In

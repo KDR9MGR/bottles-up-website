@@ -1,7 +1,6 @@
 import { Instagram, Twitter, Facebook, Linkedin, Mail, Phone, MapPin, ArrowUpRight } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useSiteContent } from '@/hooks/useSiteContent';
-import { Button } from '@/components/ui/button';
 
 const Footer = () => {
   const content = useSiteContent();
@@ -131,12 +130,13 @@ const Footer = () => {
             <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-xl">
               <h4 className="mb-1.5 text-sm font-semibold text-orange-500">Partners &amp; Promoters</h4>
               <p className="mb-3 text-xs text-gray-400">Want to list your venue or event?</p>
-              <Button asChild variant="brand" size="sm">
-                <a href="mailto:partners@bottlesupapp.com">
-                  Get Started
-                  <ArrowUpRight className="h-3 w-3" />
-                </a>
-              </Button>
+              <a
+                href="mailto:partners@bottlesupapp.com"
+                className="inline-flex items-center gap-1 rounded-full bg-gradient-orange px-4 py-1.5 text-xs font-bold text-black transition-transform duration-300 hover:scale-105"
+              >
+                Get Started
+                <ArrowUpRight className="h-3 w-3" />
+              </a>
             </div>
           </div>
         </div>
