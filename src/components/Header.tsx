@@ -102,8 +102,7 @@ const Header = () => {
               </Button>
               <Button
                 onClick={() => window.open('https://vendor.bottlesupapp.com/', '_blank')}
-                variant="outline"
-                className="rounded-full border-orange-500/60 text-orange-500 transition-all duration-300 hover:border-orange-500 hover:bg-orange-500/10 hover:text-orange-400"
+                variant="brandOutline"
               >
                 Be Partner
               </Button>
@@ -157,10 +156,7 @@ const Header = () => {
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : (
-                <Button
-                  onClick={() => setAuthOpen(true)}
-                  className="rounded-full bg-gradient-orange border-0 font-bold text-black shadow-lg shadow-orange-500/20 transition-all duration-300 hover:scale-105 hover:shadow-orange-500/40"
-                >
+                <Button onClick={() => setAuthOpen(true)} variant="brand">
                   Sign In
                 </Button>
               )}
@@ -221,18 +217,17 @@ const Header = () => {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2 pt-3">
-                    <Button variant="outline" className="rounded-full border-orange-500/60 text-orange-500 hover:bg-orange-500/10">
+                    <Button variant="brandOutline">
                       Promoter Login
                     </Button>
                     <Button
                       onClick={() => window.open('https://vendor.bottlesupapp.com/', '_blank')}
-                      variant="outline"
-                      className="rounded-full border-orange-500/60 text-orange-500 hover:bg-orange-500/10"
+                      variant="brandOutline"
                     >
                       Be Partner
                     </Button>
                     <Button
-                      className="rounded-full bg-gradient-orange border-0 font-bold text-black"
+                      variant="brand"
                       onClick={() => { setIsMenuOpen(false); setAuthOpen(true); }}
                     >
                       Sign In

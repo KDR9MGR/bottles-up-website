@@ -9,32 +9,51 @@
     --background: 0 0% 0%; /* Pure black */
     --foreground: 210 40% 98%;
 
-    --card: 0 0% 3.9%; /* Very dark gray */
+    /* Surface scale - page / card / elevated (dropdowns, popovers, hover) */
+    --surface-1: 0 0% 0%;
+    --surface-2: 0 0% 4%;
+    --surface-3: 0 0% 7%;
+
+    --card: 0 0% 4%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 0 0% 3.9%;
+    --popover: 0 0% 4%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 25 95% 53%;
+    /* One canonical brand orange (#FF6B35 = hsl(16 100% 60%)) drives
+       primary/accent/ring so every shadcn component matches the brand
+       gradient/scale below instead of the old, slightly different #F97316. */
+    --primary: 16 100% 60%;
     --primary-foreground: 0 0% 0%;
 
-    --secondary: 217.2 32.6% 17.5%;
+    --secondary: 0 0% 14%;
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 0 0% 14%;
+    --muted-foreground: 0 0% 64%;
 
-    --accent: 25 95% 53%;
+    --accent: 16 100% 60%;
     --accent-foreground: 0 0% 0%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 25 95% 53%;
+    /* Neutral border (was a blue-cast slate that fought the near-black theme) */
+    --border: 0 0% 16%;
+    --input: 0 0% 16%;
+    --ring: 16 100% 60%;
 
-    --radius: 0.5rem;
+    --radius: 0.875rem;
+
+    /* Brand gradient - a warm sheen (was #FF6B35->#F7931E, whose yellow stop
+       read dated). Every .bg-gradient-orange/.text-gradient call-site updates
+       by changing this one value. */
+    --gradient-brand: linear-gradient(135deg, hsl(16 100% 60%) 0%, hsl(24 100% 58%) 100%);
+
+    /* Shadow scale */
+    --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4);
+    --shadow-elevated: 0 8px 30px rgb(0 0 0 / 0.5);
+    --shadow-glow: 0 0 40px hsl(16 100% 60% / 0.35);
   }
 }
 
@@ -53,6 +72,11 @@
     scroll-behavior: smooth;
   }
 
+  h1, h2, h3 {
+    @apply font-display;
+    letter-spacing: -0.02em;
+  }
+
   /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 8px;
@@ -63,30 +87,30 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+    background: var(--gradient-brand);
     border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(135deg, #F7931E 0%, #FF6B35 100%);
+    filter: brightness(1.1);
   }
 }
 
 @layer utilities {
   .bg-gradient-orange {
-    background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+    background: var(--gradient-brand);
   }
-  
+
   .bg-gradient-dark {
     background: linear-gradient(135deg, #000000 0%, #1a1a1a 50%, #000000 100%);
   }
-  
+
   .bg-gradient-dark-subtle {
     background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
   }
-  
+
   .text-gradient {
-    background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+    background: var(--gradient-brand);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -99,36 +123,24 @@
     background-clip: text;
   }
 
+  /* Canonical "glass" surface - chips, nav pills, badges. Cards should use
+     <Card variant="glass"> instead of re-implementing this inline. */
   .glass-effect {
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(20px);
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   .glow-orange {
-    box-shadow: 0 0 20px rgba(255, 107, 53, 0.3);
+    box-shadow: var(--shadow-glow);
   }
 
   .glow-orange-strong {
-    box-shadow: 0 0 40px rgba(255, 107, 53, 0.5);
-  }
-
-  /* Animation utilities */
-  .animate-float {
-    animation: float 6s ease-in-out infinite;
+    box-shadow: 0 0 60px hsl(16 100% 60% / 0.5);
   }
 
   .animate-pulse-slow {
     animation: pulse 3s ease-in-out infinite;
-  }
-
-  @keyframes float {
-    0%, 100% {
-      transform: translateY(0px);
-    }
-    50% {
-      transform: translateY(-10px);
-    }
   }
 
   /* Professional hover effects */
@@ -138,6 +150,6 @@
 
   .hover-lift:hover {
     transform: translateY(-5px);
-    box-shadow: 0 10px 40px rgba(255, 107, 53, 0.2);
+    box-shadow: var(--shadow-elevated);
   }
 }
