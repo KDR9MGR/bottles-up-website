@@ -1,7 +1,14 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Play, Star, Users, Calendar, MapPin, Wifi, Bell, Home, Ticket, Crown, User } from 'lucide-react';
 import { useSiteContent } from '@/hooks/useSiteContent';
+import { supabase } from '@/lib/supabase';
+import type { Database } from '@/types/database';
 import Magnetic from '@/components/motion/Magnetic';
+import Countdown from '@/components/motion/Countdown';
+
+type EventRow = Database['public']['Tables']['site_events']['Row'];
 
 const PHONE_NAV_ITEMS = [
   { icon: Home, label: 'Home' },
@@ -13,11 +20,39 @@ const PHONE_NAV_ITEMS = [
 
 const Hero = () => {
   const content = useSiteContent();
+  const [nextEvent, setNextEvent] = useState<EventRow | null>(null);
+  const [venueCount, setVenueCount] = useState(0);
+  const [eventCount, setEventCount] = useState(0);
+
+  useEffect(() => {
+    supabase
+      .from('site_events')
+      .select('*')
+      .eq('status', 'published')
+      .gte('start_date', new Date().toISOString())
+      .order('start_date', { ascending: true })
+      .limit(1)
+      .then(({ data }) => setNextEvent(data?.[0] ?? null));
+
+    supabase
+      .from('site_venues')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'published')
+      .then(({ count }) => setVenueCount(count ?? 0));
+
+    supabase
+      .from('site_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'published')
+      .then(({ count }) => setEventCount(count ?? 0));
+  }, []);
 
   const scrollToWaitlist = () => {
     const waitlistSection = document.querySelector('#waitlist');
     waitlistSection?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  const eventStart = nextEvent ? new Date(nextEvent.start_date) : null;
 
   return (
     <section className="relative overflow-hidden bg-black pb-20 pt-32 lg:pb-28 lg:pt-40">
@@ -65,7 +100,7 @@ const Hero = () => {
                 "Skip the lines, secure your table, and experience Toronto's hottest venues with BottlesUp. From King Street to Entertainment District - your night out, elevated."}
             </p>
 
-            <div className="mb-10 flex flex-col gap-4 sm:flex-row">
+            <div className="mb-8 flex flex-col gap-4 sm:flex-row">
               <Magnetic>
                 <Button size="xl" variant="brand" onClick={scrollToWaitlist} className="group w-full sm:w-auto">
                   Join Early Access
@@ -80,15 +115,33 @@ const Hero = () => {
               </Magnetic>
             </div>
 
-            <div className="flex flex-wrap items-center gap-6">
-              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-gray-300 backdrop-blur-xl">
-                <Users className="h-4 w-4 text-orange-500" />
-                <span>500+ Early Users</span>
+            {/* Real countdown to our next published event - hidden entirely
+                when there isn't one, rather than counting down to nothing. */}
+            {nextEvent && (
+              <div className="mb-8">
+                <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.2em] text-gray-500">
+                  Next Event Starts In
+                </p>
+                <Countdown target={nextEvent.start_date} />
               </div>
-              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-gray-300 backdrop-blur-xl">
-                <Calendar className="h-4 w-4 text-orange-500" />
-                <span>50+ Partner Venues</span>
-              </div>
+            )}
+
+            {/* Real counts - was hardcoded "500+ Early Users" / "50+ Partner
+                Venues" before; each pill only renders when the real count
+                is actually greater than zero. */}
+            <div className="flex flex-wrap items-center gap-4">
+              {venueCount > 0 && (
+                <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-gray-300 backdrop-blur-xl">
+                  <MapPin className="h-4 w-4 text-orange-500" />
+                  <span>{venueCount} {venueCount === 1 ? 'Venue' : 'Venues'} Live</span>
+                </div>
+              )}
+              {eventCount > 0 && (
+                <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-gray-300 backdrop-blur-xl">
+                  <Calendar className="h-4 w-4 text-orange-500" />
+                  <span>{eventCount} {eventCount === 1 ? 'Event' : 'Events'} Open</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -122,14 +175,34 @@ const Hero = () => {
                     <p className="mb-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
                       Upcoming Event
                     </p>
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-xl">
-                      <div className="mb-3 h-20 rounded-xl bg-gradient-to-br from-orange-500/30 via-orange-900/20 to-black" />
-                      <div className="mb-1 text-sm font-bold text-white">Trending This Week</div>
-                      <p className="mb-3 text-xs text-gray-400">Toronto's hottest venues, every night.</p>
-                      <div className="rounded-full bg-gradient-orange py-1.5 text-center text-xs font-bold text-black">
-                        Book Now
+                    {nextEvent ? (
+                      <Link
+                        to={`/events/${nextEvent.slug || nextEvent.id}`}
+                        className="block rounded-2xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-xl transition-colors hover:border-orange-500/30"
+                      >
+                        <div
+                          className="mb-3 h-20 rounded-xl bg-cover bg-center bg-orange-500/20"
+                          style={
+                            nextEvent.cover_image_url
+                              ? { backgroundImage: `url(${nextEvent.cover_image_url})` }
+                              : undefined
+                          }
+                        />
+                        <div className="mb-1 truncate text-sm font-bold text-white">{nextEvent.title}</div>
+                        <p className="mb-3 truncate text-xs text-gray-400">
+                          {nextEvent.venue_name}
+                          {eventStart &&
+                            ` · ${eventStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
+                        </p>
+                        <div className="rounded-full bg-gradient-orange py-1.5 text-center text-xs font-bold text-black">
+                          Book Now
+                        </div>
+                      </Link>
+                    ) : (
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5 text-center backdrop-blur-xl">
+                        <p className="py-4 text-xs text-gray-400">New events are added all the time - check back soon.</p>
                       </div>
-                    </div>
+                    )}
 
                     <div className="mt-4 grid grid-cols-2 gap-3">
                       <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-center backdrop-blur-xl">
@@ -158,27 +231,6 @@ const Hero = () => {
                   <div className="relative flex justify-center pb-2 pt-1.5">
                     <div className="h-1 w-24 rounded-full bg-white/20" />
                   </div>
-                </div>
-              </div>
-
-              {/* Floating cards */}
-              <div
-                className="animate-float absolute -right-5 -top-5 rounded-2xl border border-orange-500/30 bg-black/70 px-4 py-3 shadow-xl shadow-black/40 backdrop-blur-xl"
-                style={{ animationDelay: '0.5s' }}
-              >
-                <div className="flex items-center gap-2">
-                  <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-orange-500" />
-                  <span className="text-sm font-medium text-white">Live</span>
-                </div>
-              </div>
-
-              <div
-                className="animate-float absolute -bottom-5 -left-5 rounded-2xl border border-green-500/30 bg-black/70 px-4 py-3 shadow-xl shadow-black/40 backdrop-blur-xl"
-                style={{ animationDelay: '1s' }}
-              >
-                <div className="flex items-center gap-2">
-                  <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-green-500" />
-                  <span className="text-sm font-medium text-white">Available</span>
                 </div>
               </div>
             </div>
