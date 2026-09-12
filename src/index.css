@@ -152,4 +152,100 @@
     transform: translateY(-5px);
     box-shadow: var(--shadow-elevated);
   }
+
+  /* Cursor-follow glow, mounted once by <Spotlight /> - position is driven
+     by the --sx/--sy custom properties set on pointermove. */
+  .spotlight {
+    background: radial-gradient(
+      340px circle at var(--sx, 50%) var(--sy, 0%),
+      hsl(16 100% 60% / 0.12),
+      transparent 70%
+    );
+  }
+
+  /* Snap-scroll horizontal rail on phones, becomes a normal grid at md/lg -
+     used by PopularEvents so "swipe to browse" works without JS. */
+  .snap-rail {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 85%;
+    gap: 1.5rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 0.5rem;
+    scrollbar-width: none;
+  }
+
+  .snap-rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  .snap-rail > * {
+    scroll-snap-align: center;
+  }
+
+  @media (min-width: 768px) {
+    .snap-rail {
+      grid-auto-flow: row;
+      grid-auto-columns: auto;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      overflow: visible;
+      padding-bottom: 0;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .snap-rail {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 2rem;
+    }
+  }
+}
+
+/* Booking/CMS dialogs become bottom sheets below 640px - marker class
+   applied once on the shared <DialogContent /> primitive. Uses !important
+   deliberately: it's overriding that same element's own Tailwind utility
+   classes (fixed/centered-modal positioning) for this one viewport range. */
+@media (max-width: 639px) {
+  .dialog-sheet {
+    top: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    transform: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    border-radius: 1.25rem 1.25rem 0 0 !important;
+    max-height: 92dvh;
+    overflow-y: auto;
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+
+  .dialog-sheet[data-state="open"] {
+    animation: bu-sheet-up 0.32s cubic-bezier(0.22, 1, 0.36, 1) both !important;
+  }
+
+  .dialog-sheet[data-state="closed"] {
+    animation: bu-sheet-down 0.22s ease both !important;
+  }
+
+  .dialog-sheet::before {
+    content: "";
+    display: block;
+    width: 2.5rem;
+    height: 4px;
+    margin: 0 auto 0.9rem;
+    border-radius: 9999px;
+    background: hsl(var(--border));
+  }
+}
+
+@keyframes bu-sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes bu-sheet-down {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
 }

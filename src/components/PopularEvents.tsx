@@ -56,7 +56,10 @@ const PopularEvents = () => {
           </p>
         </div>
 
-        <div className="mb-4 grid gap-6 md:grid-cols-2 lg:grid-cols-3 lg:gap-8">
+        <p className="mb-3 text-center text-xs font-semibold uppercase tracking-widest text-gray-500 md:hidden">
+          Swipe to browse →
+        </p>
+        <div className="snap-rail mb-4">
           {events.map((event, index) => {
             const start = new Date(event.start_date);
             return (
