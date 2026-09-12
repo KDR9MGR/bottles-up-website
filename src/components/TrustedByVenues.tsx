@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import Reveal from '@/components/motion/Reveal';
 
 // Pulls real venue names only - from published venues and published events'
 // venue_name field. Never hardcode venue names here that aren't backed by
@@ -24,19 +25,21 @@ const TrustedByVenues = () => {
   return (
     <section className="border-y border-white/5 bg-black py-14">
       <div className="container mx-auto px-4 lg:px-6">
-        <p className="mb-8 text-center text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">
-          Trusted by Toronto's Top Venues
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-x-12 gap-y-6">
-          {names.map((name) => (
-            <span
-              key={name}
-              className="text-lg font-bold uppercase tracking-wide text-gray-500 transition-colors duration-300 hover:text-white"
-            >
-              {name}
-            </span>
-          ))}
-        </div>
+        <Reveal>
+          <p className="mb-8 text-center text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">
+            Trusted by Toronto's Top Venues
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-x-12 gap-y-6">
+            {names.map((name) => (
+              <span
+                key={name}
+                className="text-lg font-bold uppercase tracking-wide text-gray-500 transition-colors duration-300 hover:text-white"
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+        </Reveal>
       </div>
     </section>
   );

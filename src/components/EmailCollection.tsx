@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
+import Reveal from '@/components/motion/Reveal';
 
 const EmailCollection = () => {
   const [email, setEmail] = useState('');
@@ -61,7 +62,7 @@ const EmailCollection = () => {
   return (
     <section id="waitlist" className="overflow-hidden bg-black py-20 lg:py-24">
       <div className="container mx-auto px-4 lg:px-6">
-        <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur-2xl lg:p-14">
+        <Reveal className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur-2xl lg:p-14">
           <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-orange-500/10 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-orange-500/10 blur-3xl" />
 
@@ -139,7 +140,7 @@ const EmailCollection = () => {
               </p>
             </div>
           </div>
-        </div>
+        </Reveal>
       </div>
     </section>
   );
