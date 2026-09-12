@@ -1,5 +1,6 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Search, Calendar, CreditCard, PartyPopper } from 'lucide-react';
+import Reveal from '@/components/motion/Reveal';
 
 const HowItWorks = () => {
   const steps = [
@@ -43,11 +44,8 @@ const HowItWorks = () => {
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 lg:gap-8">
           {steps.map((step, index) => (
-            <div key={step.title} className="relative">
-              <Card
-                className="group animate-fade-in hover-lift rounded-3xl border-white/10 bg-white/[0.03] backdrop-blur-xl transition-all duration-300 hover:border-orange-500/40"
-                style={{ animationDelay: `${index * 0.1}s` }}
-              >
+            <Reveal key={step.title} delay={index * 110} className="relative">
+              <Card className="group hover-lift rounded-3xl border-white/10 bg-white/[0.03] backdrop-blur-xl transition-all duration-300 hover:border-orange-500/40">
                 <CardContent className="p-8 text-center">
                   <div className="relative mx-auto mb-5 h-16 w-16">
                     <div className="glow-orange flex h-16 w-16 items-center justify-center rounded-full bg-gradient-orange transition-transform duration-300 group-hover:scale-110">
@@ -69,7 +67,7 @@ const HowItWorks = () => {
               {index < steps.length - 1 && (
                 <div className="absolute -right-4 top-1/2 hidden h-0.5 w-8 -translate-y-1/2 bg-gradient-orange opacity-50 lg:block" />
               )}
-            </div>
+            </Reveal>
           ))}
         </div>
       </div>

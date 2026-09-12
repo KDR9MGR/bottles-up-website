@@ -1,5 +1,7 @@
 import { Calendar, Users, Shield, Zap, CreditCard, MapPin, Ticket, Crown, Clock } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import Reveal from '@/components/motion/Reveal';
+import Tilt from '@/components/motion/Tilt';
 
 const Features = () => {
   const features = [
@@ -87,21 +89,21 @@ const Features = () => {
         {/* Card grid */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 lg:gap-8">
           {features.map((feature, index) => (
-            <Card
-              key={feature.title}
-              className="group animate-fade-in hover-lift rounded-3xl border-white/10 bg-white/[0.03] backdrop-blur-xl transition-all duration-300 hover:border-orange-500/40 hover:bg-white/[0.06]"
-              style={{ animationDelay: `${index * 0.1}s` }}
-            >
-              <CardContent className="p-7">
-                <div className="glow-orange mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-orange transition-transform duration-300 group-hover:scale-110">
-                  <feature.icon className="h-6 w-6 text-black" />
-                </div>
-                <h3 className="mb-3 text-xl font-semibold text-white transition-colors group-hover:text-orange-500">
-                  {feature.title}
-                </h3>
-                <p className="leading-relaxed text-gray-400">{feature.description}</p>
-              </CardContent>
-            </Card>
+            <Reveal key={feature.title} delay={(index % 3) * 90}>
+              <Tilt>
+                <Card className="group hover-lift rounded-3xl border-white/10 bg-white/[0.03] backdrop-blur-xl transition-all duration-300 hover:border-orange-500/40 hover:bg-white/[0.06]">
+                  <CardContent className="p-7">
+                    <div className="glow-orange mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-orange transition-transform duration-300 group-hover:scale-110">
+                      <feature.icon className="h-6 w-6 text-black" />
+                    </div>
+                    <h3 className="mb-3 text-xl font-semibold text-white transition-colors group-hover:text-orange-500">
+                      {feature.title}
+                    </h3>
+                    <p className="leading-relaxed text-gray-400">{feature.description}</p>
+                  </CardContent>
+                </Card>
+              </Tilt>
+            </Reveal>
           ))}
         </div>
 

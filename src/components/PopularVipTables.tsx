@@ -5,6 +5,7 @@ import { MapPinned, Crown, Award, ArrowRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 import type { TableTypeWithVenue } from '@/pages/VipTables';
+import Reveal from '@/components/motion/Reveal';
 
 type VenueRow = Database['public']['Tables']['site_venues']['Row'];
 type TableTypeRow = Database['public']['Tables']['site_table_types']['Row'];
@@ -59,7 +60,7 @@ const PopularVipTables = () => {
         {loading ? (
           <div className="h-80 animate-pulse rounded-3xl border border-white/10 bg-white/[0.03]" />
         ) : (
-          <div className="grid overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl lg:grid-cols-2">
+          <Reveal className="grid overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl lg:grid-cols-2">
             <div className="relative h-64 lg:h-auto">
               <img
                 src={featured.image_url ?? featured.venue.cover_image_url ?? '/placeholder.svg'}
@@ -104,7 +105,7 @@ const PopularVipTables = () => {
                 </Link>
               </Button>
             </div>
-          </div>
+          </Reveal>
         )}
       </div>
     </section>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Menu, X, LayoutDashboard, User, Ticket, LogOut } from 'lucide-react';
@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useUserAuth, userSignOut } from '@/hooks/useUserAuth';
 import UserAuthModal from '@/components/UserAuthModal';
+import Magnetic from '@/components/motion/Magnetic';
 
 const navLinkClass =
   'relative text-sm font-medium text-gray-300 transition-colors hover:text-white after:absolute after:-bottom-1 after:left-0 after:h-px after:w-0 after:bg-gradient-orange after:transition-all after:duration-300 hover:after:w-full';
@@ -19,9 +20,23 @@ const navLinkClass =
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
   const location = useLocation();
   const navigate = useNavigate();
   const { session, profile } = useUserAuth();
+
+  useEffect(() => {
+    const onScroll = () => {
+      const y = window.scrollY;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      setScrolled(y > 12);
+      setScrollProgress(max > 0 ? (y / max) * 100 : 0);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const goToSection = (id: string) => (e: React.MouseEvent) => {
     e.preventDefault();
@@ -57,9 +72,17 @@ const Header = () => {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-black/50 backdrop-blur-2xl">
+      <header
+        className={`fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-2xl transition-colors duration-300 ${
+          scrolled ? 'border-white/10 bg-black/80' : 'border-white/5 bg-black/50'
+        }`}
+      >
         <div className="container mx-auto px-4 lg:px-6">
-          <div className="flex h-20 items-center justify-between gap-6 py-3">
+          <div
+            className={`flex items-center justify-between gap-6 py-3 transition-[height] duration-300 ${
+              scrolled ? 'h-16' : 'h-20'
+            }`}
+          >
             {/* Logo */}
             <Link
               to="/"
@@ -156,9 +179,11 @@ const Header = () => {
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : (
-                <Button onClick={() => setAuthOpen(true)} variant="brand">
-                  Sign In
-                </Button>
+                <Magnetic>
+                  <Button onClick={() => setAuthOpen(true)} variant="brand">
+                    Sign In
+                  </Button>
+                </Magnetic>
               )}
             </div>
 
@@ -171,6 +196,13 @@ const Header = () => {
               {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
             </button>
           </div>
+
+          {/* Scroll-read progress, under the header */}
+          <span
+            className="pointer-events-none absolute -bottom-px left-0 h-px bg-gradient-orange transition-[width] duration-150 ease-linear motion-reduce:hidden"
+            style={{ width: `${scrollProgress}%` }}
+            aria-hidden="true"
+          />
 
           {/* Mobile Menu */}
           {isMenuOpen && (

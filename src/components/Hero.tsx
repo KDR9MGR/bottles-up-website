@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Play, Star, Users, Calendar, MapPin, Wifi, Bell, Home, Ticket, Crown, User } from 'lucide-react';
 import { useSiteContent } from '@/hooks/useSiteContent';
+import Magnetic from '@/components/motion/Magnetic';
 
 const PHONE_NAV_ITEMS = [
   { icon: Home, label: 'Home' },
@@ -65,14 +66,18 @@ const Hero = () => {
             </p>
 
             <div className="mb-10 flex flex-col gap-4 sm:flex-row">
-              <Button size="xl" variant="brand" onClick={scrollToWaitlist} className="group">
-                Join Early Access
-                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </Button>
-              <Button size="xl" variant="brandOutline">
-                <Play className="mr-2 h-4 w-4" />
-                See Preview
-              </Button>
+              <Magnetic>
+                <Button size="xl" variant="brand" onClick={scrollToWaitlist} className="group w-full sm:w-auto">
+                  Join Early Access
+                  <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </Button>
+              </Magnetic>
+              <Magnetic>
+                <Button size="xl" variant="brandOutline" className="w-full sm:w-auto">
+                  <Play className="mr-2 h-4 w-4" />
+                  See Preview
+                </Button>
+              </Magnetic>
             </div>
 
             <div className="flex flex-wrap items-center gap-6">

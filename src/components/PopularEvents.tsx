@@ -6,6 +6,8 @@ import { Calendar, MapPin, Info } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 import BookingDialog from './BookingDialog';
+import Reveal from '@/components/motion/Reveal';
+import Tilt from '@/components/motion/Tilt';
 
 type EventRow = Database['public']['Tables']['site_events']['Row'];
 type TierRow = Database['public']['Tables']['site_ticket_tiers']['Row'];
@@ -58,11 +60,9 @@ const PopularEvents = () => {
           {events.map((event, index) => {
             const start = new Date(event.start_date);
             return (
-              <Card
-                key={event.id}
-                className="group animate-fade-in hover-lift overflow-hidden rounded-3xl border-white/10 bg-white/[0.03] backdrop-blur-xl transition-all duration-300 hover:border-orange-500/40"
-                style={{ animationDelay: `${index * 0.1}s` }}
-              >
+              <Reveal key={event.id} delay={(index % 3) * 90}>
+              <Tilt>
+              <Card className="group hover-lift overflow-hidden rounded-3xl border-white/10 bg-white/[0.03] backdrop-blur-xl transition-all duration-300 hover:border-orange-500/40">
                 <Link to={`/events/${event.slug || event.id}`} className="block">
                   <div className="relative bg-black/40">
                     <img
@@ -133,6 +133,8 @@ const PopularEvents = () => {
                   </div>
                 </CardContent>
               </Card>
+              </Tilt>
+              </Reveal>
             );
           })}
         </div>
