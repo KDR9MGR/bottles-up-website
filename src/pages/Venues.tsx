@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input';
 import { ShieldCheck, Zap, MapPinned, MapPin, Search, CheckCircle2, Crown } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
+import Reveal from '@/components/motion/Reveal';
+import Tilt from '@/components/motion/Tilt';
 
 type VenueRow = Database['public']['Tables']['site_venues']['Row'];
 type TableTypeRow = Database['public']['Tables']['site_table_types']['Row'];
@@ -99,7 +101,7 @@ const Venues = () => {
             className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
               activeCategory === null
                 ? 'bg-gradient-orange text-black'
-                : 'border border-gray-800 text-gray-300 hover:border-primary/50'
+                : 'border border-border text-gray-300 hover:border-primary/50'
             }`}
           >
             All Venues
@@ -112,7 +114,7 @@ const Venues = () => {
               className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                 activeCategory === category
                   ? 'bg-gradient-orange text-black'
-                  : 'border border-gray-800 text-gray-300 hover:border-primary/50'
+                  : 'border border-border text-gray-300 hover:border-primary/50'
               }`}
             >
               {category}
@@ -126,7 +128,7 @@ const Venues = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search venues or neighborhoods..."
-            className="border-gray-800 bg-gray-950/60 pl-10"
+            className="border-border bg-black/40 pl-10"
           />
         </div>
 
@@ -143,13 +145,14 @@ const Venues = () => {
           <div className="text-center text-gray-400">No venues match that search - try a different term or category.</div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((venue) => {
+            {filtered.map((venue, index) => {
               const hasTables = venue.site_table_types.some((t) => t.inventory_count > 0);
               return (
+                <Reveal key={venue.id} delay={(index % 3) * 90}>
+                <Tilt>
                 <Link
-                  key={venue.id}
                   to={`/venues/${venue.slug || venue.id}`}
-                  className="group overflow-hidden rounded-xl border border-border bg-card transition-all duration-300 hover:border-primary/50"
+                  className="group block overflow-hidden rounded-xl border border-border bg-card transition-all duration-300 hover:border-primary/50"
                 >
                   <div className="relative h-52 w-full overflow-hidden">
                     <img
@@ -180,6 +183,8 @@ const Venues = () => {
                     )}
                   </div>
                 </Link>
+                </Tilt>
+                </Reveal>
               );
             })}
           </div>
