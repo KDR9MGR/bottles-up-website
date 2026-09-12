@@ -9,6 +9,8 @@ import { Calendar, MapPin, Info, Search, ShieldCheck, Sparkles, Ticket } from 'l
 import { supabase } from '@/lib/supabase';
 import BookingDialog from '@/components/BookingDialog';
 import type { EventWithTiers } from '@/components/PopularEvents';
+import Reveal from '@/components/motion/Reveal';
+import Tilt from '@/components/motion/Tilt';
 
 const TRUST_POINTS = [
   { icon: ShieldCheck, label: 'Verified Events' },
@@ -116,7 +118,7 @@ const Events = () => {
               className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                 activeCategory === null
                   ? 'bg-gradient-orange text-black'
-                  : 'border border-gray-800 text-gray-300 hover:border-primary/50'
+                  : 'border border-border text-gray-300 hover:border-primary/50'
               }`}
             >
               All Events
@@ -129,7 +131,7 @@ const Events = () => {
                 className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                   activeCategory === category
                     ? 'bg-gradient-orange text-black'
-                    : 'border border-gray-800 text-gray-300 hover:border-primary/50'
+                    : 'border border-border text-gray-300 hover:border-primary/50'
                 }`}
               >
                 {category}
@@ -144,7 +146,7 @@ const Events = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search events or venues..."
-            className="border-gray-800 bg-gray-950/60 pl-10"
+            className="border-border bg-black/40 pl-10"
           />
         </div>
 
@@ -161,14 +163,13 @@ const Events = () => {
           <div className="text-center text-gray-400">No events match that search - try a different term or category.</div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((event) => {
+            {filtered.map((event, index) => {
               const start = new Date(event.start_date);
               const priceFromCents = formatPriceFrom(event.ticket_tiers);
               return (
-                <Card
-                  key={event.id}
-                  className="overflow-hidden border-border bg-card transition-all duration-300 hover:border-primary/50"
-                >
+                <Reveal key={event.id} delay={(index % 3) * 90}>
+                <Tilt>
+                <Card className="overflow-hidden border-border bg-card transition-all duration-300 hover:border-primary/50">
                   <Link to={`/events/${event.slug || event.id}`} className="block">
                     <div className="relative h-48 w-full bg-black/40">
                       <img
@@ -208,14 +209,15 @@ const Events = () => {
                       </div>
                     </Link>
                     <div className="flex gap-2">
-                      <Button asChild variant="outline" className="flex-1 border-border">
+                      <Button asChild variant="brandOutline" className="flex-1">
                         <Link to={`/events/${event.slug || event.id}`}>
                           <Info className="mr-1.5 h-4 w-4" />
                           Details
                         </Link>
                       </Button>
                       <Button
-                        className="flex-1 bg-gradient-orange text-black font-bold hover:opacity-90"
+                        variant="brand"
+                        className="flex-1"
                         disabled={event.ticket_tiers.length === 0}
                         onClick={() => setBookingEvent(event)}
                       >
@@ -224,6 +226,8 @@ const Events = () => {
                     </div>
                   </CardContent>
                 </Card>
+                </Tilt>
+                </Reveal>
               );
             })}
           </div>
