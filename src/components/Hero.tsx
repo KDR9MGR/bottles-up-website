@@ -65,19 +65,11 @@ const Hero = () => {
             </p>
 
             <div className="mb-10 flex flex-col gap-4 sm:flex-row">
-              <Button
-                size="lg"
-                onClick={scrollToWaitlist}
-                className="group h-14 rounded-full bg-gradient-orange px-8 text-base font-bold text-black shadow-lg shadow-orange-500/30 transition-all duration-300 hover:scale-105 hover:shadow-orange-500/50"
-              >
+              <Button size="xl" variant="brand" onClick={scrollToWaitlist} className="group">
                 Join Early Access
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
               </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="group h-14 rounded-full border-white/15 bg-white/5 px-8 text-base text-white backdrop-blur-xl transition-all duration-300 hover:border-orange-500/60 hover:bg-orange-500/10 hover:text-orange-400"
-              >
+              <Button size="xl" variant="brandOutline">
                 <Play className="mr-2 h-4 w-4" />
                 See Preview
               </Button>
