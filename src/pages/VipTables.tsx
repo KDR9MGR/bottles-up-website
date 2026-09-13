@@ -9,6 +9,8 @@ import { Users, MapPin, Wine, Crown, ShieldCheck, Zap, BadgeDollarSign, Info, Ch
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 import TableBookingDialog from '@/components/TableBookingDialog';
+import Reveal from '@/components/motion/Reveal';
+import Tilt from '@/components/motion/Tilt';
 
 type VenueRow = Database['public']['Tables']['site_venues']['Row'];
 type TableTypeRow = Database['public']['Tables']['site_table_types']['Row'];
@@ -152,7 +154,7 @@ const VipTables = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search tables or venues..."
-            className="border-gray-800 bg-gray-950/60 pl-10"
+            className="border-border bg-black/40 pl-10"
           />
         </div>
 
@@ -166,12 +168,11 @@ const VipTables = () => {
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {filteredCards.map((card) =>
+            {filteredCards.map((card, index) =>
               card.kind === 'venue' ? (
-                <Card
-                  key={card.id}
-                  className="overflow-hidden border-border bg-card transition-all duration-300 hover:border-primary/50"
-                >
+                <Reveal key={card.id} delay={(index % 3) * 90}>
+                <Tilt>
+                <Card className="overflow-hidden border-border bg-card transition-all duration-300 hover:border-primary/50">
                   <div className="relative h-52 w-full">
                     <img
                       src={card.venue.cover_image_url ?? '/placeholder.svg'}
@@ -206,7 +207,7 @@ const VipTables = () => {
                         </div>
                       )}
                     </div>
-                    <Button asChild className="w-full bg-gradient-orange text-black font-bold hover:opacity-90">
+                    <Button asChild variant="brand" className="w-full">
                       <Link to={`/venues/${card.venue.slug || card.venue.id}`}>
                         <Info className="mr-1.5 h-4 w-4" />
                         View Tables &amp; Book
@@ -214,9 +215,12 @@ const VipTables = () => {
                     </Button>
                   </CardContent>
                 </Card>
+                </Tilt>
+                </Reveal>
               ) : (
+                <Reveal key={card.id} delay={(index % 3) * 90}>
+                <Tilt>
                 <Card
-                  key={card.id}
                   className={`overflow-hidden bg-card transition-all duration-300 ${
                     card.tableType.is_featured
                       ? 'border-2 border-primary shadow-[0_0_30px_-10px_hsl(var(--primary))]'
@@ -268,19 +272,15 @@ const VipTables = () => {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <Button asChild variant="outline" className="flex-1 border-border">
+                      <Button asChild variant="brandOutline" className="flex-1">
                         <Link to={`/tables/${card.tableType.id}`}>
                           <Info className="mr-1.5 h-4 w-4" />
                           Details
                         </Link>
                       </Button>
                       <Button
-                        className={
-                          card.tableType.is_featured
-                            ? 'flex-1 bg-gradient-orange text-black font-bold hover:opacity-90'
-                            : 'flex-1'
-                        }
-                        variant={card.tableType.is_featured ? 'default' : 'outline'}
+                        variant={card.tableType.is_featured ? 'brand' : 'brandOutline'}
+                        className="flex-1"
                         disabled={card.tableType.timeSlots.length === 0}
                         onClick={() => setBookingTableType(card.tableType)}
                       >
@@ -289,6 +289,8 @@ const VipTables = () => {
                     </div>
                   </CardContent>
                 </Card>
+                </Tilt>
+                </Reveal>
               ),
             )}
           </div>
