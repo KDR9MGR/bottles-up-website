@@ -14,6 +14,8 @@ import {
 } from '@/components/ui/select';
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
+import Reveal from '@/components/motion/Reveal';
+import Tilt from '@/components/motion/Tilt';
 
 type VenueRow = Database['public']['Tables']['site_venues']['Row'];
 type TableTypeRow = Database['public']['Tables']['site_table_types']['Row'];
@@ -254,8 +256,10 @@ const VenueFloorPlanPicker = ({ venue, floors, tableTypes, timeSlots, onSelectTa
       {unpositionedTableTypes.length > 0 && (
         <div className="space-y-3">
           {activeFloor && <p className="text-sm font-semibold text-white">More Tables</p>}
-          {unpositionedTableTypes.map((tableType) => (
-            <div key={tableType.id} className="rounded-lg border border-border bg-card p-3">
+          {unpositionedTableTypes.map((tableType, index) => (
+            <Reveal key={tableType.id} delay={(index % 3) * 90}>
+            <Tilt>
+            <div className="rounded-lg border border-border bg-card p-3">
               <div className="mb-2 flex items-start justify-between gap-2">
                 <Link to={`/tables/${tableType.id}`} className="text-sm font-medium text-white hover:text-primary">
                   {tableType.name}
@@ -287,15 +291,13 @@ const VenueFloorPlanPicker = ({ venue, floors, tableTypes, timeSlots, onSelectTa
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button asChild size="sm" variant="outline" className="flex-1">
+                <Button asChild size="sm" variant="brandOutline" className="flex-1">
                   <Link to={`/tables/${tableType.id}`}>Details</Link>
                 </Button>
                 <Button
                   size="sm"
-                  className={
-                    tableType.is_featured ? 'flex-1 bg-gradient-orange text-black font-bold hover:opacity-90' : 'flex-1'
-                  }
-                  variant={tableType.is_featured ? 'default' : 'outline'}
+                  variant={tableType.is_featured ? 'brand' : 'brandOutline'}
+                  className="flex-1"
                   disabled={noSlots || (canPickTable && unavailableIds.has(tableType.id))}
                   onClick={() => date && slotId && onSelectTable(tableType, date, slotId)}
                 >
@@ -309,6 +311,8 @@ const VenueFloorPlanPicker = ({ venue, floors, tableTypes, timeSlots, onSelectTa
                 </Button>
               </div>
             </div>
+            </Tilt>
+            </Reveal>
           ))}
         </div>
       )}

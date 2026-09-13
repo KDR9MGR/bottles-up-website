@@ -12,6 +12,7 @@ import VenueFloorPlanPicker from '@/components/VenueFloorPlanPicker';
 import Lightbox from '@/components/Lightbox';
 import type { Database } from '@/types/database';
 import type { TableTypeWithVenue } from './VipTables';
+import Reveal from '@/components/motion/Reveal';
 
 type VenueRow = Database['public']['Tables']['site_venues']['Row'];
 type TableTypeRow = Database['public']['Tables']['site_table_types']['Row'];
@@ -95,7 +96,7 @@ const VenueDetail = () => {
         <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 text-center">
           <h1 className="text-2xl font-bold text-white">Venue not found</h1>
           <p className="text-gray-400">This venue may have been removed or isn't published yet.</p>
-          <Button asChild className="bg-gradient-orange text-black font-bold hover:opacity-90">
+          <Button asChild variant="brand">
             <Link to="/vip-tables">Back to VIP Tables</Link>
           </Button>
         </div>
@@ -298,17 +299,22 @@ const VenueDetail = () => {
 
         {hasFloorPlan && (
           <div id="select-table" className="mt-10">
-            <h2 className="mb-4 flex items-center gap-2 text-xl font-semibold text-white">
-              <Crown className="h-5 w-5 text-primary" />
-              Select Your Table
-            </h2>
-            <VenueFloorPlanPicker
-              venue={venue}
-              floors={venue.site_venue_floors}
-              tableTypes={tableTypes}
-              timeSlots={venue.site_venue_time_slots}
-              onSelectTable={openPreview}
-            />
+            {/* Reveal wraps the content, not the #select-table anchor itself,
+                so the scrollIntoView() deep-link still targets a plain,
+                always-in-flow element. */}
+            <Reveal>
+              <h2 className="mb-4 flex items-center gap-2 text-xl font-semibold text-white">
+                <Crown className="h-5 w-5 text-primary" />
+                Select Your Table
+              </h2>
+              <VenueFloorPlanPicker
+                venue={venue}
+                floors={venue.site_venue_floors}
+                tableTypes={tableTypes}
+                timeSlots={venue.site_venue_time_slots}
+                onSelectTable={openPreview}
+              />
+            </Reveal>
           </div>
         )}
       </section>
@@ -319,7 +325,7 @@ const VenueDetail = () => {
           table picker rather than a specific table since none is chosen yet. */}
       {tableTypes.length > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/90 p-3 backdrop-blur-xl lg:hidden">
-          <Button onClick={scrollToTables} className="w-full bg-gradient-orange text-black font-bold hover:opacity-90">
+          <Button onClick={scrollToTables} variant="brand" className="w-full">
             Reserve a Table
           </Button>
         </div>
@@ -328,7 +334,7 @@ const VenueDetail = () => {
       <Sheet open={!!previewTable} onOpenChange={(open) => !open && setPreviewTable(null)}>
         <SheetContent
           side="bottom"
-          className="mx-auto max-h-[85vh] max-w-lg overflow-y-auto rounded-t-2xl border-gray-800 bg-gray-950"
+          className="mx-auto max-h-[85vh] max-w-lg overflow-y-auto rounded-t-2xl border-border bg-card"
         >
 
           {previewTable && (
@@ -345,7 +351,7 @@ const VenueDetail = () => {
                   />
                 )}
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-lg border border-gray-800 p-3">
+                  <div className="rounded-lg border border-border p-3">
                     <div className="text-xs text-gray-500">Capacity</div>
                     <div className="font-semibold text-white">
                       {previewTable.min_guests
@@ -353,7 +359,7 @@ const VenueDetail = () => {
                         : `Up to ${previewTable.max_guests} guests`}
                     </div>
                   </div>
-                  <div className="rounded-lg border border-gray-800 p-3">
+                  <div className="rounded-lg border border-border p-3">
                     <div className="text-xs text-gray-500">{previewIsHourly ? 'Rate' : 'Minimum Spend'}</div>
                     <div className="font-semibold text-white">
                       {previewIsHourly ? previewPriceLabel : `$${(previewTable.min_spend_cents / 100).toFixed(0)}`}
@@ -366,14 +372,11 @@ const VenueDetail = () => {
                     <p className="text-sm text-gray-300">{previewTable.description}</p>
                   </div>
                 )}
-                <div className="flex items-center justify-between border-t border-gray-800 pt-4">
+                <div className="flex items-center justify-between border-t border-border pt-4">
                   <span className="text-sm text-gray-400">{previewIsHourly ? 'Hourly rate' : 'Deposit due today'}</span>
                   <span className="text-lg font-bold text-white">{previewPriceLabel}</span>
                 </div>
-                <Button
-                  onClick={confirmReserve}
-                  className="w-full bg-gradient-orange text-black font-bold hover:opacity-90"
-                >
+                <Button onClick={confirmReserve} variant="brand" className="w-full">
                   Reserve This Table
                 </Button>
               </div>
