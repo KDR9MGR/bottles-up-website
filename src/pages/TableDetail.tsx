@@ -27,6 +27,8 @@ import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 import TableBookingDialog from '@/components/TableBookingDialog';
 import type { TableTypeWithVenue } from '@/pages/VipTables';
+import Reveal from '@/components/motion/Reveal';
+import Tilt from '@/components/motion/Tilt';
 
 type VenueRow = Database['public']['Tables']['site_venues']['Row'];
 type TableTypeRow = Database['public']['Tables']['site_table_types']['Row'];
@@ -124,7 +126,7 @@ const TableDetail = () => {
         <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 text-center">
           <h1 className="text-2xl font-bold text-white">Table not found</h1>
           <p className="text-gray-400">This table may have been removed or isn't published yet.</p>
-          <Button asChild className="bg-gradient-orange text-black font-bold hover:opacity-90">
+          <Button asChild variant="brand">
             <Link to="/vip-tables">Back to VIP Tables</Link>
           </Button>
         </div>
@@ -217,6 +219,7 @@ const TableDetail = () => {
       <section className="container mx-auto px-4 py-10 lg:px-6">
         <div className="grid gap-10 lg:grid-cols-3">
           <div className="space-y-8 lg:col-span-2">
+            <Reveal>
             <Card className="border-border bg-card">
               <CardContent className="grid grid-cols-2 gap-4 p-6 sm:grid-cols-4">
                 <div>
@@ -243,6 +246,7 @@ const TableDetail = () => {
                 )}
               </CardContent>
             </Card>
+            </Reveal>
 
             {table.description && (
               <div>
@@ -308,6 +312,7 @@ const TableDetail = () => {
               {table.policy_note && <p className="mt-3 text-xs text-muted-foreground">{table.policy_note}</p>}
             </div>
 
+            <Reveal>
             <Card className="border-border bg-card">
               <CardContent className="space-y-3 p-6">
                 <h2 className="text-lg font-semibold text-white">Venue Info</h2>
@@ -360,16 +365,18 @@ const TableDetail = () => {
                 </div>
               </CardContent>
             </Card>
+            </Reveal>
 
             {otherTables.length > 0 && (
               <div>
                 <h2 className="mb-4 text-xl font-semibold text-white">Other Tables at {table.venue.name}</h2>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {otherTables.map((other) => (
+                  {otherTables.map((other, index) => (
+                    <Reveal key={other.id} delay={(index % 2) * 90}>
+                    <Tilt>
                     <Link
-                      key={other.id}
                       to={`/tables/${other.id}`}
-                      className="group overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-primary/50"
+                      className="group block overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-primary/50"
                     >
                       <div className="h-28 w-full overflow-hidden">
                         <img
@@ -383,6 +390,8 @@ const TableDetail = () => {
                         <div className="text-xs text-muted-foreground">Up to {other.max_guests} guests</div>
                       </div>
                     </Link>
+                    </Tilt>
+                    </Reveal>
                   ))}
                 </div>
               </div>
@@ -390,6 +399,9 @@ const TableDetail = () => {
           </div>
 
           <div>
+            {/* Not wrapped in <Reveal> - it's transform-based and would break
+                this card's `sticky` positioning (same reason as the event and
+                venue detail pages' sticky sidebars). */}
             <Card className="sticky top-24 border-border bg-card">
               <CardContent className="space-y-4 p-6">
                 <div className="flex items-center gap-2 text-white">
@@ -412,7 +424,8 @@ const TableDetail = () => {
                 </div>
                 <div className="text-lg font-semibold text-white">{priceLabel}</div>
                 <Button
-                  className="w-full bg-gradient-orange text-black font-bold hover:opacity-90"
+                  variant="brand"
+                  className="w-full"
                   disabled={timeSlots.length === 0}
                   onClick={() => setBookingOpen(true)}
                 >
