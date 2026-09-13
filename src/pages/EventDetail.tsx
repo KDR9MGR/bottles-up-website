@@ -11,6 +11,8 @@ import { supabase } from '@/lib/supabase';
 import BookingDialog from '@/components/BookingDialog';
 import Lightbox from '@/components/Lightbox';
 import type { EventWithTiers } from '@/components/PopularEvents';
+import Reveal from '@/components/motion/Reveal';
+import Tilt from '@/components/motion/Tilt';
 
 type EventWithVenue = EventWithTiers & { linked_venue: { slug: string | null } | null };
 
@@ -100,7 +102,7 @@ const EventDetail = () => {
         <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 text-center">
           <h1 className="text-2xl font-bold text-white">Event not found</h1>
           <p className="text-gray-400">This event may have been removed or isn't published yet.</p>
-          <Button asChild className="bg-gradient-orange text-black font-bold hover:opacity-90">
+          <Button asChild variant="brand">
             <Link to="/events">Back to Events</Link>
           </Button>
         </div>
@@ -202,6 +204,7 @@ const EventDetail = () => {
                   <p className="whitespace-pre-line leading-relaxed text-gray-400">{event.description}</p>
                 </div>
 
+                <Reveal>
                 <Card className="border-border bg-card">
                   <CardContent className="flex items-center gap-4 p-6">
                     <Crown className="h-8 w-8 shrink-0 text-primary" />
@@ -211,13 +214,14 @@ const EventDetail = () => {
                         Reserve a table with bottle service and a dedicated host for the night.
                       </p>
                     </div>
-                    <Button asChild variant="outline" className="shrink-0 border-border">
+                    <Button asChild variant="brandOutline" className="shrink-0">
                       <Link to={event.linked_venue?.slug ? `/venues/${event.linked_venue.slug}#select-table` : '/vip-tables'}>
                         Browse VIP Tables
                       </Link>
                     </Button>
                   </CardContent>
                 </Card>
+                </Reveal>
               </TabsContent>
 
               {gallery.length > 0 && (
@@ -244,6 +248,9 @@ const EventDetail = () => {
           </div>
 
           <div>
+            {/* Not wrapped in <Reveal> - it's transform-based and would break
+                this card's `sticky` positioning (a transformed ancestor
+                changes a sticky descendant's containing block). */}
             <Card className="sticky top-24 border-border bg-card">
               <CardContent className="space-y-4 p-6">
                 <div className="flex items-center gap-2 text-white">
@@ -306,7 +313,8 @@ const EventDetail = () => {
                 )}
 
                 <Button
-                  className="w-full bg-gradient-orange text-black font-bold hover:opacity-90"
+                  variant="brand"
+                  className="w-full"
                   disabled={event.ticket_tiers.length === 0 || soldOut}
                   onClick={() => setBookingOpen(true)}
                 >
@@ -326,16 +334,17 @@ const EventDetail = () => {
           <div className="mt-14">
             <h2 className="mb-6 text-xl font-semibold text-white">You Might Also Like</h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {relatedEvents.map((related) => {
+              {relatedEvents.map((related, index) => {
                 const relatedUnlockedTiers = related.ticket_tiers.filter((t) => !t.requires_access_code);
                 const relatedPriceFrom = relatedUnlockedTiers.length
                   ? Math.min(...relatedUnlockedTiers.map((t) => t.price_cents))
                   : null;
                 return (
+                  <Reveal key={related.id} delay={(index % 4) * 90}>
+                  <Tilt>
                   <Link
-                    key={related.id}
                     to={`/events/${related.slug || related.id}`}
-                    className="group overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-primary/50"
+                    className="group block overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-primary/50"
                   >
                     <div className="h-32 w-full overflow-hidden">
                       <img
@@ -352,6 +361,8 @@ const EventDetail = () => {
                       )}
                     </div>
                   </Link>
+                  </Tilt>
+                  </Reveal>
                 );
               })}
             </div>
