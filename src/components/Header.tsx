@@ -87,14 +87,14 @@ const Header = () => {
             <Link
               to="/"
               onClick={handleLogoClick}
-              className="group flex items-center space-x-2.5 transition-transform duration-300 hover:scale-[1.03]"
+              className="group flex shrink-0 items-center space-x-2.5 transition-transform duration-300 hover:scale-[1.03]"
             >
-              <img src="/app_logo.svg" alt="BottlesUp Logo" className="h-8 w-8" />
-              <span className="text-xl font-bold tracking-tight text-gradient">BottlesUp</span>
+              <img src="/app_logo.svg" alt="BottlesUp Logo" className="h-8 w-8 shrink-0" />
+              <span className="whitespace-nowrap text-xl font-bold tracking-tight text-gradient">BottlesUp</span>
             </Link>
 
             {/* Desktop Navigation */}
-            <nav className="hidden items-center gap-9 md:flex">
+            <nav className="hidden items-center gap-9 nav:flex">
               <a href="/#features" onClick={goToSection('features')} className={navLinkClass}>
                 Features
               </a>
@@ -116,7 +116,7 @@ const Header = () => {
             </nav>
 
             {/* Desktop CTA */}
-            <div className="hidden items-center gap-3 md:flex">
+            <div className="hidden items-center gap-3 nav:flex">
               <Button
                 variant="ghost"
                 className="text-sm text-gray-300 hover:bg-white/5 hover:text-white"
@@ -189,7 +189,7 @@ const Header = () => {
 
             {/* Mobile Menu Button */}
             <button
-              className="rounded-full p-2 text-white transition-colors hover:bg-white/10 md:hidden"
+              className="rounded-full p-2 text-white transition-colors hover:bg-white/10 nav:hidden"
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               aria-label="Toggle menu"
             >
@@ -206,7 +206,7 @@ const Header = () => {
 
           {/* Mobile Menu */}
           {isMenuOpen && (
-            <div className="animate-fade-in mb-4 rounded-2xl border border-white/10 bg-black/80 p-5 backdrop-blur-2xl md:hidden">
+            <div className="animate-fade-in mb-4 rounded-2xl border border-white/10 bg-black/80 p-5 backdrop-blur-2xl nav:hidden">
               <nav className="flex flex-col gap-4">
                 <a href="/#features" onClick={goToSection('features')} className="text-gray-300 transition-colors hover:text-orange-500">
                   Features

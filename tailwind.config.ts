@@ -19,6 +19,13 @@ export default {
 			}
 		},
 		extend: {
+			screens: {
+				// Desktop nav needs ~1120px to lay out without wrapping or
+				// colliding with the logo (measured: logo + full nav + CTA
+				// content + mandatory gaps). `lg` (1024px) isn't enough, so
+				// the header switches to the mobile menu until this width.
+				nav: '1200px',
+			},
 			fontFamily: {
 				sans: ['"Inter Variable"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
 				display: ['"Space Grotesk Variable"', 'ui-sans-serif', 'system-ui', 'sans-serif'],

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Megaphone, Music } from 'lucide-react';
+import { ArrowLeft, Building2, Calendar, Megaphone, Music } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -146,7 +146,21 @@ const PartnerApply = () => {
           </div>
           <div className="space-y-2">
             <Label className="text-gray-300">Date of Birth</Label>
-            <Input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} required />
+            <div className="relative">
+              <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              {!dateOfBirth && (
+                <span className="pointer-events-none absolute left-9 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                  Select your date of birth
+                </span>
+              )}
+              <Input
+                type="date"
+                value={dateOfBirth}
+                onChange={(e) => setDateOfBirth(e.target.value)}
+                className="pl-9"
+                required
+              />
+            </div>
             <p className="text-xs text-gray-500">You must be 18 or older to register as a partner.</p>
           </div>
           <div className="space-y-2">

@@ -66,10 +66,12 @@
     @apply bg-black text-foreground font-sans;
     background: linear-gradient(180deg, #000000 0%, #0a0a0a 50%, #000000 100%);
     min-height: 100vh;
+    overflow-x: hidden;
   }
 
   html {
     scroll-behavior: smooth;
+    overflow-x: hidden;
   }
 
   h1, h2, h3 {
