@@ -11,16 +11,6 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
   Table,
   TableBody,
   TableCell,
@@ -74,8 +64,9 @@ const CmsTableBookings = () => {
   const [cancelTarget, setCancelTarget] = useState<BookingRow | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<BookingRow | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<BookingRow | null>(null);
+  const [removeReason, setRemoveReason] = useState('');
+  const [removing, setRemoving] = useState(false);
 
   const loadBookings = async () => {
     setLoading(true);
@@ -155,10 +146,9 @@ const CmsTableBookings = () => {
     }
   };
 
-  // Cancelling keeps the row (with a required reason) instead of deleting outright -
-  // real payment history should never disappear with no trace. A cancelled or failed
-  // booking can then be permanently removed below, which is what actually clears the
-  // foreign key blocking the table type itself from being deleted.
+  // Only offered for paid bookings. Keeps the row (with a required reason) instead of
+  // deleting outright - a real completed payment should never disappear with no
+  // trace, and there's no refund flow wired up here to unwind the charge itself.
   const submitCancel = async () => {
     if (!cancelTarget || !cancelReason.trim()) return;
     setCancelling(true);
@@ -191,41 +181,60 @@ const CmsTableBookings = () => {
     loadBookings();
   };
 
-  // Only reachable for bookings already cancelled or failed - never for paid/pending/
-  // refunded - so this can't be used to erase a real completed (or reversed) payment.
-  // The full row is snapshotted to audit_log first, so the record isn't truly gone,
-  // just off the live list and no longer blocking the table type's own delete.
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
+  // One click, for anything that was never a completed payment (pending/failed) or
+  // was already explicitly cancelled - never offered for paid/refunded, and the
+  // database itself enforces that too (see the "admins delete non-financial table
+  // bookings" RLS policy), so this can't be used to erase real revenue even by
+  // mistake. The full row is snapshotted to audit_log first, so nothing is truly
+  // lost, and deleting it is what actually clears the way for the table type's own
+  // delete to succeed.
+  const submitRemove = async () => {
+    if (!removeTarget || !removeReason.trim()) return;
+    setRemoving(true);
 
     await logAudit({
-      action: 'table_booking.deleted',
+      action: 'table_booking.removed',
       entityType: 'site_table_bookings',
-      entityId: deleteTarget.id,
-      details: { booking: deleteTarget },
+      entityId: removeTarget.id,
+      details: { reason: removeReason.trim(), booking: removeTarget },
     });
 
     const { error: bottlesError } = await supabase
       .from('site_table_booking_bottles')
       .delete()
-      .eq('booking_id', deleteTarget.id);
+      .eq('booking_id', removeTarget.id);
     if (bottlesError) {
-      setDeleting(false);
-      toast({ title: 'Failed to delete booking', description: bottlesError.message, variant: 'destructive' });
+      setRemoving(false);
+      toast({ title: 'Failed to remove booking', description: bottlesError.message, variant: 'destructive' });
       return;
     }
 
-    const { error } = await supabase.from('site_table_bookings').delete().eq('id', deleteTarget.id);
-    setDeleting(false);
+    // Ask for the affected row count explicitly - a delete RLS blocks silently (no
+    // error, zero rows), which is exactly the bug this replaces, so it's worth
+    // double-checking rather than trusting an error-free response alone.
+    const { error, count } = await supabase
+      .from('site_table_bookings')
+      .delete({ count: 'exact' })
+      .eq('id', removeTarget.id);
+    setRemoving(false);
 
     if (error) {
-      toast({ title: 'Failed to delete booking', description: error.message, variant: 'destructive' });
+      toast({ title: 'Failed to remove booking', description: error.message, variant: 'destructive' });
+      return;
+    }
+    if (!count) {
+      toast({
+        title: 'Nothing was removed',
+        description: "This booking is no longer in a removable status - refresh the list and check its current status.",
+        variant: 'destructive',
+      });
+      loadBookings();
       return;
     }
 
-    toast({ title: 'Booking permanently deleted' });
-    setDeleteTarget(null);
+    toast({ title: 'Booking removed' });
+    setRemoveTarget(null);
+    setRemoveReason('');
     loadBookings();
   };
 
@@ -345,7 +354,7 @@ const CmsTableBookings = () => {
                       <Mail className="mr-1 h-3 w-3" />
                       {resendingId === booking.id ? 'Sending...' : 'Resend'}
                     </Button>
-                    {(booking.status === 'pending' || booking.status === 'paid') && (
+                    {booking.status === 'paid' && (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -358,15 +367,18 @@ const CmsTableBookings = () => {
                         Cancel
                       </Button>
                     )}
-                    {(booking.status === 'cancelled' || booking.status === 'failed') && (
+                    {(booking.status === 'pending' || booking.status === 'failed' || booking.status === 'cancelled') && (
                       <Button
                         size="sm"
                         variant="ghost"
                         className="text-red-400 hover:text-red-300"
-                        onClick={() => setDeleteTarget(booking)}
+                        onClick={() => {
+                          setRemoveTarget(booking);
+                          setRemoveReason('');
+                        }}
                       >
                         <Trash2 className="mr-1 h-3 w-3" />
-                        Delete
+                        Remove
                       </Button>
                     )}
                   </TableCell>
@@ -420,29 +432,41 @@ const CmsTableBookings = () => {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent className="border-gray-800 bg-gray-950">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-white">Permanently delete this booking?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget?.customer_name} - {deleteTarget?.site_table_types?.name ?? 'table'} on{' '}
-              {deleteTarget?.booking_date}. This removes it from the bookings list for good (a full copy is kept in
-              the audit log). Do this once you're sure you no longer need the record - e.g. to finish removing a
-              test table that this booking was blocking.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Back</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              disabled={deleting}
+      <Dialog open={!!removeTarget} onOpenChange={(open) => !open && setRemoveTarget(null)}>
+        <DialogContent className="border-gray-800 bg-gray-950">
+          <DialogHeader>
+            <DialogTitle className="text-white">Remove booking</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-400">
+              {removeTarget?.customer_name} - {removeTarget?.site_table_types?.name ?? 'table'} on{' '}
+              {removeTarget?.booking_date}. This takes it off the bookings list for good - a full copy (plus this
+              reason) is kept in the audit log. Do this to finish clearing a test table so it can be deleted.
+            </p>
+            <div className="space-y-2">
+              <Label>Reason (required)</Label>
+              <Textarea
+                value={removeReason}
+                onChange={(e) => setRemoveReason(e.target.value)}
+                placeholder="e.g. test booking while setting up this venue"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveTarget(null)}>
+              Back
+            </Button>
+            <Button
+              onClick={submitRemove}
+              disabled={!removeReason.trim() || removing}
               className="bg-red-600 text-white hover:bg-red-700"
             >
-              {deleting ? 'Deleting...' : 'Delete Permanently'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              {removing ? 'Removing...' : 'Remove Booking'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
