@@ -3,7 +3,9 @@
 // `supabase gen types typescript --project-id hwmynlghrmtoufyrcihp` and diffing.
 
 export type EventStatus = 'draft' | 'published';
-export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded';
+// 'cancelled' is only a valid status on site_table_bookings today (see
+// site_table_bookings_status_check) - site_orders keeps the original 4 values.
+export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled';
 export type PaymentsMode = 'test' | 'live';
 export type PartnerType = 'venue_operator' | 'promoter' | 'organizer';
 export type PartnerOnboardingStatus = 'pending' | 'active' | 'suspended';
@@ -391,6 +393,9 @@ export interface Database {
           confirmation_sent_at: string | null;
           checked_in_at: string | null;
           checked_in_by: string | null;
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
           created_at: string;
           updated_at: string;
         };

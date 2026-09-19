@@ -1,6 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Table,
   TableBody,
@@ -16,9 +35,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Mail, RefreshCw } from 'lucide-react';
+import { Mail, RefreshCw, Ban, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/lib/auditLog';
 import { sessionMode, type PaymentModeFilter } from '../lib/paymentMode';
 import type { Database, FulfillmentStatus, OrderStatus } from '@/types/database';
 
@@ -28,11 +48,12 @@ type BookingRow = Database['public']['Tables']['site_table_bookings']['Row'] & {
   site_table_booking_bottles: { bottle_name: string; size: string | null; quantity: number }[];
 };
 
-const statusVariant: Record<OrderStatus, 'default' | 'secondary' | 'destructive'> = {
+const statusVariant: Record<OrderStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   paid: 'default',
   pending: 'secondary',
   failed: 'destructive',
   refunded: 'destructive',
+  cancelled: 'outline',
 };
 
 const FULFILLMENT_LABELS: Record<FulfillmentStatus, string> = {
@@ -50,6 +71,11 @@ const CmsTableBookings = () => {
   const [loading, setLoading] = useState(true);
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [checkingId, setCheckingId] = useState<string | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<BookingRow | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<BookingRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadBookings = async () => {
     setLoading(true);
@@ -129,6 +155,80 @@ const CmsTableBookings = () => {
     }
   };
 
+  // Cancelling keeps the row (with a required reason) instead of deleting outright -
+  // real payment history should never disappear with no trace. A cancelled or failed
+  // booking can then be permanently removed below, which is what actually clears the
+  // foreign key blocking the table type itself from being deleted.
+  const submitCancel = async () => {
+    if (!cancelTarget || !cancelReason.trim()) return;
+    setCancelling(true);
+    const { error } = await supabase
+      .from('site_table_bookings')
+      .update({
+        status: 'cancelled',
+        cancellation_reason: cancelReason.trim(),
+        cancelled_at: new Date().toISOString(),
+        cancelled_by: (await supabase.auth.getUser()).data.user?.id ?? null,
+      })
+      .eq('id', cancelTarget.id);
+    setCancelling(false);
+
+    if (error) {
+      toast({ title: 'Failed to cancel booking', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    await logAudit({
+      action: 'table_booking.cancelled',
+      entityType: 'site_table_bookings',
+      entityId: cancelTarget.id,
+      details: { reason: cancelReason.trim(), previous_status: cancelTarget.status },
+    });
+
+    toast({ title: 'Booking cancelled' });
+    setCancelTarget(null);
+    setCancelReason('');
+    loadBookings();
+  };
+
+  // Only reachable for bookings already cancelled or failed - never for paid/pending/
+  // refunded - so this can't be used to erase a real completed (or reversed) payment.
+  // The full row is snapshotted to audit_log first, so the record isn't truly gone,
+  // just off the live list and no longer blocking the table type's own delete.
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+
+    await logAudit({
+      action: 'table_booking.deleted',
+      entityType: 'site_table_bookings',
+      entityId: deleteTarget.id,
+      details: { booking: deleteTarget },
+    });
+
+    const { error: bottlesError } = await supabase
+      .from('site_table_booking_bottles')
+      .delete()
+      .eq('booking_id', deleteTarget.id);
+    if (bottlesError) {
+      setDeleting(false);
+      toast({ title: 'Failed to delete booking', description: bottlesError.message, variant: 'destructive' });
+      return;
+    }
+
+    const { error } = await supabase.from('site_table_bookings').delete().eq('id', deleteTarget.id);
+    setDeleting(false);
+
+    if (error) {
+      toast({ title: 'Failed to delete booking', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    toast({ title: 'Booking permanently deleted' });
+    setDeleteTarget(null);
+    loadBookings();
+  };
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
@@ -154,6 +254,7 @@ const CmsTableBookings = () => {
               <SelectItem value="paid">Paid</SelectItem>
               <SelectItem value="failed">Failed</SelectItem>
               <SelectItem value="refunded">Refunded</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -198,6 +299,11 @@ const CmsTableBookings = () => {
                   <TableCell>${(booking.amount_total_cents / 100).toFixed(2)}</TableCell>
                   <TableCell>
                     <Badge variant={statusVariant[booking.status]}>{booking.status}</Badge>
+                    {booking.status === 'cancelled' && booking.cancellation_reason && (
+                      <div className="mt-1 max-w-[160px] text-xs text-gray-500" title={booking.cancellation_reason}>
+                        {booking.cancellation_reason}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Select
@@ -239,6 +345,30 @@ const CmsTableBookings = () => {
                       <Mail className="mr-1 h-3 w-3" />
                       {resendingId === booking.id ? 'Sending...' : 'Resend'}
                     </Button>
+                    {(booking.status === 'pending' || booking.status === 'paid') && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setCancelTarget(booking);
+                          setCancelReason('');
+                        }}
+                      >
+                        <Ban className="mr-1 h-3 w-3" />
+                        Cancel
+                      </Button>
+                    )}
+                    {(booking.status === 'cancelled' || booking.status === 'failed') && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-400 hover:text-red-300"
+                        onClick={() => setDeleteTarget(booking)}
+                      >
+                        <Trash2 className="mr-1 h-3 w-3" />
+                        Delete
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -253,6 +383,66 @@ const CmsTableBookings = () => {
           </Table>
         </div>
       )}
+
+      <Dialog open={!!cancelTarget} onOpenChange={(open) => !open && setCancelTarget(null)}>
+        <DialogContent className="border-gray-800 bg-gray-950">
+          <DialogHeader>
+            <DialogTitle className="text-white">Cancel booking</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-400">
+              {cancelTarget?.customer_name} - {cancelTarget?.site_table_types?.name ?? 'table'} on{' '}
+              {cancelTarget?.booking_date}. The booking stays on record as "cancelled" with this reason - nothing
+              is deleted yet.
+            </p>
+            <div className="space-y-2">
+              <Label>Reason (required)</Label>
+              <Textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="e.g. test booking while setting up this venue"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelTarget(null)}>
+              Back
+            </Button>
+            <Button
+              onClick={submitCancel}
+              disabled={!cancelReason.trim() || cancelling}
+              className="bg-gradient-orange text-black font-bold hover:opacity-90"
+            >
+              {cancelling ? 'Cancelling...' : 'Cancel Booking'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent className="border-gray-800 bg-gray-950">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white">Permanently delete this booking?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget?.customer_name} - {deleteTarget?.site_table_types?.name ?? 'table'} on{' '}
+              {deleteTarget?.booking_date}. This removes it from the bookings list for good (a full copy is kept in
+              the audit log). Do this once you're sure you no longer need the record - e.g. to finish removing a
+              test table that this booking was blocking.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Back</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              disabled={deleting}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {deleting ? 'Deleting...' : 'Delete Permanently'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
