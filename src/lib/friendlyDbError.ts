@@ -13,6 +13,7 @@ const REFERENCING_TABLE_LABELS: Record<string, string> = {
 
 export interface DeleteBlockedInfo {
   referencingLabel: string;
+  referencedTable: string | null;
 }
 
 /**
@@ -33,5 +34,5 @@ export function describeDeleteBlockedError(error: {
     ? (REFERENCING_TABLE_LABELS[referencedTable] ?? referencedTable.replace(/^site_/, '').replace(/_/g, ' '))
     : 'other records';
 
-  return { referencingLabel };
+  return { referencingLabel, referencedTable: referencedTable ?? null };
 }

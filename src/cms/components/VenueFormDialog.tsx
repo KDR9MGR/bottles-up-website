@@ -547,9 +547,38 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         if (error) {
           const blocked = describeDeleteBlockedError(error);
           if (blocked) {
+            let description = `It has existing ${blocked.referencingLabel} attached to it, so it wasn't deleted - everything else you changed was saved. Reopen this venue to edit or reprice it instead of removing it.`;
+
+            // Bookings are the one case with a real path forward (cancel, then
+            // permanently delete, from the Table Bookings page) - so spell out
+            // exactly what's still in the way instead of the generic message above.
+            if (blocked.referencedTable === 'site_table_bookings') {
+              const { data: blockingBookings } = await supabase
+                .from('site_table_bookings')
+                .select('status')
+                .in('table_type_id', removedTableTypeIds);
+              const rows = blockingBookings ?? [];
+              const removableCount = rows.filter((r) => r.status === 'cancelled' || r.status === 'failed').length;
+              const activeCount = rows.length - removableCount;
+
+              if (rows.length > 0) {
+                const parts: string[] = [];
+                if (activeCount > 0) {
+                  parts.push(`cancel the ${activeCount} still-active ${activeCount === 1 ? 'booking' : 'bookings'} (with a reason)`);
+                }
+                const deleteTargetLabel = rows.length === 1 ? 'it' : 'all of them';
+                const deleteNote =
+                  activeCount > 0 && removableCount > 0
+                    ? ` - ${removableCount} ${removableCount === 1 ? 'is' : 'are'} already cancelled/failed, the rest once you've cancelled them`
+                    : '';
+                parts.push(`permanently delete ${deleteTargetLabel}${deleteNote}`);
+                description = `It still has ${rows.length} table ${rows.length === 1 ? 'booking' : 'bookings'} attached. Go to Table Bookings, ${parts.join(', then ')}, then remove the table again. Everything else you changed here was saved.`;
+              }
+            }
+
             toast({
               title: "Can't remove that table type",
-              description: `It has existing ${blocked.referencingLabel} attached to it, so it wasn't deleted - everything else you changed was saved. Reopen this venue to edit or reprice it instead of removing it.`,
+              description,
               variant: 'destructive',
             });
             setSaving(false);
