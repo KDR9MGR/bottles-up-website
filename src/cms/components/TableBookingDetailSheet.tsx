@@ -124,20 +124,30 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
   }, [bookingId]);
 
   // Same formula as create-table-booking-checkout: tax and the platform fee are
-  // both percentages of (deposit + bottles - discount), recomputed here so the
-  // total always reflects every bottle ever added - discount_cents itself never
-  // changes after the original checkout, it was resolved to a fixed amount then.
+  // percentages of (deposit + bottles - discount), recomputed here so the total
+  // always reflects every bottle ever added - discount_cents itself never changes
+  // after the original checkout, it was resolved to a fixed amount then.
+  //
+  // Bottles flagged due_at_venue (a pay-at-club checkout) were never taxed or
+  // charged through Stripe - only the deposit was - so they're excluded from the
+  // taxed subtotal and added back in untaxed. Staff-added bottles (is_addon) keep
+  // the original behavior of being taxed together with everything else.
   const totals = useMemo(() => {
     if (!booking) return null;
-    const existingBottleSubtotal = bottleLines.reduce((sum, l) => sum + l.line_total_cents, 0);
+    const dueAtVenueBottleCents = bottleLines
+      .filter((l) => l.payment_status === 'due_at_venue')
+      .reduce((sum, l) => sum + l.line_total_cents, 0);
+    const taxedBottleCents = bottleLines
+      .filter((l) => l.payment_status !== 'due_at_venue')
+      .reduce((sum, l) => sum + l.line_total_cents, 0);
     const pendingSubtotal = pending.reduce((sum, p) => sum + p.unitPriceCents * p.quantity, 0);
-    const bottleSubtotalCents = existingBottleSubtotal + pendingSubtotal;
-    const preTax = booking.deposit_cents + bottleSubtotalCents;
+    const bottleSubtotalCents = taxedBottleCents + dueAtVenueBottleCents + pendingSubtotal;
+    const preTax = booking.deposit_cents + taxedBottleCents + pendingSubtotal;
     const discounted = Math.max(preTax - booking.discount_cents, 0);
     const taxRateBps = booking.site_venues?.tax_rate_bps ?? 0;
     const taxCents = Math.round((discounted * taxRateBps) / 10000);
     const feeCents = Math.round((discounted * bottlesUpFeeBps) / 10000);
-    const totalCents = discounted + taxCents + feeCents;
+    const totalCents = discounted + taxCents + feeCents + dueAtVenueBottleCents;
     const balanceDueCents = Math.max(totalCents - booking.amount_paid_cents, 0);
     return { bottleSubtotalCents, taxCents, feeCents, totalCents, balanceDueCents };
   }, [booking, bottleLines, pending, bottlesUpFeeBps]);
@@ -330,6 +340,11 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                               {line.is_addon && (
                                 <Badge variant="outline" className="ml-2 text-[10px]">
                                   Added
+                                </Badge>
+                              )}
+                              {line.payment_status === 'due_at_venue' && (
+                                <Badge variant="outline" className="ml-2 text-[10px] text-orange-400">
+                                  Due at venue
                                 </Badge>
                               )}
                             </TableCell>

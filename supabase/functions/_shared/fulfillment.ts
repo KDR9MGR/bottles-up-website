@@ -2,6 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import QRCode from 'npm:qrcode@1.5.3';
 import { generateTicketCode, sendTicketEmail } from './ticketEmail.ts';
 import { generateConfirmationCode, sendTableBookingEmail, formatTimeSlot } from './tableBookingEmail.ts';
+import { dueAtVenueBottleCents } from './bottlePayment.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseClient = ReturnType<typeof createClient<any>>;
@@ -108,13 +109,32 @@ export async function fulfillTableBooking(
   }
   if (booking.confirmation_sent_at) return;
 
+  // What Stripe actually collected: the full total minus whatever this booking's
+  // mode leaves due at the venue (0 for pay_ahead, matching the historical
+  // always-fully-paid-online behavior).
+  const amountPaidCents = Math.max(
+    booking.amount_total_cents -
+      dueAtVenueBottleCents({
+        bottlePaymentChoice: booking.bottle_payment_choice,
+        bottleSubtotalCents: booking.bottle_subtotal_cents,
+        depositCents: booking.deposit_cents,
+        depositIsCredit: (booking.venue as { deposit_is_credit: boolean }).deposit_is_credit,
+      }),
+    0,
+  );
+
   let confirmationCode: string | null = booking.confirmation_code;
 
   if (!confirmationCode) {
     const generated = generateConfirmationCode();
     const { data: claimed } = await supabase
       .from('site_table_bookings')
-      .update({ status: 'paid', stripe_payment_intent_id: paymentIntentId, confirmation_code: generated })
+      .update({
+        status: 'paid',
+        stripe_payment_intent_id: paymentIntentId,
+        confirmation_code: generated,
+        amount_paid_cents: amountPaidCents,
+      })
       .eq('id', bookingId)
       .is('confirmation_code', null)
       .select('confirmation_code')
@@ -137,7 +157,7 @@ export async function fulfillTableBooking(
   } else if (booking.status !== 'paid') {
     await supabase
       .from('site_table_bookings')
-      .update({ status: 'paid', stripe_payment_intent_id: paymentIntentId })
+      .update({ status: 'paid', stripe_payment_intent_id: paymentIntentId, amount_paid_cents: amountPaidCents })
       .eq('id', bookingId);
   }
 
@@ -145,7 +165,7 @@ export async function fulfillTableBooking(
 
   const { data: bottleLines } = await supabase
     .from('site_table_booking_bottles')
-    .select('bottle_name, size, quantity, unit_price_cents, line_total_cents')
+    .select('bottle_name, size, quantity, unit_price_cents, line_total_cents, payment_status')
     .eq('booking_id', bookingId);
 
   const qrDataUrl = await QRCode.toDataURL(confirmationCode, { width: 400, margin: 1 });
@@ -169,6 +189,8 @@ export async function fulfillTableBooking(
     discountCents: booking.discount_cents,
     promoCode: promo?.code ?? null,
     totalCents: booking.amount_total_cents,
+    paidNowCents: amountPaidCents,
+    dueAtVenueCents: booking.amount_total_cents - amountPaidCents,
     bottles: bottleLines ?? [],
     currency: booking.currency,
     hours: booking.hours,

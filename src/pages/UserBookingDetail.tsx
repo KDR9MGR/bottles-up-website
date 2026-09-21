@@ -23,6 +23,7 @@ interface DetailData {
   currency: string;
   lineItems: { label: string; amountCents: number }[];
   totalCents: number;
+  dueAtVenueCents?: number;
   createdAt: string;
   isNonTransferable?: boolean;
 }
@@ -82,7 +83,7 @@ export default function UserBookingDetail() {
       } else {
         const { data: booking } = await supabase
           .from('site_table_bookings')
-          .select('id, status, confirmation_code, guest_count, booking_date, deposit_cents, bottle_subtotal_cents, tax_cents, bottlesup_fee_cents, amount_total_cents, currency, created_at, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)')
+          .select('id, status, confirmation_code, guest_count, booking_date, deposit_cents, bottle_subtotal_cents, tax_cents, bottlesup_fee_cents, amount_total_cents, amount_paid_cents, currency, created_at, site_table_types(name), site_venues(name), site_venue_time_slots(start_time)')
           .eq('id', id)
           .maybeSingle();
 
@@ -90,7 +91,7 @@ export default function UserBookingDetail() {
 
         const { data: bottles } = await supabase
           .from('site_table_booking_bottles')
-          .select('bottle_name, size, quantity, line_total_cents')
+          .select('bottle_name, size, quantity, line_total_cents, payment_status')
           .eq('booking_id', booking.id);
 
         const tableType = booking.site_table_types as unknown as { name: string } | null;
@@ -100,7 +101,7 @@ export default function UserBookingDetail() {
         const lineItems = [
           { label: tableType?.name ?? 'Table', amountCents: booking.deposit_cents },
           ...(bottles ?? []).map((b) => ({
-            label: `${b.bottle_name}${b.size ? ` (${b.size})` : ''} × ${b.quantity}`,
+            label: `${b.bottle_name}${b.size ? ` (${b.size})` : ''} × ${b.quantity}${b.payment_status === 'due_at_venue' ? ' (due at venue)' : ''}`,
             amountCents: b.line_total_cents,
           })),
           ...(booking.tax_cents > 0 ? [{ label: 'Tax', amountCents: booking.tax_cents }] : []),
@@ -118,6 +119,7 @@ export default function UserBookingDetail() {
           currency: booking.currency,
           lineItems,
           totalCents: booking.amount_total_cents,
+          dueAtVenueCents: Math.max(booking.amount_total_cents - booking.amount_paid_cents, 0),
           createdAt: booking.created_at,
         });
       }
@@ -308,6 +310,12 @@ export default function UserBookingDetail() {
                   <span className="text-white">Total</span>
                   <span className="text-orange-500">{formatMoney(data.totalCents, data.currency)}</span>
                 </div>
+                {!!data.dueAtVenueCents && data.dueAtVenueCents > 0 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">includes due at venue</span>
+                    <span className="text-orange-400">{formatMoney(data.dueAtVenueCents, data.currency)}</span>
+                  </div>
+                )}
               </div>
             </div>
 

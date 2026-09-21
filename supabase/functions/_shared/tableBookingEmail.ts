@@ -23,6 +23,7 @@ export interface BottleLineItem {
   quantity: number;
   unit_price_cents: number;
   line_total_cents: number;
+  payment_status?: 'paid' | 'due_at_venue';
 }
 
 export async function sendTableBookingEmail(opts: {
@@ -40,6 +41,10 @@ export async function sendTableBookingEmail(opts: {
   discountCents?: number;
   promoCode?: string | null;
   totalCents: number;
+  // What's charged online vs. left to settle in person. Both default to the
+  // pay-ahead-everywhere behavior (fully paid now) for callers that don't pass them.
+  paidNowCents?: number;
+  dueAtVenueCents?: number;
   bottles?: BottleLineItem[];
   currency: string;
   hours?: number | null;
@@ -67,7 +72,7 @@ export async function sendTableBookingEmail(opts: {
     .map(
       (b) => `
         <tr>
-          <td style="padding: 4px 0; color: #ccc;">${b.bottle_name}${b.size ? ` (${b.size})` : ''} &times; ${b.quantity}</td>
+          <td style="padding: 4px 0; color: #ccc;">${b.bottle_name}${b.size ? ` (${b.size})` : ''} &times; ${b.quantity}${b.payment_status === 'due_at_venue' ? ' <span style="color: #f97316; font-size: 12px;">(Reserved - Payment Due at Club)</span>' : ''}</td>
           <td style="padding: 4px 0; color: #ccc; text-align: right;">${money(b.line_total_cents)}</td>
         </tr>`,
     )
@@ -82,6 +87,14 @@ export async function sendTableBookingEmail(opts: {
     ? `<tr><td style="padding: 4px 0; color: #4ade80;">Promo${opts.promoCode ? ` (${opts.promoCode})` : ''}</td><td style="padding: 4px 0; color: #4ade80; text-align: right;">-${money(opts.discountCents)}</td></tr>`
     : '';
 
+  const paidNowCents = opts.paidNowCents ?? opts.totalCents;
+  const dueAtVenueCents = opts.dueAtVenueCents ?? 0;
+  const totalRowLabel = dueAtVenueCents > 0 ? 'Paid now' : 'Total paid';
+  const dueAtVenueRow =
+    dueAtVenueCents > 0
+      ? `<tr><td style="padding: 4px 0 0; color: #f97316;">Due at the venue</td><td style="padding: 4px 0 0; color: #f97316; text-align: right;">${money(dueAtVenueCents)}</td></tr>`
+      : '';
+
   const orderSummaryHtml = `
     <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
       <tr>
@@ -93,9 +106,10 @@ export async function sendTableBookingEmail(opts: {
       ${summaryRow('Tax', opts.taxCents)}
       ${summaryRow('BottlesUp fee', opts.bottlesupFeeCents)}
       <tr>
-        <td style="padding: 8px 0 0; color: #fff; font-weight: bold; border-top: 1px solid #333;">Total paid</td>
-        <td style="padding: 8px 0 0; color: #fff; font-weight: bold; text-align: right; border-top: 1px solid #333;">${money(opts.totalCents)}</td>
+        <td style="padding: 8px 0 0; color: #fff; font-weight: bold; border-top: 1px solid #333;">${totalRowLabel}</td>
+        <td style="padding: 8px 0 0; color: #fff; font-weight: bold; text-align: right; border-top: 1px solid #333;">${money(paidNowCents)}</td>
       </tr>
+      ${dueAtVenueRow}
     </table>
   `;
 

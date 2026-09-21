@@ -22,7 +22,7 @@ import {
 import { Minus, Plus, Wine, Tag, X, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
-import type { Database } from '@/types/database';
+import type { Database, BottlePaymentChoice } from '@/types/database';
 import type { TableTypeWithVenue } from '@/pages/VipTables';
 
 type BottleRow = Database['public']['Tables']['site_bottles']['Row'];
@@ -65,6 +65,7 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
   const [loadingBottles, setLoadingBottles] = useState(false);
   const [cart, setCart] = useState<Record<string, number>>({});
   const [bottlesupFeeBps, setBottlesupFeeBps] = useState(0);
+  const [bottlePaymentChoice, setBottlePaymentChoice] = useState<BottlePaymentChoice>('pay_ahead');
 
   const [promoInput, setPromoInput] = useState('');
   const [appliedPromo, setAppliedPromo] = useState<{ code: string; discountCents: number } | null>(null);
@@ -85,6 +86,7 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
     setPromoInput('');
     setAppliedPromo(null);
     setPromoError(null);
+    setBottlePaymentChoice(tableType?.venue.bottle_payment_mode === 'pay_at_club' ? 'pay_at_club' : 'pay_ahead');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableType]);
 
@@ -144,7 +146,21 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
     .filter((b) => (cart[b.id] ?? 0) > 0)
     .map((b) => ({ bottle: b, quantity: cart[b.id], lineTotalCents: b.price_cents * cart[b.id] }));
   const bottleSubtotalCents = cartLines.reduce((sum, l) => sum + l.lineTotalCents, 0);
-  const preTaxSubtotalCents = depositCents + bottleSubtotalCents;
+
+  const venuePaymentMode = tableType.venue.bottle_payment_mode;
+  const canChoosePaymentMode = venuePaymentMode === 'both' && bottleSubtotalCents > 0;
+  const effectivePaymentChoice: BottlePaymentChoice = venuePaymentMode === 'both' ? bottlePaymentChoice : venuePaymentMode;
+  // Mirrors create-table-booking-checkout's pricing exactly: pay_at_club charges
+  // only the deposit now, the bottle amount (minus deposit credit if the venue
+  // enables it) is settled in person instead.
+  const dueAtVenueCents =
+    effectivePaymentChoice === 'pay_at_club'
+      ? tableType.venue.deposit_is_credit
+        ? Math.max(bottleSubtotalCents - depositCents, 0)
+        : bottleSubtotalCents
+      : 0;
+  const chargeNowBottleCents = effectivePaymentChoice === 'pay_at_club' ? 0 : bottleSubtotalCents;
+  const preTaxSubtotalCents = depositCents + chargeNowBottleCents;
   const discountCents = appliedPromo?.discountCents ?? 0;
   const discountedSubtotalCents = preTaxSubtotalCents - discountCents;
   const taxCents = Math.round((discountedSubtotalCents * (tableType.venue.tax_rate_bps ?? 0)) / 10000);
@@ -242,6 +258,7 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
           hours: isHourly ? bookedHours : undefined,
           bottles: cartLines.map((l) => ({ bottle_id: l.bottle.id, quantity: l.quantity })),
           promo_code: appliedPromo?.code,
+          bottle_payment_choice: effectivePaymentChoice,
         },
       });
 
@@ -461,6 +478,38 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
               </div>
             )}
 
+            {canChoosePaymentMode && (
+              <div className="space-y-2 rounded-lg border border-gray-800 p-3">
+                <Label className="text-sm">How do you want to pay for your bottles?</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBottlePaymentChoice('pay_ahead')}
+                    className={`rounded-md border p-2 text-left text-xs transition-colors ${
+                      bottlePaymentChoice === 'pay_ahead'
+                        ? 'border-orange-500 bg-orange-500/10 text-white'
+                        : 'border-gray-800 text-gray-400 hover:border-gray-700'
+                    }`}
+                  >
+                    <div className="font-semibold">Pay Now</div>
+                    <div className="text-gray-500">Bottles charged online today.</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBottlePaymentChoice('pay_at_club')}
+                    className={`rounded-md border p-2 text-left text-xs transition-colors ${
+                      bottlePaymentChoice === 'pay_at_club'
+                        ? 'border-orange-500 bg-orange-500/10 text-white'
+                        : 'border-gray-800 text-gray-400 hover:border-gray-700'
+                    }`}
+                  >
+                    <div className="font-semibold">Pay at Club</div>
+                    <div className="text-gray-500">Only the deposit is charged now.</div>
+                  </button>
+                </div>
+              </div>
+            )}
+
             <DialogFooter className="gap-2 sm:justify-between">
               <Button type="button" variant="outline" className="border-gray-800" onClick={() => setStep('details')}>
                 Back
@@ -520,6 +569,9 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
                 <div key={l.bottle.id} className="flex justify-between text-gray-300">
                   <span>
                     {l.bottle.name} &times; {l.quantity}
+                    {effectivePaymentChoice === 'pay_at_club' && (
+                      <span className="ml-1.5 text-xs text-orange-500">(due at venue)</span>
+                    )}
                   </span>
                   <span>{money(l.lineTotalCents)}</span>
                 </div>
@@ -546,11 +598,19 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
                 <span>Total due today</span>
                 <span>{money(totalCents)}</span>
               </div>
+              {dueAtVenueCents > 0 && (
+                <div className="flex justify-between text-sm font-medium text-orange-500">
+                  <span>Due at the venue</span>
+                  <span>{money(dueAtVenueCents)}</span>
+                </div>
+              )}
             </div>
 
             <p className="text-xs text-gray-500">
-              You'll enter payment details on the next screen (secure checkout via Stripe). Your confirmation and QR code
-              are sent to {email}.
+              {dueAtVenueCents > 0
+                ? "You'll enter payment for the deposit on the next screen (secure checkout via Stripe). Your bottles are reserved and paid for in person at the venue."
+                : "You'll enter payment details on the next screen (secure checkout via Stripe)."}{' '}
+              Your confirmation and QR code are sent to {email}.
             </p>
 
             <DialogFooter className="gap-2 sm:justify-between">

@@ -20,6 +20,9 @@ export type ScanResult =
   | 'code_expired'
   | 'no_code_requested';
 export type PricingMode = 'flat' | 'hourly';
+export type BottlePaymentMode = 'pay_ahead' | 'pay_at_club' | 'both';
+export type BottlePaymentChoice = 'pay_ahead' | 'pay_at_club';
+export type BottleLinePaymentStatus = 'paid' | 'due_at_venue';
 export type FulfillmentStatus = 'confirmed' | 'preparing' | 'served' | 'completed';
 export type DiscountType = 'percentage' | 'fixed_amount';
 export type PromoAppliesTo = 'tickets' | 'tables' | 'both';
@@ -254,6 +257,8 @@ export interface Database {
           music_genres: string | null;
           tax_rate_bps: number;
           show_bottle_images: boolean;
+          bottle_payment_mode: BottlePaymentMode;
+          deposit_is_credit: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -397,6 +402,8 @@ export interface Database {
           cancellation_reason: string | null;
           cancelled_at: string | null;
           cancelled_by: string | null;
+          bottle_payment_choice: BottlePaymentChoice;
+          bottle_sign_text: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -425,6 +432,7 @@ export interface Database {
           line_total_cents: number;
           is_addon: boolean;
           added_by: string | null;
+          payment_status: BottleLinePaymentStatus;
           created_at: string;
         };
         Insert: Partial<Database['public']['Tables']['site_table_booking_bottles']['Row']> & {

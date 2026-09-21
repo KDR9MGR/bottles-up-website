@@ -25,8 +25,17 @@ type PaidBooking = {
   taxCents: number;
   bottlesupFeeCents: number;
   totalCents: number;
+  paidNowCents: number;
+  dueAtVenueCents: number;
   currency: string;
-  bottles: { name: string; size: string | null; quantity: number; unitPriceCents: number; lineTotalCents: number }[];
+  bottles: {
+    name: string;
+    size: string | null;
+    quantity: number;
+    unitPriceCents: number;
+    lineTotalCents: number;
+    paymentStatus?: 'paid' | 'due_at_venue';
+  }[];
 };
 
 const money = (cents: number, currency: string) => `$${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
@@ -210,6 +219,9 @@ const BookingSuccess = () => {
                 <span>
                   {b.name}
                   {b.size ? ` (${b.size})` : ''} &times; {b.quantity}
+                  {b.paymentStatus === 'due_at_venue' && (
+                    <span className="ml-1.5 text-xs text-orange-500">(due at venue)</span>
+                  )}
                 </span>
                 <span>{money(b.lineTotalCents, booking.currency)}</span>
               </div>
@@ -227,9 +239,15 @@ const BookingSuccess = () => {
               </div>
             )}
             <div className="flex justify-between border-t border-gray-800 pt-2 font-semibold text-white">
-              <span>Total paid</span>
-              <span>{money(booking.totalCents, booking.currency)}</span>
+              <span>{booking.dueAtVenueCents > 0 ? 'Paid now' : 'Total paid'}</span>
+              <span>{money(booking.paidNowCents, booking.currency)}</span>
             </div>
+            {booking.dueAtVenueCents > 0 && (
+              <div className="flex justify-between font-semibold text-orange-500">
+                <span>Due at the venue</span>
+                <span>{money(booking.dueAtVenueCents, booking.currency)}</span>
+              </div>
+            )}
           </div>
         )}
 

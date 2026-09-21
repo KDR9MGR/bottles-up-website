@@ -59,7 +59,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: bottleLines } = await supabase
       .from('site_table_booking_bottles')
-      .select('bottle_name, size, quantity, unit_price_cents, line_total_cents')
+      .select('bottle_name, size, quantity, unit_price_cents, line_total_cents, payment_status')
       .eq('booking_id', booking_id);
 
     const qrDataUrl = await QRCode.toDataURL(booking.confirmation_code, { width: 400, margin: 1 });
@@ -80,6 +80,8 @@ Deno.serve(async (req: Request) => {
       taxCents: booking.tax_cents,
       bottlesupFeeCents: booking.bottlesup_fee_cents,
       totalCents: booking.amount_total_cents,
+      paidNowCents: booking.amount_paid_cents,
+      dueAtVenueCents: Math.max(booking.amount_total_cents - booking.amount_paid_cents, 0),
       bottles: bottleLines ?? [],
       currency: booking.currency,
       hours: booking.hours,

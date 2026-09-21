@@ -2,6 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { corsHeadersFor, handleOptions, isPreviewOrLocalOrigin } from '../_shared/cors.ts';
 import { validatePromoCode } from '../_shared/promoCode.ts';
+import { dueAtVenueBottleCents } from '../_shared/bottlePayment.ts';
 
 Deno.serve(async (req: Request) => {
   const preflight = handleOptions(req);
@@ -28,6 +29,8 @@ Deno.serve(async (req: Request) => {
       customer_phone,
       bottles: requestedBottles,
       promo_code,
+      bottle_payment_choice,
+      bottle_sign_text,
     } = await req.json();
 
     if (!venue_id || !table_type_id || !time_slot_id || !booking_date || !customer_name || !customer_email) {
@@ -40,6 +43,10 @@ Deno.serve(async (req: Request) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(booking_date)) {
       return json({ error: 'Invalid booking date' }, 400);
     }
+    if (bottle_sign_text !== undefined && bottle_sign_text !== null && typeof bottle_sign_text !== 'string') {
+      return json({ error: 'Invalid bottle sign text' }, 400);
+    }
+    const signText = typeof bottle_sign_text === 'string' ? bottle_sign_text.trim().slice(0, 24) : null;
 
     // Bottles are optional - a plain table-only booking is still valid. When present,
     // only { bottle_id, quantity } is trusted from the client; name/price are always
@@ -93,7 +100,7 @@ Deno.serve(async (req: Request) => {
     // the time slot separately and cross-check venue_id in application code instead.
     const { data: tableType, error: tableTypeError } = await supabase
       .from('site_table_types')
-      .select('*, venue:site_venues!inner(id, name, status, booking_start_date, booking_end_date, tax_rate_bps)')
+      .select('*, venue:site_venues!inner(id, name, status, booking_start_date, booking_end_date, tax_rate_bps, bottle_payment_mode, deposit_is_credit)')
       .eq('id', table_type_id)
       .eq('venue_id', venue_id)
       .single();
@@ -107,6 +114,14 @@ Deno.serve(async (req: Request) => {
     if (guests > tableType.max_guests) {
       return json({ error: `This table seats up to ${tableType.max_guests} guests` }, 400);
     }
+
+    // The venue decides what modes exist at all - the client only gets a say when
+    // the venue allows "both". Anything else it sends is ignored, not trusted.
+    const venuePaymentMode = tableType.venue.bottle_payment_mode as 'pay_ahead' | 'pay_at_club' | 'both';
+    const bottlePaymentChoice: 'pay_ahead' | 'pay_at_club' =
+      venuePaymentMode === 'both'
+        ? (bottle_payment_choice === 'pay_at_club' ? 'pay_at_club' : 'pay_ahead')
+        : venuePaymentMode;
 
     // Venue-level booking window - bookings are only accepted for dates inside it,
     // when the venue has one configured.
@@ -225,10 +240,23 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const preTaxSubtotalCents = depositCents + bottleSubtotalCents;
+    // pay_ahead (unchanged): bottles are charged online now, same as always.
+    // pay_at_club: only the deposit is charged now; the bottle amount is settled
+    // in person at the venue instead. deposit_is_credit only affects how much of
+    // that in-person amount is left after crediting the already-paid deposit
+    // against it - it never moves a charge back online.
+    const dueAtVenueCents = dueAtVenueBottleCents({
+      bottlePaymentChoice,
+      bottleSubtotalCents,
+      depositCents,
+      depositIsCredit: tableType.venue.deposit_is_credit,
+    });
+    const chargeNowBottleCents = bottlePaymentChoice === 'pay_at_club' ? 0 : bottleSubtotalCents;
+    const preTaxSubtotalCents = depositCents + chargeNowBottleCents;
 
     // Re-validate the promo code from scratch against this exact order - the client
     // never gets to say what the discount is, only which code it wants applied.
+    // Scoped to what's actually charged online now, not the full order.
     let promoCodeId: string | null = null;
     let discountCents = 0;
     if (typeof promo_code === 'string' && promo_code.trim()) {
@@ -249,7 +277,9 @@ Deno.serve(async (req: Request) => {
     const taxRateBps = tableType.venue.tax_rate_bps ?? 0;
     const taxCents = Math.round((discountedSubtotalCents * taxRateBps) / 10000);
     const bottlesUpFeeCents = Math.round((discountedSubtotalCents * bottlesupFeeBps) / 10000);
-    const totalCents = discountedSubtotalCents + taxCents + bottlesUpFeeCents;
+    const totalNowCents = discountedSubtotalCents + taxCents + bottlesUpFeeCents;
+    // Full order total, online + in-person, for balance-due tracking in the CMS.
+    const amountTotalCents = totalNowCents + dueAtVenueCents;
 
     const { data: booking, error: bookingError } = await supabase
       .from('site_table_bookings')
@@ -267,11 +297,13 @@ Deno.serve(async (req: Request) => {
         bottle_subtotal_cents: bottleSubtotalCents,
         tax_cents: taxCents,
         bottlesup_fee_cents: bottlesUpFeeCents,
-        amount_total_cents: totalCents,
+        amount_total_cents: amountTotalCents,
+        bottle_payment_choice: bottlePaymentChoice,
         currency: tableType.currency,
         status: 'pending',
         promo_code_id: promoCodeId,
         discount_cents: discountCents,
+        bottle_sign_text: signText || null,
       })
       .select('id')
       .single();
@@ -282,6 +314,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (bottleLines.length > 0) {
+      const bottlePaymentStatus = bottlePaymentChoice === 'pay_at_club' ? 'due_at_venue' : 'paid';
       const { error: lineItemsError } = await supabase.from('site_table_booking_bottles').insert(
         bottleLines.map((b) => ({
           booking_id: booking.id,
@@ -291,6 +324,7 @@ Deno.serve(async (req: Request) => {
           unit_price_cents: b.unit_price_cents,
           quantity: b.quantity,
           line_total_cents: b.line_total_cents,
+          payment_status: bottlePaymentStatus,
         })),
       );
       if (lineItemsError) {
@@ -314,14 +348,18 @@ Deno.serve(async (req: Request) => {
         },
         quantity: 1,
       },
-      ...bottleLines.map((b) => ({
-        price_data: {
-          currency: tableType.currency,
-          product_data: { name: b.size ? `${b.name} (${b.size})` : b.name },
-          unit_amount: b.unit_price_cents,
-        },
-        quantity: b.quantity,
-      })),
+      // Bottles are only billed through Stripe now for pay_ahead - a pay_at_club
+      // booking settles them in person, so they're recorded (above) but not charged.
+      ...(bottlePaymentChoice === 'pay_at_club'
+        ? []
+        : bottleLines.map((b) => ({
+            price_data: {
+              currency: tableType.currency,
+              product_data: { name: b.size ? `${b.name} (${b.size})` : b.name },
+              unit_amount: b.unit_price_cents,
+            },
+            quantity: b.quantity,
+          }))),
     ];
 
     const taxAndFeeCents = taxCents + bottlesUpFeeCents;

@@ -26,7 +26,7 @@ import { uploadEventMedia } from '@/lib/uploadEventMedia';
 import { logAudit } from '@/lib/auditLog';
 import { describeDeleteBlockedError } from '@/lib/friendlyDbError';
 import FloorPlanEditor, { type TablePlacement } from './FloorPlanEditor';
-import type { Database, EventStatus, PricingMode } from '@/types/database';
+import type { Database, EventStatus, PricingMode, BottlePaymentMode } from '@/types/database';
 
 type VenueRow = Database['public']['Tables']['site_venues']['Row'];
 type TimeSlotRow = Database['public']['Tables']['site_venue_time_slots']['Row'];
@@ -157,6 +157,8 @@ const emptyForm = {
   bookingEndDate: '',
   taxRatePercent: '',
   showBottleImages: true,
+  bottlePaymentMode: 'pay_ahead' as BottlePaymentMode,
+  depositIsCredit: false,
 };
 
 const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialogProps) => {
@@ -201,6 +203,8 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         bookingEndDate: venue.booking_end_date ?? '',
         taxRatePercent: venue.tax_rate_bps ? (venue.tax_rate_bps / 100).toString() : '',
         showBottleImages: venue.show_bottle_images,
+        bottlePaymentMode: venue.bottle_payment_mode,
+        depositIsCredit: venue.deposit_is_credit,
       });
 
       supabase
@@ -476,6 +480,8 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
         booking_end_date: form.bookingEndDate || null,
         tax_rate_bps: Math.round((parseFloat(form.taxRatePercent) || 0) * 100),
         show_bottle_images: form.showBottleImages,
+        bottle_payment_mode: form.bottlePaymentMode,
+        deposit_is_credit: form.depositIsCredit,
       };
 
       let venueId = venue?.id;
@@ -820,6 +826,44 @@ const VenueFormDialog = ({ venue, open, onOpenChange, onSaved }: VenueFormDialog
               onChange={(e) => updateField('taxRatePercent', e.target.value)}
               placeholder="e.g. 13"
             />
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-gray-800 p-4">
+            <div>
+              <Label>Bottle Payment Options</Label>
+              <p className="text-xs text-gray-500">
+                Controls whether customers pay for bottles online at checkout, in person at the venue, or choose either
+                way. The table deposit is always charged online.
+              </p>
+            </div>
+            <Select
+              value={form.bottlePaymentMode}
+              onValueChange={(value) => updateField('bottlePaymentMode', value as BottlePaymentMode)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pay_ahead">Pay Ahead Only - bottles charged online at checkout</SelectItem>
+                <SelectItem value="pay_at_club">Pay at Club Only - bottles paid in person at the venue</SelectItem>
+                <SelectItem value="both">Both - customer chooses at checkout</SelectItem>
+              </SelectContent>
+            </Select>
+            {form.bottlePaymentMode !== 'pay_ahead' && (
+              <div className="flex items-center justify-between rounded-md border border-gray-800 p-3">
+                <div className="pr-4">
+                  <Label className="text-sm">Credit deposit toward bottle bill</Label>
+                  <p className="text-xs text-gray-500">
+                    When on, the deposit already paid online is subtracted from what's due at the venue for bottles.
+                    When off, the deposit is a separate reservation fee and the full bottle amount is due at the venue.
+                  </p>
+                </div>
+                <Switch
+                  checked={form.depositIsCredit}
+                  onCheckedChange={(checked) => updateField('depositIsCredit', checked)}
+                />
+              </div>
+            )}
           </div>
 
           <div className="space-y-3 rounded-lg border border-gray-800 p-4">
