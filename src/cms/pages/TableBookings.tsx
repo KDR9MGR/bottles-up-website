@@ -25,11 +25,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Mail, RefreshCw, Ban, Trash2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Mail, RefreshCw, Ban, Trash2, Search, Eye } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/auditLog';
 import { sessionMode, type PaymentModeFilter } from '../lib/paymentMode';
+import TableBookingDetailSheet from '../components/TableBookingDetailSheet';
 import type { Database, FulfillmentStatus, OrderStatus } from '@/types/database';
 
 type BookingRow = Database['public']['Tables']['site_table_bookings']['Row'] & {
@@ -58,6 +60,8 @@ const CmsTableBookings = () => {
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
   const [modeFilter, setModeFilter] = useState<PaymentModeFilter>('live');
+  const [search, setSearch] = useState('');
+  const [openBookingId, setOpenBookingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [checkingId, setCheckingId] = useState<string | null>(null);
@@ -91,13 +95,21 @@ const CmsTableBookings = () => {
     loadBookings();
   }, []);
 
-  const filtered = useMemo(
-    () =>
-      bookings
-        .filter((b) => statusFilter === 'all' || b.status === statusFilter)
-        .filter((b) => modeFilter === 'all' || sessionMode(b.stripe_checkout_session_id) === modeFilter),
-    [bookings, statusFilter, modeFilter],
-  );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return bookings
+      .filter((b) => statusFilter === 'all' || b.status === statusFilter)
+      .filter((b) => modeFilter === 'all' || sessionMode(b.stripe_checkout_session_id) === modeFilter)
+      .filter(
+        (b) =>
+          !q ||
+          b.customer_name.toLowerCase().includes(q) ||
+          b.customer_email.toLowerCase().includes(q) ||
+          (b.confirmation_code ?? '').toLowerCase().includes(q) ||
+          (b.site_venues?.name ?? '').toLowerCase().includes(q) ||
+          (b.site_table_types?.name ?? '').toLowerCase().includes(q),
+      );
+  }, [bookings, statusFilter, modeFilter, search]);
 
   const handleResend = async (bookingId: string) => {
     setResendingId(bookingId);
@@ -240,9 +252,18 @@ const CmsTableBookings = () => {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-white">Table Bookings ({filtered.length})</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name, email, code, venue..."
+              className="w-64 pl-8"
+            />
+          </div>
           <Select value={modeFilter} onValueChange={(v) => setModeFilter(v as PaymentModeFilter)}>
             <SelectTrigger className="w-36">
               <SelectValue />
@@ -334,6 +355,10 @@ const CmsTableBookings = () => {
                   </TableCell>
                   <TableCell className="font-mono text-xs">{booking.confirmation_code ?? '-'}</TableCell>
                   <TableCell className="text-right">
+                    <Button size="sm" variant="ghost" onClick={() => setOpenBookingId(booking.id)}>
+                      <Eye className="mr-1 h-3 w-3" />
+                      Open
+                    </Button>
                     {booking.status === 'pending' && (
                       <Button
                         size="sm"
@@ -467,6 +492,12 @@ const CmsTableBookings = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <TableBookingDetailSheet
+        bookingId={openBookingId}
+        onOpenChange={(open) => !open && setOpenBookingId(null)}
+        onUpdated={loadBookings}
+      />
     </div>
   );
 };

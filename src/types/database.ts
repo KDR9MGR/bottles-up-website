@@ -377,6 +377,7 @@ export interface Database {
           customer_phone: string | null;
           guest_count: number;
           amount_total_cents: number;
+          amount_paid_cents: number;
           deposit_cents: number;
           bottle_subtotal_cents: number;
           tax_cents: number;
@@ -422,6 +423,8 @@ export interface Database {
           unit_price_cents: number;
           quantity: number;
           line_total_cents: number;
+          is_addon: boolean;
+          added_by: string | null;
           created_at: string;
         };
         Insert: Partial<Database['public']['Tables']['site_table_booking_bottles']['Row']> & {
