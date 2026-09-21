@@ -1,14 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
-import { CheckCircle2, XCircle, Search, Wine } from 'lucide-react';
+import { CheckCircle2, XCircle, Search, Wine, Plus, X, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { doorSignOut } from '../useDoorAuth';
 import type { FulfillmentStatus } from '@/types/database';
+import {
+  recordClubPayment,
+  uploadReceiptPhoto,
+  listClubPayments,
+  getReceiptSignedUrl,
+  type ClubPaymentMethod,
+  type ClubPaymentRecord,
+  type SplitLeg,
+  type SplitLegMethod,
+} from '@/lib/clubPayment';
 
 const READER_ID = 'door-table-qr-reader';
 const SAME_CODE_COOLDOWN_MS = 5000;
@@ -77,6 +95,15 @@ const CheckInTables = () => {
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [booking, setBooking] = useState<BookingLookup | null>(null);
   const [checkingIn, setCheckingIn] = useState(false);
+  const [paymentHistory, setPaymentHistory] = useState<ClubPaymentRecord[]>([]);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [billedAmount, setBilledAmount] = useState('');
+  const [paidAmount, setPaidAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<ClubPaymentMethod>('cash');
+  const [splitLegs, setSplitLegs] = useState<SplitLeg[]>([{ method: 'cash', amountCents: 0 }]);
+  const [posReference, setPosReference] = useState('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [recordingPayment, setRecordingPayment] = useState(false);
 
   const runLookup = async (code: string) => {
     if (!code.trim() || busyRef.current) return;
@@ -99,6 +126,79 @@ const CheckInTables = () => {
     }
     setSearchResults(null);
     setBooking(result);
+    listClubPayments(result.id)
+      .then(setPaymentHistory)
+      .catch(() => setPaymentHistory([]));
+  };
+
+  const resetPaymentForm = () => {
+    setShowPaymentForm(false);
+    setBilledAmount('');
+    setPaidAmount('');
+    setPaymentMethod('cash');
+    setSplitLegs([{ method: 'cash', amountCents: 0 }]);
+    setPosReference('');
+    setReceiptFile(null);
+  };
+
+  const openPaymentForm = () => {
+    const dollars = (balanceDueCents / 100).toFixed(2);
+    setBilledAmount(dollars);
+    setPaidAmount(dollars);
+    setShowPaymentForm(true);
+  };
+
+  const updateSplitLeg = (index: number, patch: Partial<SplitLeg>) =>
+    setSplitLegs((prev) => prev.map((leg, i) => (i === index ? { ...leg, ...patch } : leg)));
+  const addSplitLeg = () => setSplitLegs((prev) => [...prev, { method: 'cash', amountCents: 0 }]);
+  const removeSplitLeg = (index: number) => setSplitLegs((prev) => prev.filter((_, i) => i !== index));
+
+  const handleRecordPayment = async () => {
+    if (!booking || recordingPayment) return;
+    const billedCents = Math.round(parseFloat(billedAmount) * 100);
+    const paidCents = Math.round(parseFloat(paidAmount) * 100);
+    if (!Number.isFinite(billedCents) || billedCents < 0 || !Number.isFinite(paidCents) || paidCents <= 0) {
+      toast({ title: 'Enter a valid amount', variant: 'destructive' });
+      return;
+    }
+
+    setRecordingPayment(true);
+    try {
+      let receiptPhotoPath: string | null = null;
+      if (receiptFile) {
+        receiptPhotoPath = await uploadReceiptPhoto(booking.id, receiptFile);
+      }
+      const splitBreakdown =
+        paymentMethod === 'split' ? splitLegs.filter((leg) => leg.amountCents > 0) : null;
+
+      await recordClubPayment({
+        bookingId: booking.id,
+        billedAmountCents: billedCents,
+        amountPaidCents: paidCents,
+        paymentMethod,
+        splitBreakdown,
+        posReference: posReference.trim() || null,
+        receiptPhotoPath,
+      });
+
+      toast({ title: 'Payment recorded' });
+      resetPaymentForm();
+      runLookup(booking.confirmation_code);
+    } catch (err) {
+      toast({
+        title: 'Could not record payment',
+        description: err instanceof Error ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRecordingPayment(false);
+    }
+  };
+
+  const handleViewReceipt = async (path: string) => {
+    const url = await getReceiptSignedUrl(path);
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    else toast({ title: 'Could not open receipt', variant: 'destructive' });
   };
 
   useEffect(() => {
@@ -179,6 +279,8 @@ const CheckInTables = () => {
     setBooking(null);
     setLookupError(null);
     setSearchResults(null);
+    setPaymentHistory([]);
+    resetPaymentForm();
   };
 
   const paidOnline = booking?.bottles.filter((b) => b.payment_status === 'paid') ?? [];
@@ -276,6 +378,137 @@ const CheckInTables = () => {
               </div>
             </div>
           </div>
+
+          {paymentHistory.length > 0 && (
+            <div className="space-y-1.5 rounded-2xl border border-gray-800 bg-gray-950 p-4 text-sm">
+              <div className="text-xs uppercase tracking-wide text-gray-500">Club Payments Recorded</div>
+              {paymentHistory.map((p) => (
+                <div key={p.id} className="flex items-center justify-between text-gray-300">
+                  <span>
+                    {money(p.amountPaidCents, booking.currency)} · {p.paymentMethod}
+                    {p.posReference ? ` · ${p.posReference}` : ''}
+                  </span>
+                  {p.receiptPhotoPath && (
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300"
+                      onClick={() => handleViewReceipt(p.receiptPhotoPath!)}
+                    >
+                      <Receipt className="h-3 w-3" /> Receipt
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {balanceDueCents > 0 && booking.status === 'paid' && (
+            <div className="rounded-2xl border border-orange-500/30 bg-orange-500/5 p-4">
+              {showPaymentForm ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-white">Record Club Payment</p>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Final billed amount</Label>
+                      <Input type="number" min="0" step="0.01" value={billedAmount} onChange={(e) => setBilledAmount(e.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Amount actually paid</Label>
+                      <Input type="number" min="0" step="0.01" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Payment method</Label>
+                    <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as ClubPaymentMethod)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="debit">Debit</SelectItem>
+                        <SelectItem value="credit">Credit</SelectItem>
+                        <SelectItem value="split">Split payment</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {paymentMethod === 'split' && (
+                    <div className="space-y-2">
+                      {splitLegs.map((leg, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <Select value={leg.method} onValueChange={(v) => updateSplitLeg(i, { method: v as SplitLegMethod })}>
+                            <SelectTrigger className="w-28">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="cash">Cash</SelectItem>
+                              <SelectItem value="debit">Debit</SelectItem>
+                              <SelectItem value="credit">Credit</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="Amount"
+                            value={leg.amountCents ? (leg.amountCents / 100).toString() : ''}
+                            onChange={(e) =>
+                              updateSplitLeg(i, { amountCents: Math.round((parseFloat(e.target.value) || 0) * 100) })
+                            }
+                          />
+                          {splitLegs.length > 1 && (
+                            <Button type="button" variant="ghost" size="icon" onClick={() => removeSplitLeg(i)}>
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                      <Button type="button" variant="outline" size="sm" className="border-gray-700" onClick={addSplitLeg}>
+                        <Plus className="mr-1 h-3 w-3" /> Add method
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">POS receipt / reference number (optional)</Label>
+                    <Input value={posReference} onChange={(e) => setPosReference(e.target.value)} />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Receipt photo (optional)</Label>
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1 border-gray-700" onClick={resetPaymentForm}>
+                      Cancel
+                    </Button>
+                    <Button
+                      className="flex-1 bg-gradient-orange text-black font-bold hover:opacity-90"
+                      disabled={recordingPayment}
+                      onClick={handleRecordPayment}
+                    >
+                      {recordingPayment ? 'Saving...' : 'Record Payment'}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="w-full border-orange-500/40 text-orange-400 hover:bg-orange-500/10"
+                  onClick={openPaymentForm}
+                >
+                  Record Club Payment
+                </Button>
+              )}
+            </div>
+          )}
 
           {booking.checked_in_at ? (
             <div className="rounded-2xl border-2 border-green-600 bg-green-950 p-4 text-center text-green-400">

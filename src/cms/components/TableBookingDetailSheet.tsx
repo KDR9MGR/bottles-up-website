@@ -24,10 +24,20 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Plus, Wine } from 'lucide-react';
+import { Plus, Wine, X, Receipt } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/auditLog';
+import {
+  recordClubPayment,
+  uploadReceiptPhoto,
+  listClubPayments,
+  getReceiptSignedUrl,
+  type ClubPaymentMethod,
+  type ClubPaymentRecord,
+  type SplitLeg,
+  type SplitLegMethod,
+} from '@/lib/clubPayment';
 import type { Database, OrderStatus } from '@/types/database';
 
 type BookingRow = Database['public']['Tables']['site_table_bookings']['Row'] & {
@@ -74,7 +84,14 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
   const [pickedBottleId, setPickedBottleId] = useState('');
   const [pickedQty, setPickedQty] = useState('1');
   const [saving, setSaving] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentHistory, setPaymentHistory] = useState<ClubPaymentRecord[]>([]);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [billedAmount, setBilledAmount] = useState('');
+  const [paidAmount, setPaidAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<ClubPaymentMethod>('cash');
+  const [splitLegs, setSplitLegs] = useState<SplitLeg[]>([{ method: 'cash', amountCents: 0 }]);
+  const [posReference, setPosReference] = useState('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [recordingPayment, setRecordingPayment] = useState(false);
 
   const load = async () => {
@@ -114,12 +131,18 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
       setMenu([]);
     }
 
+    if (loadedBooking) {
+      listClubPayments(loadedBooking.id)
+        .then(setPaymentHistory)
+        .catch(() => setPaymentHistory([]));
+    }
+
     setLoading(false);
   };
 
   useEffect(() => {
     load();
-    setPaymentAmount('');
+    resetPaymentForm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookingId]);
 
@@ -240,35 +263,75 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
     load();
   };
 
-  const recordPayment = async () => {
-    if (!booking || !totals) return;
-    const amountCents = Math.round(parseFloat(paymentAmount) * 100);
-    if (!Number.isFinite(amountCents) || amountCents <= 0) return;
+  const resetPaymentForm = () => {
+    setShowPaymentForm(false);
+    setBilledAmount('');
+    setPaidAmount('');
+    setPaymentMethod('cash');
+    setSplitLegs([{ method: 'cash', amountCents: 0 }]);
+    setPosReference('');
+    setReceiptFile(null);
+  };
 
-    setRecordingPayment(true);
-    const newPaid = Math.min(booking.amount_paid_cents + amountCents, totals.totalCents);
-    const { error } = await supabase
-      .from('site_table_bookings')
-      .update({ amount_paid_cents: newPaid })
-      .eq('id', booking.id);
-    setRecordingPayment(false);
+  const openPaymentForm = () => {
+    if (!totals) return;
+    const dollars = (totals.balanceDueCents / 100).toFixed(2);
+    setBilledAmount(dollars);
+    setPaidAmount(dollars);
+    setShowPaymentForm(true);
+  };
 
-    if (error) {
-      toast({ title: 'Failed to record payment', description: error.message, variant: 'destructive' });
+  const updateSplitLeg = (index: number, patch: Partial<SplitLeg>) =>
+    setSplitLegs((prev) => prev.map((leg, i) => (i === index ? { ...leg, ...patch } : leg)));
+  const addSplitLeg = () => setSplitLegs((prev) => [...prev, { method: 'cash', amountCents: 0 }]);
+  const removeSplitLeg = (index: number) => setSplitLegs((prev) => prev.filter((_, i) => i !== index));
+
+  const handleRecordPayment = async () => {
+    if (!booking || recordingPayment) return;
+    const billedCents = Math.round(parseFloat(billedAmount) * 100);
+    const paidCents = Math.round(parseFloat(paidAmount) * 100);
+    if (!Number.isFinite(billedCents) || billedCents < 0 || !Number.isFinite(paidCents) || paidCents <= 0) {
+      toast({ title: 'Enter a valid amount', variant: 'destructive' });
       return;
     }
 
-    await logAudit({
-      action: 'table_booking.payment_recorded',
-      entityType: 'site_table_bookings',
-      entityId: booking.id,
-      details: { amount_collected_cents: amountCents, method: 'in_person', new_amount_paid_cents: newPaid },
-    });
+    setRecordingPayment(true);
+    try {
+      let receiptPhotoPath: string | null = null;
+      if (receiptFile) {
+        receiptPhotoPath = await uploadReceiptPhoto(booking.id, receiptFile);
+      }
+      const splitBreakdown = paymentMethod === 'split' ? splitLegs.filter((leg) => leg.amountCents > 0) : null;
 
-    toast({ title: 'Payment recorded' });
-    setPaymentAmount('');
-    onUpdated();
-    load();
+      const { newAmountPaidCents } = await recordClubPayment({
+        bookingId: booking.id,
+        billedAmountCents: billedCents,
+        amountPaidCents: paidCents,
+        paymentMethod,
+        splitBreakdown,
+        posReference: posReference.trim() || null,
+        receiptPhotoPath,
+      });
+
+      toast({ title: 'Payment recorded', description: `Paid so far: ${money(newAmountPaidCents, booking.currency)}` });
+      resetPaymentForm();
+      onUpdated();
+      load();
+    } catch (err) {
+      toast({
+        title: 'Failed to record payment',
+        description: err instanceof Error ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRecordingPayment(false);
+    }
+  };
+
+  const handleViewReceipt = async (path: string) => {
+    const url = await getReceiptSignedUrl(path);
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    else toast({ title: 'Could not open receipt', variant: 'destructive' });
   };
 
   return (
@@ -477,39 +540,142 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                 </div>
               </div>
 
-              {totals.balanceDueCents > 0 && pending.length === 0 && (
-                <div className="space-y-2 rounded-lg border border-orange-500/30 bg-orange-500/5 p-4">
-                  <Label className="text-sm text-white">Record a payment collected in person</Label>
-                  <p className="text-xs text-gray-500">
-                    For now this just logs what was collected at the venue (cash/card terminal) - it doesn't charge
-                    anything online.
-                  </p>
-                  <div className="flex items-end gap-2">
-                    <div className="flex-1 space-y-1">
-                      <Label className="text-xs">Amount collected ({booking.currency.toUpperCase()})</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={paymentAmount}
-                        onChange={(e) => setPaymentAmount(e.target.value)}
-                        placeholder={(totals.balanceDueCents / 100).toFixed(2)}
-                      />
+              {paymentHistory.length > 0 && (
+                <div className="space-y-1.5 rounded-lg border border-gray-800 p-4 text-sm">
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Club Payments Recorded</div>
+                  {paymentHistory.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between text-gray-300">
+                      <span>
+                        {money(p.amountPaidCents, booking.currency)} · {p.paymentMethod}
+                        {p.posReference ? ` · ${p.posReference}` : ''}
+                      </span>
+                      {p.receiptPhotoPath && (
+                        <button
+                          type="button"
+                          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300"
+                          onClick={() => handleViewReceipt(p.receiptPhotoPath!)}
+                        >
+                          <Receipt className="h-3 w-3" /> Receipt
+                        </button>
+                      )}
                     </div>
+                  ))}
+                </div>
+              )}
+
+              {totals.balanceDueCents > 0 && pending.length === 0 && (
+                <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-4">
+                  {showPaymentForm ? (
+                    <div className="space-y-3">
+                      <Label className="text-sm text-white">Record Club Payment</Label>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Final billed amount</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={billedAmount}
+                            onChange={(e) => setBilledAmount(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Amount actually paid</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={paidAmount}
+                            onChange={(e) => setPaidAmount(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs">Payment method</Label>
+                        <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as ClubPaymentMethod)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="cash">Cash</SelectItem>
+                            <SelectItem value="debit">Debit</SelectItem>
+                            <SelectItem value="credit">Credit</SelectItem>
+                            <SelectItem value="split">Split payment</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {paymentMethod === 'split' && (
+                        <div className="space-y-2">
+                          {splitLegs.map((leg, i) => (
+                            <div key={i} className="flex items-center gap-2">
+                              <Select value={leg.method} onValueChange={(v) => updateSplitLeg(i, { method: v as SplitLegMethod })}>
+                                <SelectTrigger className="w-28">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="cash">Cash</SelectItem>
+                                  <SelectItem value="debit">Debit</SelectItem>
+                                  <SelectItem value="credit">Credit</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                placeholder="Amount"
+                                value={leg.amountCents ? (leg.amountCents / 100).toString() : ''}
+                                onChange={(e) =>
+                                  updateSplitLeg(i, { amountCents: Math.round((parseFloat(e.target.value) || 0) * 100) })
+                                }
+                              />
+                              {splitLegs.length > 1 && (
+                                <Button type="button" variant="ghost" size="icon" onClick={() => removeSplitLeg(i)}>
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                          <Button type="button" variant="outline" size="sm" className="border-gray-700" onClick={addSplitLeg}>
+                            <Plus className="mr-1 h-3 w-3" /> Add method
+                          </Button>
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        <Label className="text-xs">POS receipt / reference number (optional)</Label>
+                        <Input value={posReference} onChange={(e) => setPosReference(e.target.value)} />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs">Receipt photo (optional)</Label>
+                        <Input type="file" accept="image/*" onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)} />
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Button variant="outline" className="flex-1 border-gray-700" onClick={resetPaymentForm}>
+                          Cancel
+                        </Button>
+                        <Button
+                          className="flex-1 bg-gradient-orange text-black font-bold hover:opacity-90"
+                          disabled={recordingPayment}
+                          onClick={handleRecordPayment}
+                        >
+                          {recordingPayment ? 'Saving...' : 'Record Payment'}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
                     <Button
                       variant="outline"
-                      onClick={() => setPaymentAmount((totals.balanceDueCents / 100).toFixed(2))}
+                      className="w-full border-orange-500/40 text-orange-400 hover:bg-orange-500/10"
+                      onClick={openPaymentForm}
                     >
-                      Full balance
+                      Record Club Payment
                     </Button>
-                    <Button
-                      onClick={recordPayment}
-                      disabled={recordingPayment || !paymentAmount}
-                      className="bg-gradient-orange text-black font-bold hover:opacity-90"
-                    >
-                      {recordingPayment ? 'Saving...' : 'Mark Paid'}
-                    </Button>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
