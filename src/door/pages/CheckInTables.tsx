@@ -28,6 +28,8 @@ import {
   type SplitLegMethod,
 } from '@/lib/clubPayment';
 import { updateBottleServiceStatus, BOTTLE_SERVICE_STATUS_LABELS, BOTTLE_SERVICE_STATUSES } from '@/lib/bottleService';
+import AddBottlesDialog from '@/components/AddBottlesDialog';
+import CreateWalkInDialog from '@/components/CreateWalkInDialog';
 
 const READER_ID = 'door-table-qr-reader';
 const SAME_CODE_COOLDOWN_MS = 5000;
@@ -107,6 +109,8 @@ const CheckInTables = () => {
   const [posReference, setPosReference] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [recordingPayment, setRecordingPayment] = useState(false);
+  const [addBottlesOpen, setAddBottlesOpen] = useState(false);
+  const [walkInOpen, setWalkInOpen] = useState(false);
 
   const runLookup = async (code: string) => {
     if (!code.trim() || busyRef.current) return;
@@ -568,6 +572,17 @@ const CheckInTables = () => {
             </div>
           )}
 
+          {booking.status === 'paid' && (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full border-gray-700"
+              onClick={() => setAddBottlesOpen(true)}
+            >
+              <Wine className="mr-2 h-4 w-4" /> Add Bottles
+            </Button>
+          )}
+
           {booking.checked_in_at ? (
             <div className="rounded-2xl border-2 border-green-600 bg-green-950 p-4 text-center text-green-400">
               <CheckCircle2 className="mx-auto mb-2 h-8 w-8" />
@@ -594,6 +609,15 @@ const CheckInTables = () => {
         </div>
       ) : (
         <div className="w-full max-w-sm">
+          <Button
+            type="button"
+            variant="outline"
+            className="mb-4 w-full border-gray-700 text-gray-300"
+            onClick={() => setWalkInOpen(true)}
+          >
+            New Walk-In
+          </Button>
+
           <div id={READER_ID} className="overflow-hidden rounded-2xl border border-gray-800" />
           {cameraError && <p className="mt-3 text-center text-sm text-amber-400">{cameraError}</p>}
           {looking && <p className="mt-3 text-center text-sm text-gray-400">Looking up...</p>}
@@ -652,6 +676,18 @@ const CheckInTables = () => {
           )}
         </div>
       )}
+
+      {booking && (
+        <AddBottlesDialog
+          bookingId={booking.id}
+          mode="staff"
+          open={addBottlesOpen}
+          onOpenChange={setAddBottlesOpen}
+          onAdded={() => runLookup(booking.confirmation_code)}
+        />
+      )}
+
+      <CreateWalkInDialog open={walkInOpen} onOpenChange={setWalkInOpen} onCreated={(code) => runLookup(code)} />
     </div>
   );
 };

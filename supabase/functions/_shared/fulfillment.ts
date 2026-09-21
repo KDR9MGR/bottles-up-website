@@ -197,6 +197,7 @@ export async function fulfillTableBooking(
     hours: booking.hours,
     confirmationCode,
     qrDataUrl,
+    orderMoreUrl: `${Deno.env.get('SITE_URL') ?? 'https://bottlesupapp.com'}/order/${confirmationCode}`,
   });
 
   if (email.sent) {

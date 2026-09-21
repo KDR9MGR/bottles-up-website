@@ -50,6 +50,9 @@ export async function sendTableBookingEmail(opts: {
   hours?: number | null;
   confirmationCode: string;
   qrDataUrl: string;
+  // Section 8: "customers can also order through...a table QR code" - a link
+  // anyone at the table can use to order more bottles, no account needed.
+  orderMoreUrl?: string;
 }) {
   if (!resendApiKey) {
     console.warn('RESEND_API_KEY not set - skipping table booking email send');
@@ -127,6 +130,11 @@ export async function sendTableBookingEmail(opts: {
       </div>
       <p style="text-align: center; font-size: 20px; letter-spacing: 2px; font-weight: bold;">${opts.confirmationCode}</p>
       <p style="color: #999; font-size: 13px;">Show this email (QR code or the code above) at the door. See you there!</p>
+      ${
+        opts.orderMoreUrl
+          ? `<p style="text-align: center; margin-top: 20px;"><a href="${opts.orderMoreUrl}" style="color: #f97316; font-size: 13px;">Want to add bottles later? Anyone at your table can order more here</a></p>`
+          : ''
+      }
     </div>
   `;
 

@@ -1,76 +1,65 @@
 import { useEffect, useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { useParams, Link } from 'react-router-dom';
 import { Minus, Plus, Wine, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import type { Database, BottlePaymentMode, BottlePaymentChoice } from '@/types/database';
 
 type BottleRow = Database['public']['Tables']['site_bottles']['Row'];
 
-interface AddBottlesDialogProps {
-  bookingId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onAdded: () => void;
-  // 'staff' is used from the CMS/door check-in screens (section 8: "staff
-  // opens the table and taps Add Bottles") - the edge function always settles
-  // a staff-added item the same way a club payment is (due at venue, no
-  // Stripe redirect), so the pay-now/pay-at-club chooser doesn't apply.
-  mode?: 'customer' | 'staff';
+interface OrderContext {
+  found: boolean;
+  venueId?: string;
+  venueName?: string;
+  bottlePaymentMode?: BottlePaymentMode;
+  tableTypeName?: string;
+  currency?: string;
 }
 
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
-const AddBottlesDialog = ({ bookingId, open, onOpenChange, onAdded, mode = 'customer' }: AddBottlesDialogProps) => {
+// Public, no login required - reached by scanning a table's QR code (section
+// 8: "customers can also order through...a table QR code"), which encodes
+// this booking's own confirmation code. Shares its actual ordering logic
+// with the authenticated dashboard flow via the order-bottles-by-code /
+// add-table-booking-bottles edge functions, both built on the same
+// addBottlesToBooking() core.
+const OrderByCode = () => {
+  const { code } = useParams<{ code: string }>();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
+  const [context, setContext] = useState<OrderContext | null>(null);
   const [bottles, setBottles] = useState<BottleRow[]>([]);
   const [cart, setCart] = useState<Record<string, number>>({});
-  const [venuePaymentMode, setVenuePaymentMode] = useState<BottlePaymentMode>('pay_ahead');
   const [paymentChoice, setPaymentChoice] = useState<BottlePaymentChoice>('pay_ahead');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-    setCart({});
-    setLoading(true);
-
+    if (!code) return;
     (async () => {
-      const { data: booking } = await supabase
-        .from('site_table_bookings')
-        .select('venue_id')
-        .eq('id', bookingId)
-        .maybeSingle();
-      if (!booking) {
+      const { data, error } = await supabase.functions.invoke('lookup-order-context', {
+        body: { confirmation_code: code },
+      });
+      if (error || !data?.found) {
+        setContext({ found: false });
         setLoading(false);
         return;
       }
+      setContext(data);
+      setPaymentChoice(data.bottlePaymentMode === 'pay_at_club' ? 'pay_at_club' : 'pay_ahead');
 
-      const [{ data: venue }, { data: bottleRows }] = await Promise.all([
-        supabase.from('site_venues').select('bottle_payment_mode').eq('id', booking.venue_id).maybeSingle(),
-        supabase
-          .from('site_bottles')
-          .select('*')
-          .eq('venue_id', booking.venue_id)
-          .eq('is_available', true)
-          .eq('is_sold_out', false)
-          .order('sort_order', { ascending: true }),
-      ]);
-
-      const mode = venue?.bottle_payment_mode ?? 'pay_ahead';
-      setVenuePaymentMode(mode);
-      setPaymentChoice(mode === 'pay_at_club' ? 'pay_at_club' : 'pay_ahead');
+      const { data: bottleRows } = await supabase
+        .from('site_bottles')
+        .select('*')
+        .eq('venue_id', data.venueId)
+        .eq('is_available', true)
+        .eq('is_sold_out', false)
+        .order('sort_order', { ascending: true });
       setBottles(bottleRows ?? []);
       setLoading(false);
     })();
-  }, [open, bookingId]);
+  }, [code]);
 
   const cartLines = bottles
     .filter((b) => (cart[b.id] ?? 0) > 0)
@@ -87,18 +76,15 @@ const AddBottlesDialog = ({ bookingId, open, onOpenChange, onAdded, mode = 'cust
     });
 
   const handleSubmit = async () => {
-    if (cartLines.length === 0) return;
+    if (!code || cartLines.length === 0) return;
     setSubmitting(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      const { data: result, error } = await supabase.functions.invoke('add-table-booking-bottles', {
+      const { data: result, error } = await supabase.functions.invoke('order-bottles-by-code', {
         body: {
-          booking_id: bookingId,
+          confirmation_code: code,
           bottles: cartLines.map((l) => ({ bottle_id: l.bottle.id, quantity: l.quantity })),
           bottle_payment_choice: paymentChoice,
         },
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
 
       if (error) throw error;
@@ -109,15 +95,11 @@ const AddBottlesDialog = ({ bookingId, open, onOpenChange, onAdded, mode = 'cust
         return;
       }
 
-      toast({
-        title: mode === 'staff' ? 'Bottles added to tab' : 'Bottles reserved',
-        description: mode === 'staff' ? 'Settle up along with the rest of the tab.' : 'Pay at the venue when you arrive.',
-      });
-      onOpenChange(false);
-      onAdded();
+      toast({ title: 'Bottles reserved', description: 'Pay at the venue when you arrive.' });
+      setCart({});
     } catch (err) {
       toast({
-        title: 'Could not add bottles',
+        title: 'Could not place order',
         description: err instanceof Error ? err.message : 'Please try again.',
         variant: 'destructive',
       });
@@ -126,17 +108,35 @@ const AddBottlesDialog = ({ bookingId, open, onOpenChange, onAdded, mode = 'cust
     }
   };
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto border-gray-800 bg-gray-950">
-        <DialogHeader>
-          <DialogTitle className="text-white">{mode === 'staff' ? 'Add Bottles to Tab' : 'Add Bottles'}</DialogTitle>
-        </DialogHeader>
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-black">
+        <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+      </div>
+    );
+  }
 
-        {loading ? (
-          <div className="py-8 text-center text-sm text-gray-500">Loading bottle menu...</div>
-        ) : bottles.length === 0 ? (
-          <div className="py-8 text-center text-sm text-gray-500">No bottle menu available for this venue.</div>
+  if (!context?.found) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-black px-4 text-center">
+        <p className="text-gray-400">We couldn't find an active reservation for that code.</p>
+        <Button asChild className="mt-4 bg-gradient-orange text-black font-bold hover:opacity-90">
+          <Link to="/">Back to BottlesUp</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-black px-4 py-10">
+      <div className="mx-auto max-w-sm">
+        <h1 className="mb-1 text-center text-xl font-bold text-white">
+          {context.tableTypeName} - {context.venueName}
+        </h1>
+        <p className="mb-6 text-center text-sm text-gray-500">Order more bottles for your table</p>
+
+        {bottles.length === 0 ? (
+          <p className="py-8 text-center text-sm text-gray-500">No bottle menu available for this venue.</p>
         ) : (
           <div className="space-y-4">
             <div className="space-y-3">
@@ -181,7 +181,7 @@ const AddBottlesDialog = ({ bookingId, open, onOpenChange, onAdded, mode = 'cust
               })}
             </div>
 
-            {mode === 'customer' && venuePaymentMode === 'both' && cartLines.length > 0 && (
+            {context.bottlePaymentMode === 'both' && cartLines.length > 0 && (
               <div className="space-y-2 rounded-lg border border-gray-800 p-3">
                 <p className="text-sm text-white">How do you want to pay?</p>
                 <div className="grid grid-cols-2 gap-2">
@@ -220,29 +220,25 @@ const AddBottlesDialog = ({ bookingId, open, onOpenChange, onAdded, mode = 'cust
               </div>
             )}
 
-            <DialogFooter>
-              <Button
-                type="button"
-                disabled={cartLines.length === 0 || submitting}
-                className="w-full bg-gradient-orange text-black font-bold hover:opacity-90"
-                onClick={handleSubmit}
-              >
-                {submitting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : mode === 'staff' ? (
-                  'Add to Tab'
-                ) : paymentChoice === 'pay_at_club' ? (
-                  'Reserve Bottles'
-                ) : (
-                  'Continue to Payment'
-                )}
-              </Button>
-            </DialogFooter>
+            <Button
+              type="button"
+              disabled={cartLines.length === 0 || submitting}
+              className="w-full bg-gradient-orange text-black font-bold hover:opacity-90"
+              onClick={handleSubmit}
+            >
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : paymentChoice === 'pay_at_club' ? (
+                'Reserve Bottles'
+              ) : (
+                'Continue to Payment'
+              )}
+            </Button>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 };
 
-export default AddBottlesDialog;
+export default OrderByCode;

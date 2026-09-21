@@ -27,7 +27,7 @@ import {
 import { Plus, Wine, X, Receipt } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
-import { logAudit } from '@/lib/auditLog';
+import AddBottlesDialog from '@/components/AddBottlesDialog';
 import {
   recordClubPayment,
   uploadReceiptPhoto,
@@ -48,15 +48,6 @@ type BookingRow = Database['public']['Tables']['site_table_bookings']['Row'] & {
 };
 
 type BottleLine = Database['public']['Tables']['site_table_booking_bottles']['Row'];
-type BottleMenuItem = Database['public']['Tables']['site_bottles']['Row'];
-
-interface PendingAddition {
-  bottleId: string;
-  name: string;
-  size: string | null;
-  unitPriceCents: number;
-  quantity: number;
-}
 
 const statusVariant: Record<OrderStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   paid: 'default',
@@ -78,13 +69,9 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
   const { toast } = useToast();
   const [booking, setBooking] = useState<BookingRow | null>(null);
   const [bottleLines, setBottleLines] = useState<BottleLine[]>([]);
-  const [menu, setMenu] = useState<BottleMenuItem[]>([]);
   const [bottlesUpFeeBps, setBottlesUpFeeBps] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [pending, setPending] = useState<PendingAddition[]>([]);
-  const [pickedBottleId, setPickedBottleId] = useState('');
-  const [pickedQty, setPickedQty] = useState('1');
-  const [saving, setSaving] = useState(false);
+  const [addBottlesOpen, setAddBottlesOpen] = useState(false);
   const [paymentHistory, setPaymentHistory] = useState<ClubPaymentRecord[]>([]);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [billedAmount, setBilledAmount] = useState('');
@@ -98,7 +85,6 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
   const load = async () => {
     if (!bookingId) return;
     setLoading(true);
-    setPending([]);
 
     const [{ data: bookingData }, { data: linesData }, { data: contentData }] = await Promise.all([
       supabase
@@ -118,19 +104,6 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
     setBooking(loadedBooking);
     setBottleLines((linesData as BottleLine[]) ?? []);
     setBottlesUpFeeBps(contentData?.bottlesup_fee_bps ?? 0);
-
-    if (loadedBooking?.site_venues?.id) {
-      const { data: menuData } = await supabase
-        .from('site_bottles')
-        .select('*')
-        .eq('venue_id', loadedBooking.site_venues.id)
-        .eq('is_available', true)
-        .eq('is_sold_out', false)
-        .order('sort_order');
-      setMenu((menuData as BottleMenuItem[]) ?? []);
-    } else {
-      setMenu([]);
-    }
 
     if (loadedBooking) {
       listClubPayments(loadedBooking.id)
@@ -152,10 +125,10 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
   // always reflects every bottle ever added - discount_cents itself never changes
   // after the original checkout, it was resolved to a fixed amount then.
   //
-  // Bottles flagged due_at_venue (a pay-at-club checkout) were never taxed or
-  // charged through Stripe - only the deposit was - so they're excluded from the
-  // taxed subtotal and added back in untaxed. Staff-added bottles (is_addon) keep
-  // the original behavior of being taxed together with everything else.
+  // Bottles flagged due_at_venue (a pay-at-club checkout, or anything staff
+  // added via "Add Bottles" - section 8 always settles those the same way)
+  // were never taxed or charged through Stripe - only the deposit was - so
+  // they're excluded from the taxed subtotal and added back in untaxed.
   // pending_payment lines (a customer's own in-progress addon checkout) aren't
   // billed to anyone yet, so they're excluded from every total until the webhook
   // confirms them - never counted as already collected or already due.
@@ -167,9 +140,8 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
     const taxedBottleCents = bottleLines
       .filter((l) => l.payment_status === 'paid')
       .reduce((sum, l) => sum + l.line_total_cents, 0);
-    const pendingSubtotal = pending.reduce((sum, p) => sum + p.unitPriceCents * p.quantity, 0);
-    const bottleSubtotalCents = taxedBottleCents + dueAtVenueBottleCents + pendingSubtotal;
-    const preTax = booking.deposit_cents + taxedBottleCents + pendingSubtotal;
+    const bottleSubtotalCents = taxedBottleCents + dueAtVenueBottleCents;
+    const preTax = booking.deposit_cents + taxedBottleCents;
     const discounted = Math.max(preTax - booking.discount_cents, 0);
     const taxRateBps = booking.site_venues?.tax_rate_bps ?? 0;
     const taxCents = Math.round((discounted * taxRateBps) / 10000);
@@ -177,92 +149,7 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
     const totalCents = discounted + taxCents + feeCents + dueAtVenueBottleCents;
     const balanceDueCents = Math.max(totalCents - booking.amount_paid_cents, 0);
     return { bottleSubtotalCents, taxCents, feeCents, totalCents, balanceDueCents };
-  }, [booking, bottleLines, pending, bottlesUpFeeBps]);
-
-  const addPending = () => {
-    const bottle = menu.find((m) => m.id === pickedBottleId);
-    const qty = parseInt(pickedQty, 10);
-    if (!bottle || !Number.isInteger(qty) || qty < 1) return;
-
-    if (bottle.stock_quantity !== null) {
-      const alreadyPending = pending
-        .filter((p) => p.bottleId === bottle.id)
-        .reduce((sum, p) => sum + p.quantity, 0);
-      if (alreadyPending + qty > bottle.stock_quantity) {
-        toast({
-          title: 'Not enough stock',
-          description: `Only ${bottle.stock_quantity} of "${bottle.name}" tracked in stock.`,
-          variant: 'destructive',
-        });
-        return;
-      }
-    }
-
-    setPending((prev) => [
-      ...prev,
-      { bottleId: bottle.id, name: bottle.name, size: bottle.size, unitPriceCents: bottle.price_cents, quantity: qty },
-    ]);
-    setPickedBottleId('');
-    setPickedQty('1');
-  };
-
-  const removePending = (index: number) => setPending((prev) => prev.filter((_, i) => i !== index));
-
-  const saveAdditions = async () => {
-    if (!booking || pending.length === 0 || !totals) return;
-    setSaving(true);
-
-    const adminId = (await supabase.auth.getUser()).data.user?.id ?? null;
-
-    const { error: insertError } = await supabase.from('site_table_booking_bottles').insert(
-      pending.map((p) => ({
-        booking_id: booking.id,
-        bottle_id: p.bottleId,
-        bottle_name: p.name,
-        size: p.size,
-        unit_price_cents: p.unitPriceCents,
-        quantity: p.quantity,
-        line_total_cents: p.unitPriceCents * p.quantity,
-        is_addon: true,
-        added_by: adminId,
-      })),
-    );
-
-    if (insertError) {
-      setSaving(false);
-      toast({ title: 'Failed to add bottles', description: insertError.message, variant: 'destructive' });
-      return;
-    }
-
-    const { error: updateError } = await supabase
-      .from('site_table_bookings')
-      .update({
-        bottle_subtotal_cents: totals.bottleSubtotalCents,
-        tax_cents: totals.taxCents,
-        bottlesup_fee_cents: totals.feeCents,
-        amount_total_cents: totals.totalCents,
-      })
-      .eq('id', booking.id);
-
-    setSaving(false);
-
-    if (updateError) {
-      toast({ title: 'Bottles added, but totals failed to update', description: updateError.message, variant: 'destructive' });
-      load();
-      return;
-    }
-
-    await logAudit({
-      action: 'table_booking.bottles_added',
-      entityType: 'site_table_bookings',
-      entityId: booking.id,
-      details: { bottles: pending, new_total_cents: totals.totalCents },
-    });
-
-    toast({ title: 'Bottles added', description: `New total: ${money(totals.totalCents, booking.currency)}` });
-    onUpdated();
-    load();
-  };
+  }, [booking, bottleLines, bottlesUpFeeBps]);
 
   const resetPaymentForm = () => {
     setShowPaymentForm(false);
@@ -402,7 +289,7 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                   <Wine className="h-4 w-4 text-primary" />
                   <span className="font-semibold">Bottles</span>
                 </div>
-                {bottleLines.length === 0 && pending.length === 0 ? (
+                {bottleLines.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No bottles on this booking yet.</p>
                 ) : (
                   <div className="rounded-lg border border-gray-800">
@@ -458,81 +345,19 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                             </TableCell>
                           </TableRow>
                         ))}
-                        {pending.map((p, i) => (
-                          <TableRow key={`pending-${i}`} className="bg-primary/5">
-                            <TableCell>
-                              {p.name}
-                              {p.size ? ` (${p.size})` : ''}
-                              <Badge variant="outline" className="ml-2 text-[10px] text-primary">
-                                Not saved yet
-                              </Badge>
-                            </TableCell>
-                            <TableCell>{p.quantity}</TableCell>
-                            <TableCell className="text-right">
-                              {money(p.unitPriceCents * p.quantity, booking.currency)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <button
-                                type="button"
-                                className="text-xs text-gray-500 hover:text-red-400"
-                                onClick={() => removePending(i)}
-                              >
-                                Remove
-                              </button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
                       </TableBody>
                     </Table>
                   </div>
                 )}
 
-                {menu.length === 0 ? (
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    This venue has no bottle menu set up yet - add bottles under Venues first.
-                  </p>
-                ) : (
-                  <div className="mt-3 flex items-end gap-2">
-                    <div className="flex-1 space-y-1">
-                      <Label className="text-xs">Add a bottle</Label>
-                      <Select value={pickedBottleId} onValueChange={setPickedBottleId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a bottle" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {menu.map((m) => (
-                            <SelectItem key={m.id} value={m.id}>
-                              {m.name}
-                              {m.size ? ` (${m.size})` : ''} - {money(m.price_cents, m.currency)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="w-20 space-y-1">
-                      <Label className="text-xs">Qty</Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={pickedQty}
-                        onChange={(e) => setPickedQty(e.target.value)}
-                      />
-                    </div>
-                    <Button type="button" variant="outline" disabled={!pickedBottleId} onClick={addPending}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
-
-                {pending.length > 0 && (
-                  <Button
-                    onClick={saveAdditions}
-                    disabled={saving}
-                    className="mt-3 w-full bg-gradient-orange text-black font-bold hover:opacity-90"
-                  >
-                    {saving ? 'Saving...' : `Save ${pending.length} bottle${pending.length === 1 ? '' : 's'} to booking`}
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-3 w-full border-gray-700"
+                  onClick={() => setAddBottlesOpen(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" /> Add Bottles
+                </Button>
               </div>
 
               <div className="space-y-1.5 rounded-lg border border-gray-800 p-4 text-sm">
@@ -608,7 +433,7 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                 </div>
               )}
 
-              {totals.balanceDueCents > 0 && pending.length === 0 && (
+              {totals.balanceDueCents > 0 && (
                 <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-4">
                   {showPaymentForm ? (
                     <div className="space-y-3">
@@ -724,6 +549,17 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                 </div>
               )}
             </div>
+
+            <AddBottlesDialog
+              bookingId={booking.id}
+              mode="staff"
+              open={addBottlesOpen}
+              onOpenChange={setAddBottlesOpen}
+              onAdded={() => {
+                onUpdated();
+                load();
+              }}
+            />
           </>
         )}
       </SheetContent>
