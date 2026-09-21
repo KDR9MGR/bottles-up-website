@@ -8,6 +8,8 @@ export interface SplitLeg {
   amountCents: number;
 }
 
+export type CustomerConfirmationStatus = 'pending' | 'confirmed' | 'disputed';
+
 export interface ClubPaymentRecord {
   id: string;
   billedAmountCents: number;
@@ -17,6 +19,7 @@ export interface ClubPaymentRecord {
   posReference: string | null;
   receiptPhotoPath: string | null;
   recordedAt: string;
+  customerConfirmationStatus: CustomerConfirmationStatus;
 }
 
 // Shared by the door-staff check-in screen and the CMS booking detail sheet,
@@ -31,7 +34,7 @@ export async function recordClubPayment(opts: {
   splitBreakdown?: SplitLeg[] | null;
   posReference?: string | null;
   receiptPhotoPath?: string | null;
-}): Promise<{ newAmountPaidCents: number; balanceDueCents: number }> {
+}): Promise<{ paymentId: string; newAmountPaidCents: number; balanceDueCents: number; confirmationEmailSent: boolean }> {
   const { data, error } = await supabase.rpc('record_club_payment', {
     p_booking_id: opts.bookingId,
     p_billed_amount_cents: opts.billedAmountCents,
@@ -42,7 +45,30 @@ export async function recordClubPayment(opts: {
     p_receipt_photo_path: opts.receiptPhotoPath ?? null,
   });
   if (error) throw error;
-  return { newAmountPaidCents: data.new_amount_paid_cents, balanceDueCents: data.balance_due_cents };
+
+  // Section 6: let the customer confirm or dispute what was just recorded.
+  // Best-effort - the payment itself is already safely recorded above either
+  // way, so a failed email is reported back rather than thrown, and never
+  // undoes the recording.
+  let confirmationEmailSent = false;
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    const { error: emailError } = await supabase.functions.invoke('send-club-payment-confirmation', {
+      body: { payment_id: data.payment_id },
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    confirmationEmailSent = !emailError;
+  } catch (err) {
+    console.error('send-club-payment-confirmation failed:', err);
+  }
+
+  return {
+    paymentId: data.payment_id,
+    newAmountPaidCents: data.new_amount_paid_cents,
+    balanceDueCents: data.balance_due_cents,
+    confirmationEmailSent,
+  };
 }
 
 export async function listClubPayments(bookingId: string): Promise<ClubPaymentRecord[]> {
@@ -57,6 +83,7 @@ export async function listClubPayments(bookingId: string): Promise<ClubPaymentRe
     pos_reference: string | null;
     receipt_photo_path: string | null;
     recorded_at: string;
+    customer_confirmation_status: CustomerConfirmationStatus;
   }>).map((r) => ({
     id: r.id,
     billedAmountCents: r.billed_amount_cents,
@@ -66,7 +93,58 @@ export async function listClubPayments(bookingId: string): Promise<ClubPaymentRe
     posReference: r.pos_reference,
     receiptPhotoPath: r.receipt_photo_path,
     recordedAt: r.recorded_at,
+    customerConfirmationStatus: r.customer_confirmation_status,
   }));
+}
+
+export interface ClubPaymentLookup {
+  found: boolean;
+  paymentId?: string;
+  billedAmountCents?: number;
+  amountPaidCents?: number;
+  paymentMethod?: ClubPaymentMethod;
+  recordedAt?: string;
+  status?: CustomerConfirmationStatus;
+  confirmedAt?: string | null;
+  disputeReason?: string | null;
+  customerName?: string;
+  confirmationCode?: string;
+  currency?: string;
+  tableTypeName?: string;
+  venueName?: string;
+}
+
+// Public, token-based - used by both the emailed standalone confirm page and
+// the in-app dashboard banner, so there's one lookup shape either way.
+export async function lookupClubPaymentByToken(token: string): Promise<ClubPaymentLookup> {
+  const { data, error } = await supabase.functions.invoke('lookup-club-payment', { body: { token } });
+  if (error) throw error;
+  return data as ClubPaymentLookup;
+}
+
+export async function respondToClubPayment(opts: {
+  token: string;
+  action: 'confirm' | 'dispute';
+  reason?: string;
+  evidenceFile?: File | null;
+}): Promise<{ success: boolean; status?: CustomerConfirmationStatus; error?: string }> {
+  let evidenceBase64: string | undefined;
+  if (opts.evidenceFile) {
+    const buffer = await opts.evidenceFile.arrayBuffer();
+    evidenceBase64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+  }
+
+  const { data, error } = await supabase.functions.invoke('respond-club-payment', {
+    body: {
+      token: opts.token,
+      action: opts.action,
+      reason: opts.reason,
+      evidence_base64: evidenceBase64,
+      evidence_filename: opts.evidenceFile?.name,
+    },
+  });
+  if (error) throw error;
+  return data;
 }
 
 // club-payment-receipts is a private bucket (receipts can show partial card

@@ -26,6 +26,7 @@ import CmsContent from "./cms/pages/Content";
 import CmsHelp from "./cms/pages/Help";
 import BookingSuccess from "./pages/BookingSuccess";
 import BookingCancel from "./pages/BookingCancel";
+import ClubPaymentConfirm from "./pages/ClubPaymentConfirm";
 import EventDetail from "./pages/EventDetail";
 import Events from "./pages/Events";
 import VipTables from "./pages/VipTables";
@@ -66,6 +67,7 @@ const App = () => {
             <Route path="/tables/:id" element={<TableDetail />} />
             <Route path="/booking/success" element={<BookingSuccess />} />
             <Route path="/booking/cancel" element={<BookingCancel />} />
+            <Route path="/club-payment/confirm/:token" element={<ClubPaymentConfirm />} />
             <Route path="/my-tickets" element={<MyTickets />} />
             <Route path="/dashboard" element={<UserDashboard />} />
             <Route path="/profile" element={<UserProfile />} />

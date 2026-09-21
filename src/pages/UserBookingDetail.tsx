@@ -10,6 +10,8 @@ import { supabase } from '@/lib/supabase';
 import { useUserAuth } from '@/hooks/useUserAuth';
 import Header from '@/components/Header';
 import AddBottlesDialog from '@/components/AddBottlesDialog';
+import ClubPaymentConfirmCard from '@/components/ClubPaymentConfirmCard';
+import type { ClubPaymentMethod } from '@/lib/clubPayment';
 
 type BookingType = 'ticket' | 'table';
 
@@ -50,6 +52,9 @@ export default function UserBookingDetail() {
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
   const [addBottlesOpen, setAddBottlesOpen] = useState(false);
   const [confirmingAddon, setConfirmingAddon] = useState(false);
+  const [pendingClubPayments, setPendingClubPayments] = useState<
+    { id: string; confirmToken: string; billedAmountCents: number; amountPaidCents: number; paymentMethod: ClubPaymentMethod }[]
+  >([]);
 
   const load = useCallback(async () => {
       if (!id || !type) return;
@@ -96,6 +101,21 @@ export default function UserBookingDetail() {
           .select('bottle_name, size, quantity, line_total_cents, payment_status')
           .eq('booking_id', booking.id)
           .neq('payment_status', 'pending_payment');
+
+        const { data: clubPayments } = await supabase
+          .from('site_table_booking_club_payments')
+          .select('id, confirm_token, billed_amount_cents, amount_paid_cents, payment_method')
+          .eq('booking_id', booking.id)
+          .eq('customer_confirmation_status', 'pending');
+        setPendingClubPayments(
+          (clubPayments ?? []).map((p) => ({
+            id: p.id,
+            confirmToken: p.confirm_token,
+            billedAmountCents: p.billed_amount_cents,
+            amountPaidCents: p.amount_paid_cents,
+            paymentMethod: p.payment_method as ClubPaymentMethod,
+          })),
+        );
 
         const tableType = booking.site_table_types as unknown as { name: string } | null;
         const venue = booking.site_venues as unknown as { name: string } | null;
@@ -264,6 +284,23 @@ export default function UserBookingDetail() {
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </button>
+
+          {pendingClubPayments.length > 0 && (
+            <div className="mb-6 space-y-3">
+              {pendingClubPayments.map((p) => (
+                <ClubPaymentConfirmCard
+                  key={p.id}
+                  token={p.confirmToken}
+                  billedAmountCents={p.billedAmountCents}
+                  amountPaidCents={p.amountPaidCents}
+                  paymentMethod={p.paymentMethod}
+                  currency={data.currency}
+                  status="pending"
+                  onResponded={() => setPendingClubPayments((prev) => prev.filter((cp) => cp.id !== p.id))}
+                />
+              ))}
+            </div>
+          )}
 
           <div className="rounded-2xl border border-white/10 bg-zinc-900 overflow-hidden">
             <div className="bg-gradient-to-br from-orange-500/20 to-zinc-900 p-6 flex flex-col items-center">

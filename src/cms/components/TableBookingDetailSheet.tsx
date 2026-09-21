@@ -303,7 +303,7 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
       }
       const splitBreakdown = paymentMethod === 'split' ? splitLegs.filter((leg) => leg.amountCents > 0) : null;
 
-      const { newAmountPaidCents } = await recordClubPayment({
+      const { newAmountPaidCents, confirmationEmailSent } = await recordClubPayment({
         bookingId: booking.id,
         billedAmountCents: billedCents,
         amountPaidCents: paidCents,
@@ -313,7 +313,10 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
         receiptPhotoPath,
       });
 
-      toast({ title: 'Payment recorded', description: `Paid so far: ${money(newAmountPaidCents, booking.currency)}` });
+      toast({
+        title: 'Payment recorded',
+        description: `Paid so far: ${money(newAmountPaidCents, booking.currency)}${confirmationEmailSent ? '' : ' - could not email the customer'}`,
+      });
       resetPaymentForm();
       onUpdated();
       load();
@@ -549,15 +552,26 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                         {money(p.amountPaidCents, booking.currency)} · {p.paymentMethod}
                         {p.posReference ? ` · ${p.posReference}` : ''}
                       </span>
-                      {p.receiptPhotoPath && (
-                        <button
-                          type="button"
-                          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300"
-                          onClick={() => handleViewReceipt(p.receiptPhotoPath!)}
-                        >
-                          <Receipt className="h-3 w-3" /> Receipt
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {p.customerConfirmationStatus === 'confirmed' && (
+                          <Badge variant="outline" className="border-green-600 text-[10px] text-green-400">Confirmed</Badge>
+                        )}
+                        {p.customerConfirmationStatus === 'disputed' && (
+                          <Badge variant="outline" className="border-red-600 text-[10px] text-red-400">Disputed</Badge>
+                        )}
+                        {p.customerConfirmationStatus === 'pending' && (
+                          <Badge variant="outline" className="border-gray-700 text-[10px] text-gray-500">Awaiting customer</Badge>
+                        )}
+                        {p.receiptPhotoPath && (
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300"
+                            onClick={() => handleViewReceipt(p.receiptPhotoPath!)}
+                          >
+                            <Receipt className="h-3 w-3" /> Receipt
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
