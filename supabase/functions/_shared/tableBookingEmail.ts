@@ -23,7 +23,7 @@ export interface BottleLineItem {
   quantity: number;
   unit_price_cents: number;
   line_total_cents: number;
-  payment_status?: 'paid' | 'due_at_venue';
+  payment_status?: 'paid' | 'due_at_venue' | 'pending_payment';
 }
 
 export async function sendTableBookingEmail(opts: {
@@ -144,6 +144,85 @@ export async function sendTableBookingEmail(opts: {
       subject: `Your VIP table at ${opts.venueName} is confirmed`,
       html,
       attachments: [{ filename: 'booking-qr.png', content: qrBase64, content_id: 'qrcode' }],
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    console.error('Resend send failed:', body);
+    return { sent: false, error: body || `Resend request failed (${res.status})` };
+  }
+
+  return { sent: true };
+}
+
+// Sent when a customer (or staff) adds bottles to an already-confirmed booking -
+// "an updated summary" per the spec. Deliberately smaller than the original
+// confirmation email: no QR code (the original confirmation code still gets them
+// in), just what changed and where the booking's balance stands now.
+export async function sendBottleAdditionEmail(opts: {
+  toEmail: string;
+  toName: string;
+  venueName: string;
+  tableTypeName: string;
+  confirmationCode: string;
+  addedBottles: { bottle_name: string; size: string | null; quantity: number; line_total_cents: number; payment_status: 'paid' | 'due_at_venue' }[];
+  amountChargedNowCents: number;
+  newAmountTotalCents: number;
+  newAmountPaidCents: number;
+  currency: string;
+}) {
+  if (!resendApiKey) {
+    console.warn('RESEND_API_KEY not set - skipping bottle addition email send');
+    return { sent: false, error: 'RESEND_API_KEY not set' };
+  }
+
+  const money = (cents: number) => `$${(cents / 100).toFixed(2)} ${opts.currency.toUpperCase()}`;
+  const balanceDueCents = Math.max(opts.newAmountTotalCents - opts.newAmountPaidCents, 0);
+
+  const bottleRows = opts.addedBottles
+    .map(
+      (b) => `
+        <tr>
+          <td style="padding: 4px 0; color: #ccc;">${b.bottle_name}${b.size ? ` (${b.size})` : ''} &times; ${b.quantity}${b.payment_status === 'due_at_venue' ? ' <span style="color: #f97316; font-size: 12px;">(Reserved - Payment Due at Club)</span>' : ''}</td>
+          <td style="padding: 4px 0; color: #ccc; text-align: right;">${money(b.line_total_cents)}</td>
+        </tr>`,
+    )
+    .join('');
+
+  const html = `
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0a0a0a; color: #fff; border-radius: 16px;">
+      <h1 style="color: #f97316; font-size: 22px;">Bottles added to your reservation</h1>
+      <p>Hi ${opts.toName},</p>
+      <p>Your order for <strong>${opts.tableTypeName} - ${opts.venueName}</strong> (confirmation <strong>${opts.confirmationCode}</strong>) was just updated:</p>
+      <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
+        ${bottleRows}
+        ${
+          opts.amountChargedNowCents > 0
+            ? `<tr><td style="padding: 8px 0 0; color: #fff; font-weight: bold; border-top: 1px solid #333;">Charged now</td><td style="padding: 8px 0 0; color: #fff; font-weight: bold; text-align: right; border-top: 1px solid #333;">${money(opts.amountChargedNowCents)}</td></tr>`
+            : `<tr><td style="padding: 8px 0 0; color: #f97316; border-top: 1px solid #333;" colspan="2">Reserved - pay at the venue.</td></tr>`
+        }
+      </table>
+      <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
+        <tr><td style="padding: 4px 0; color: #ccc;">Booking total</td><td style="padding: 4px 0; color: #ccc; text-align: right;">${money(opts.newAmountTotalCents)}</td></tr>
+        <tr><td style="padding: 4px 0; color: #ccc;">Paid so far</td><td style="padding: 4px 0; color: #ccc; text-align: right;">${money(opts.newAmountPaidCents)}</td></tr>
+        <tr><td style="padding: 4px 0; color: ${balanceDueCents > 0 ? '#f97316' : '#4ade80'}; font-weight: bold;">Balance due at venue</td><td style="padding: 4px 0; color: ${balanceDueCents > 0 ? '#f97316' : '#4ade80'}; text-align: right; font-weight: bold;">${money(balanceDueCents)}</td></tr>
+      </table>
+      <p style="color: #999; font-size: 13px;">Your original confirmation code and QR code still work at the door - no need to bring anything new.</p>
+    </div>
+  `;
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${resendApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: fromEmail,
+      to: opts.toEmail,
+      subject: `Your order at ${opts.venueName} was updated`,
+      html,
     }),
   });
 

@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowLeft, Calendar, MapPin, Users, Clock, Download, Share2, Loader2, Ticket, TableIcon, CheckCircle2, AlertCircle, KeyRound } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, Users, Clock, Download, Share2, Loader2, Ticket, TableIcon, CheckCircle2, AlertCircle, KeyRound, Wine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { useUserAuth } from '@/hooks/useUserAuth';
 import Header from '@/components/Header';
+import AddBottlesDialog from '@/components/AddBottlesDialog';
 
 type BookingType = 'ticket' | 'table';
 
@@ -39,6 +40,7 @@ const statusConfig: Record<string, { icon: typeof CheckCircle2; color: string; l
 
 export default function UserBookingDetail() {
   const { type, id } = useParams<{ type: BookingType; id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { session, loading: authLoading } = useUserAuth();
@@ -46,11 +48,11 @@ export default function UserBookingDetail() {
   const [loading, setLoading] = useState(true);
   const [requestingCode, setRequestingCode] = useState(false);
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [addBottlesOpen, setAddBottlesOpen] = useState(false);
+  const [confirmingAddon, setConfirmingAddon] = useState(false);
 
-  useEffect(() => {
-    if (authLoading || !session || !id || !type) return;
-
-    const load = async () => {
+  const load = useCallback(async () => {
+      if (!id || !type) return;
       if (type === 'ticket') {
         const { data: order } = await supabase
           .from('site_orders')
@@ -92,7 +94,8 @@ export default function UserBookingDetail() {
         const { data: bottles } = await supabase
           .from('site_table_booking_bottles')
           .select('bottle_name, size, quantity, line_total_cents, payment_status')
-          .eq('booking_id', booking.id);
+          .eq('booking_id', booking.id)
+          .neq('payment_status', 'pending_payment');
 
         const tableType = booking.site_table_types as unknown as { name: string } | null;
         const venue = booking.site_venues as unknown as { name: string } | null;
@@ -124,10 +127,55 @@ export default function UserBookingDetail() {
         });
       }
       setLoading(false);
+  }, [id, type]);
+
+  useEffect(() => {
+    if (authLoading || !session) return;
+    load();
+  }, [authLoading, session, load]);
+
+  // A customer just came back from paying for an addon (add-table-booking-bottles'
+  // pay-ahead branch). Self-heals if the webhook hasn't confirmed it yet - same
+  // poll-and-verify pattern as BookingSuccess.tsx.
+  useEffect(() => {
+    const addonSessionId = searchParams.get('addon_session_id');
+    if (!addonSessionId || authLoading || !session) return;
+
+    let attempts = 0;
+    let cancelled = false;
+    setConfirmingAddon(true);
+
+    const poll = async () => {
+      const { data: result } = await supabase.functions.invoke('confirm-bottle-addon', {
+        body: { session_id: addonSessionId },
+      });
+      if (cancelled) return;
+
+      if (result?.status === 'paid') {
+        setConfirmingAddon(false);
+        toast({ title: 'Payment confirmed', description: 'Your bottles have been added.' });
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('addon_session_id');
+          return next;
+        }, { replace: true });
+        load();
+        return;
+      }
+      attempts += 1;
+      if (attempts < 10) {
+        setTimeout(poll, 2000);
+      } else {
+        setConfirmingAddon(false);
+      }
     };
 
-    load();
-  }, [authLoading, session, id, type]);
+    poll();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, session]);
 
   const handleShare = async () => {
     if (!data) return;
@@ -319,6 +367,26 @@ export default function UserBookingDetail() {
               </div>
             </div>
 
+            {isTable && data.status === 'paid' && (
+              <div className="px-5 pb-2">
+                {confirmingAddon ? (
+                  <div className="flex items-center justify-center gap-2 rounded-lg border border-orange-500/20 bg-orange-500/5 py-2 text-sm text-orange-400">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Confirming your payment...
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="w-full border-orange-500/40 text-orange-400 hover:bg-orange-500/10"
+                    onClick={() => setAddBottlesOpen(true)}
+                  >
+                    <Wine className="mr-2 h-4 w-4" />
+                    Add Bottles
+                  </Button>
+                )}
+              </div>
+            )}
+
             <div className="px-5 pb-5 grid grid-cols-2 gap-3">
               <Button variant="outline" className="border-white/10 text-white hover:bg-white/5" onClick={handleDownload}>
                 <Download className="mr-2 h-4 w-4" />
@@ -336,6 +404,15 @@ export default function UserBookingDetail() {
           </p>
         </div>
       </div>
+
+      {isTable && id && (
+        <AddBottlesDialog
+          bookingId={id}
+          open={addBottlesOpen}
+          onOpenChange={setAddBottlesOpen}
+          onAdded={load}
+        />
+      )}
     </>
   );
 }

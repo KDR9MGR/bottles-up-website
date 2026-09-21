@@ -1,8 +1,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import QRCode from 'npm:qrcode@1.5.3';
 import { generateTicketCode, sendTicketEmail } from './ticketEmail.ts';
-import { generateConfirmationCode, sendTableBookingEmail, formatTimeSlot } from './tableBookingEmail.ts';
+import { generateConfirmationCode, sendTableBookingEmail, sendBottleAdditionEmail, formatTimeSlot } from './tableBookingEmail.ts';
 import { dueAtVenueBottleCents } from './bottlePayment.ts';
+import { recomputeTableBookingTotals } from './bookingTotals.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseClient = ReturnType<typeof createClient<any>>;
@@ -205,5 +206,115 @@ export async function fulfillTableBooking(
       .eq('id', bookingId);
   } else {
     console.error('fulfillTableBooking: email send failed', bookingId, email.error);
+  }
+}
+
+// Confirms a customer's own pay-ahead bottle addition (Bottle Payment Options
+// section 3) once Stripe has actually charged the card. Shared by the webhook
+// (the normal path) and confirm-bottle-addon's fallback (self-heals when the
+// webhook doesn't fire - same reasoning as fulfillTicketOrder/fulfillTableBooking
+// above). Scoped to stripeSessionId so it only ever touches the exact batch of
+// lines this specific checkout attempt paid for, and only while they're still
+// pending_payment - safe to call more than once for the same session.
+export async function fulfillBottleAddon(
+  supabase: SupabaseClient,
+  bookingId: string,
+  stripeSessionId: string,
+  amountPaidCents: number,
+): Promise<void> {
+  const { data: pendingLines, error: pendingError } = await supabase
+    .from('site_table_booking_bottles')
+    .select('id, bottle_name, size, quantity, line_total_cents')
+    .eq('booking_id', bookingId)
+    .eq('stripe_checkout_session_id', stripeSessionId)
+    .eq('payment_status', 'pending_payment');
+
+  if (pendingError) {
+    console.error('fulfillBottleAddon: lookup failed', bookingId, stripeSessionId, pendingError);
+    return;
+  }
+  if (!pendingLines || pendingLines.length === 0) {
+    // Either already confirmed by a previous call, or nothing was ever queued
+    // for this session - either way there's nothing left to do.
+    return;
+  }
+
+  const { error: flipError } = await supabase
+    .from('site_table_booking_bottles')
+    .update({ payment_status: 'paid' })
+    .in('id', pendingLines.map((l: { id: string }) => l.id))
+    .eq('payment_status', 'pending_payment');
+
+  if (flipError) {
+    console.error('fulfillBottleAddon: failed to mark lines paid', bookingId, stripeSessionId, flipError);
+    return;
+  }
+
+  const totals = await recomputeTableBookingTotals(supabase, bookingId);
+
+  const { data: booking } = await supabase
+    .from('site_table_bookings')
+    .select('*, table_type:site_table_types(name), venue:site_venues(name)')
+    .eq('id', bookingId)
+    .single();
+
+  if (!booking) {
+    console.error('fulfillBottleAddon: booking not found after confirming lines', bookingId);
+    return;
+  }
+
+  const newAmountPaidCents = booking.amount_paid_cents + amountPaidCents;
+
+  const { error: updateError } = await supabase
+    .from('site_table_bookings')
+    .update({
+      bottle_subtotal_cents: totals.bottleSubtotalCents,
+      tax_cents: totals.taxCents,
+      bottlesup_fee_cents: totals.bottlesupFeeCents,
+      amount_total_cents: totals.amountTotalCents,
+      amount_paid_cents: newAmountPaidCents,
+    })
+    .eq('id', bookingId);
+
+  if (updateError) {
+    console.error('fulfillBottleAddon: failed to update booking totals', bookingId, updateError);
+    return;
+  }
+
+  await supabase.from('audit_log').insert({
+    actor_email: booking.customer_email,
+    action: 'table_booking.customer_addon_confirmed',
+    entity_type: 'site_table_bookings',
+    entity_id: bookingId,
+    details: {
+      stripe_checkout_session_id: stripeSessionId,
+      amount_charged_cents: amountPaidCents,
+      bottles: pendingLines,
+      new_amount_total_cents: totals.amountTotalCents,
+      new_amount_paid_cents: newAmountPaidCents,
+    },
+  });
+
+  const tableType = booking.table_type as { name: string };
+  const venue = booking.venue as { name: string };
+
+  const email = await sendBottleAdditionEmail({
+    toEmail: booking.customer_email,
+    toName: booking.customer_name,
+    venueName: venue.name,
+    tableTypeName: tableType.name,
+    confirmationCode: booking.confirmation_code,
+    addedBottles: pendingLines.map((l: { bottle_name: string; size: string | null; quantity: number; line_total_cents: number }) => ({
+      ...l,
+      payment_status: 'paid' as const,
+    })),
+    amountChargedNowCents: amountPaidCents,
+    newAmountTotalCents: totals.amountTotalCents,
+    newAmountPaidCents,
+    currency: booking.currency,
+  });
+
+  if (!email.sent) {
+    console.error('fulfillBottleAddon: email send failed', bookingId, email.error);
   }
 }

@@ -132,13 +132,16 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
   // charged through Stripe - only the deposit was - so they're excluded from the
   // taxed subtotal and added back in untaxed. Staff-added bottles (is_addon) keep
   // the original behavior of being taxed together with everything else.
+  // pending_payment lines (a customer's own in-progress addon checkout) aren't
+  // billed to anyone yet, so they're excluded from every total until the webhook
+  // confirms them - never counted as already collected or already due.
   const totals = useMemo(() => {
     if (!booking) return null;
     const dueAtVenueBottleCents = bottleLines
       .filter((l) => l.payment_status === 'due_at_venue')
       .reduce((sum, l) => sum + l.line_total_cents, 0);
     const taxedBottleCents = bottleLines
-      .filter((l) => l.payment_status !== 'due_at_venue')
+      .filter((l) => l.payment_status === 'paid')
       .reduce((sum, l) => sum + l.line_total_cents, 0);
     const pendingSubtotal = pending.reduce((sum, p) => sum + p.unitPriceCents * p.quantity, 0);
     const bottleSubtotalCents = taxedBottleCents + dueAtVenueBottleCents + pendingSubtotal;
@@ -345,6 +348,11 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                               {line.payment_status === 'due_at_venue' && (
                                 <Badge variant="outline" className="ml-2 text-[10px] text-orange-400">
                                   Due at venue
+                                </Badge>
+                              )}
+                              {line.payment_status === 'pending_payment' && (
+                                <Badge variant="outline" className="ml-2 text-[10px] text-gray-400">
+                                  Customer payment processing
                                 </Badge>
                               )}
                             </TableCell>

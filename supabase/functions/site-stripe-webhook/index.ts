@@ -1,6 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
-import { fulfillTicketOrder, fulfillTableBooking } from '../_shared/fulfillment.ts';
+import { fulfillTicketOrder, fulfillTableBooking, fulfillBottleAddon } from '../_shared/fulfillment.ts';
 
 const cryptoProvider = Stripe.createSubtleCryptoProvider();
 
@@ -74,7 +74,9 @@ Deno.serve(async (req: Request) => {
       return new Response('ok', { status: 200 });
     }
 
-    if (bookingId) {
+    if (bookingId && session.metadata?.kind === 'bottle_addon') {
+      await fulfillBottleAddon(supabase, bookingId, session.id, session.amount_total ?? 0);
+    } else if (bookingId) {
       await fulfillTableBooking(supabase, bookingId, paymentIntentId);
     } else if (orderId) {
       await fulfillTicketOrder(supabase, orderId, paymentIntentId);
