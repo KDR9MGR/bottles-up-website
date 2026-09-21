@@ -39,6 +39,7 @@ import UserBookingDetail from "./pages/UserBookingDetail";
 import RequireDoorAuth from "./door/RequireDoorAuth";
 import DoorLogin from "./door/pages/DoorLogin";
 import ScanTickets from "./door/pages/ScanTickets";
+import CheckInTables from "./door/pages/CheckInTables";
 import PartnerApply from "./partners/pages/PartnerApply";
 import PartnerLogin from "./partners/pages/PartnerLogin";
 import PartnerOnboarding from "./partners/pages/PartnerOnboarding";
@@ -78,6 +79,14 @@ const App = () => {
               element={
                 <RequireDoorAuth>
                   <ScanTickets />
+                </RequireDoorAuth>
+              }
+            />
+            <Route
+              path="/door/tables"
+              element={
+                <RequireDoorAuth>
+                  <CheckInTables />
                 </RequireDoorAuth>
               }
             />

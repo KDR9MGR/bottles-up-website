@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
 import { CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -170,7 +171,12 @@ const ScanTickets = () => {
   return (
     <div className="flex min-h-screen flex-col items-center bg-black px-4 py-8">
       <div className="mb-4 flex w-full max-w-sm items-center justify-between">
-        <h1 className="text-xl font-bold text-white">Scan Tickets</h1>
+        <div>
+          <h1 className="text-xl font-bold text-white">Scan Tickets</h1>
+          <Link to="/door/tables" className="text-xs text-gray-500 hover:text-gray-300">
+            Switch to Table Check-In
+          </Link>
+        </div>
         <Button variant="ghost" size="sm" className="text-gray-400" onClick={() => doorSignOut()}>
           Sign out
         </Button>

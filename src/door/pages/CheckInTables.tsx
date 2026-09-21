@@ -1,0 +1,368 @@
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Html5Qrcode } from 'html5-qrcode';
+import { CheckCircle2, XCircle, Search, Wine } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabase';
+import { doorSignOut } from '../useDoorAuth';
+import type { FulfillmentStatus } from '@/types/database';
+
+const READER_ID = 'door-table-qr-reader';
+const SAME_CODE_COOLDOWN_MS = 5000;
+
+interface BottleLine {
+  bottle_name: string;
+  size: string | null;
+  quantity: number;
+  line_total_cents: number;
+  payment_status: 'paid' | 'due_at_venue';
+}
+
+interface BookingLookup {
+  found: boolean;
+  id: string;
+  confirmation_code: string;
+  customer_name: string;
+  customer_email: string;
+  guest_count: number;
+  venue_name: string;
+  table_type_name: string;
+  booking_date: string;
+  start_time: string;
+  status: string;
+  checked_in_at: string | null;
+  fulfillment_status: FulfillmentStatus;
+  deposit_cents: number;
+  deposit_is_credit: boolean;
+  amount_total_cents: number;
+  amount_paid_cents: number;
+  currency: string;
+  bottles: BottleLine[];
+}
+
+interface SearchHit {
+  confirmation_code: string;
+  customer_name: string;
+  table_type_name: string;
+  venue_name: string;
+  booking_date: string;
+  start_time: string;
+  checked_in_at: string | null;
+}
+
+const FULFILLMENT_LABELS: Record<FulfillmentStatus, string> = {
+  confirmed: 'Confirmed',
+  preparing: 'Preparing',
+  served: 'Served',
+  completed: 'Completed',
+};
+
+const money = (cents: number, currency: string) => `$${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
+
+const CheckInTables = () => {
+  const { toast } = useToast();
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const busyRef = useRef(false);
+  const pausedRef = useRef(false);
+  const lastCodeRef = useRef<{ code: string; at: number } | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [manualCode, setManualCode] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchHit[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [looking, setLooking] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [booking, setBooking] = useState<BookingLookup | null>(null);
+  const [checkingIn, setCheckingIn] = useState(false);
+
+  const runLookup = async (code: string) => {
+    if (!code.trim() || busyRef.current) return;
+    busyRef.current = true;
+    pausedRef.current = true;
+    setLooking(true);
+    setLookupError(null);
+    const { data, error } = await supabase.rpc('lookup_table_booking_for_checkin', { p_code: code.trim() });
+    setLooking(false);
+    busyRef.current = false;
+
+    if (error) {
+      setLookupError(/not authorized/i.test(error.message ?? '') ? 'Your session expired - sign in again.' : 'Lookup failed - try again.');
+      return;
+    }
+    const result = data as BookingLookup;
+    if (!result?.found) {
+      setLookupError('No booking found for that code.');
+      return;
+    }
+    setSearchResults(null);
+    setBooking(result);
+  };
+
+  useEffect(() => {
+    const scanner = new Html5Qrcode(READER_ID);
+    scannerRef.current = scanner;
+
+    scanner
+      .start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText) => {
+          if (busyRef.current || pausedRef.current) return;
+          const last = lastCodeRef.current;
+          if (last && last.code === decodedText && Date.now() - last.at < SAME_CODE_COOLDOWN_MS) return;
+          lastCodeRef.current = { code: decodedText, at: Date.now() };
+          runLookup(decodedText);
+        },
+        () => {
+          // per-frame decode miss - expected while the camera searches, not an error
+        },
+      )
+      .catch((err) => {
+        setCameraError(err instanceof Error ? err.message : 'Could not access the camera. Use search or manual entry below.');
+      });
+
+    return () => {
+      scanner.stop().then(() => scanner.clear()).catch(() => {});
+    };
+  }, []);
+
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    runLookup(manualCode);
+    setManualCode('');
+  };
+
+  const handleSearchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    setLookupError(null);
+    const { data, error } = await supabase.rpc('search_table_bookings_for_checkin', { p_query: searchQuery.trim() });
+    setSearching(false);
+    if (error) {
+      setLookupError('Search failed - try again.');
+      return;
+    }
+    setSearchResults((data as SearchHit[]) ?? []);
+  };
+
+  const handleCheckIn = async () => {
+    if (!booking || checkingIn) return;
+    setCheckingIn(true);
+    const { data, error } = await supabase.rpc('checkin_ticket', { p_ticket_code: booking.confirmation_code });
+    setCheckingIn(false);
+
+    if (error) {
+      toast({ title: 'Check-in failed', description: error.message, variant: 'destructive' });
+      return;
+    }
+    const outcome = data?.[0]?.result;
+    if (outcome === 'ok') {
+      toast({ title: 'Checked in', description: `${booking.customer_name} is in.` });
+    } else if (outcome === 'already_checked_in') {
+      toast({ title: 'Already checked in' });
+    } else if (outcome === 'expired') {
+      toast({ title: 'This booking has expired', variant: 'destructive' });
+    } else if (outcome === 'not_paid') {
+      toast({ title: 'This booking is not paid', variant: 'destructive' });
+    }
+    // Refresh from the source of truth rather than assuming the RPC's outcome
+    // maps 1:1 onto what changed - re-lookup shows exactly what's on the row now.
+    runLookup(booking.confirmation_code);
+  };
+
+  const scanNext = () => {
+    pausedRef.current = false;
+    setBooking(null);
+    setLookupError(null);
+    setSearchResults(null);
+  };
+
+  const paidOnline = booking?.bottles.filter((b) => b.payment_status === 'paid') ?? [];
+  const awaitingClub = booking?.bottles.filter((b) => b.payment_status === 'due_at_venue') ?? [];
+  const balanceDueCents = booking ? Math.max(booking.amount_total_cents - booking.amount_paid_cents, 0) : 0;
+
+  return (
+    <div className="flex min-h-screen flex-col items-center bg-black px-4 py-8">
+      <div className="mb-4 flex w-full max-w-sm items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-white">Table Check-In</h1>
+          <Link to="/door/scan" className="text-xs text-gray-500 hover:text-gray-300">
+            Switch to Scan Tickets
+          </Link>
+        </div>
+        <Button variant="ghost" size="sm" className="text-gray-400" onClick={() => doorSignOut()}>
+          Sign out
+        </Button>
+      </div>
+
+      {booking ? (
+        <div className="w-full max-w-sm space-y-4">
+          <div className="rounded-2xl border-2 border-gray-800 bg-gray-950 p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <div className="text-lg font-bold text-white">{booking.customer_name}</div>
+                <div className="text-xs text-gray-500">{booking.customer_email}</div>
+              </div>
+              {booking.checked_in_at ? (
+                <Badge variant="outline" className="border-green-600 text-green-400">
+                  Checked In
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="border-gray-700 text-gray-400">
+                  Not checked in
+                </Badge>
+              )}
+            </div>
+
+            <div className="mb-3 space-y-1 text-sm text-gray-300">
+              <div>{booking.table_type_name} - {booking.venue_name}</div>
+              <div className="text-gray-500">{booking.guest_count} guests · Confirmation {booking.confirmation_code}</div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-500">Service status:</span>
+                <Badge variant="outline" className="border-gray-700 text-gray-300">
+                  {FULFILLMENT_LABELS[booking.fulfillment_status]}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-gray-800 p-3 text-sm">
+              <div className="flex justify-between text-gray-300">
+                <span>
+                  Table deposit
+                  {booking.deposit_is_credit && (
+                    <span className="ml-1 text-xs text-gray-500">(credited toward bottle bill)</span>
+                  )}
+                </span>
+                <span>{money(booking.deposit_cents, booking.currency)}</span>
+              </div>
+
+              {paidOnline.length > 0 && (
+                <div>
+                  <div className="mt-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-gray-500">
+                    <Wine className="h-3 w-3" /> Paid Online
+                  </div>
+                  {paidOnline.map((b, i) => (
+                    <div key={i} className="flex justify-between text-gray-300">
+                      <span>{b.bottle_name}{b.size ? ` (${b.size})` : ''} × {b.quantity}</span>
+                      <span>{money(b.line_total_cents, booking.currency)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {awaitingClub.length > 0 && (
+                <div>
+                  <div className="mt-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-orange-500">
+                    <Wine className="h-3 w-3" /> Awaiting Club Payment
+                  </div>
+                  {awaitingClub.map((b, i) => (
+                    <div key={i} className="flex justify-between text-orange-300">
+                      <span>{b.bottle_name}{b.size ? ` (${b.size})` : ''} × {b.quantity}</span>
+                      <span>{money(b.line_total_cents, booking.currency)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div
+                className={`flex justify-between border-t border-gray-800 pt-2 font-semibold ${balanceDueCents > 0 ? 'text-orange-400' : 'text-emerald-400'}`}
+              >
+                <span>Remaining balance</span>
+                <span>{money(balanceDueCents, booking.currency)}</span>
+              </div>
+            </div>
+          </div>
+
+          {booking.checked_in_at ? (
+            <div className="rounded-2xl border-2 border-green-600 bg-green-950 p-4 text-center text-green-400">
+              <CheckCircle2 className="mx-auto mb-2 h-8 w-8" />
+              Checked in
+            </div>
+          ) : booking.status !== 'paid' ? (
+            <div className="rounded-2xl border-2 border-red-600 bg-red-950 p-4 text-center text-red-400">
+              <XCircle className="mx-auto mb-2 h-8 w-8" />
+              This booking is not paid
+            </div>
+          ) : (
+            <Button
+              className="w-full bg-gradient-orange text-black font-bold hover:opacity-90"
+              disabled={checkingIn}
+              onClick={handleCheckIn}
+            >
+              {checkingIn ? 'Checking in...' : 'Check In'}
+            </Button>
+          )}
+
+          <Button variant="outline" className="w-full border-gray-700 text-gray-300" onClick={scanNext}>
+            Scan Next
+          </Button>
+        </div>
+      ) : (
+        <div className="w-full max-w-sm">
+          <div id={READER_ID} className="overflow-hidden rounded-2xl border border-gray-800" />
+          {cameraError && <p className="mt-3 text-center text-sm text-amber-400">{cameraError}</p>}
+          {looking && <p className="mt-3 text-center text-sm text-gray-400">Looking up...</p>}
+          {lookupError && <p className="mt-3 text-center text-sm text-red-400">{lookupError}</p>}
+
+          <form onSubmit={handleManualSubmit} className="mt-6 flex gap-2">
+            <Input
+              placeholder="Or enter confirmation code"
+              value={manualCode}
+              onChange={(e) => setManualCode(e.target.value)}
+              className="font-mono"
+            />
+            <Button type="submit" disabled={looking || !manualCode.trim()}>
+              Check
+            </Button>
+          </form>
+
+          <form onSubmit={handleSearchSubmit} className="mt-3 flex gap-2">
+            <Input
+              placeholder="Or search by name/email"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <Button type="submit" variant="outline" className="border-gray-700" disabled={searching || !searchQuery.trim()}>
+              <Search className="h-4 w-4" />
+            </Button>
+          </form>
+
+          {searchResults && (
+            <div className="mt-3 space-y-2">
+              {searchResults.length === 0 ? (
+                <p className="text-center text-sm text-gray-500">No matches.</p>
+              ) : (
+                searchResults.map((hit) => (
+                  <button
+                    key={hit.confirmation_code}
+                    type="button"
+                    onClick={() => runLookup(hit.confirmation_code)}
+                    className="flex w-full items-center justify-between rounded-lg border border-gray-800 p-3 text-left hover:border-gray-600"
+                  >
+                    <div>
+                      <div className="text-sm font-medium text-white">{hit.customer_name}</div>
+                      <div className="text-xs text-gray-500">
+                        {hit.table_type_name} - {hit.venue_name}
+                      </div>
+                    </div>
+                    {hit.checked_in_at ? (
+                      <Badge variant="outline" className="border-green-600 text-green-400 text-[10px]">
+                        In
+                      </Badge>
+                    ) : null}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default CheckInTables;
