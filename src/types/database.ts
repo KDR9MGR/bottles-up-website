@@ -23,6 +23,7 @@ export type PricingMode = 'flat' | 'hourly';
 export type BottlePaymentMode = 'pay_ahead' | 'pay_at_club' | 'both';
 export type BottlePaymentChoice = 'pay_ahead' | 'pay_at_club';
 export type BottleLinePaymentStatus = 'paid' | 'due_at_venue' | 'pending_payment';
+export type BottleServiceStatus = 'awaiting_prep' | 'preparing' | 'ready' | 'served';
 export type FulfillmentStatus = 'confirmed' | 'preparing' | 'served' | 'completed';
 export type DiscountType = 'percentage' | 'fixed_amount';
 export type PromoAppliesTo = 'tickets' | 'tables' | 'both';
@@ -433,6 +434,7 @@ export interface Database {
           is_addon: boolean;
           added_by: string | null;
           payment_status: BottleLinePaymentStatus;
+          service_status: BottleServiceStatus;
           stripe_checkout_session_id: string | null;
           created_at: string;
         };

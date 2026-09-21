@@ -16,7 +16,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { doorSignOut } from '../useDoorAuth';
-import type { FulfillmentStatus } from '@/types/database';
+import type { FulfillmentStatus, BottleServiceStatus } from '@/types/database';
 import {
   recordClubPayment,
   uploadReceiptPhoto,
@@ -27,16 +27,19 @@ import {
   type SplitLeg,
   type SplitLegMethod,
 } from '@/lib/clubPayment';
+import { updateBottleServiceStatus, BOTTLE_SERVICE_STATUS_LABELS, BOTTLE_SERVICE_STATUSES } from '@/lib/bottleService';
 
 const READER_ID = 'door-table-qr-reader';
 const SAME_CODE_COOLDOWN_MS = 5000;
 
 interface BottleLine {
+  id: string;
   bottle_name: string;
   size: string | null;
   quantity: number;
   line_total_cents: number;
   payment_status: 'paid' | 'due_at_venue';
+  service_status: BottleServiceStatus;
 }
 
 interface BookingLookup {
@@ -204,6 +207,27 @@ const CheckInTables = () => {
     else toast({ title: 'Could not open receipt', variant: 'destructive' });
   };
 
+  const handleServiceStatusChange = async (bottleLineId: string, status: BottleServiceStatus) => {
+    if (!booking) return;
+    // Optimistic - staff move through these quickly during service, and it's
+    // easy to correct with another tap if something goes wrong.
+    setBooking((prev) =>
+      prev
+        ? { ...prev, bottles: prev.bottles.map((b) => (b.id === bottleLineId ? { ...b, service_status: status } : b)) }
+        : prev,
+    );
+    try {
+      await updateBottleServiceStatus(bottleLineId, status);
+    } catch (err) {
+      toast({
+        title: 'Could not update service status',
+        description: err instanceof Error ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+      runLookup(booking.confirmation_code);
+    }
+  };
+
   useEffect(() => {
     const scanner = new Html5Qrcode(READER_ID);
     scannerRef.current = scanner;
@@ -350,10 +374,20 @@ const CheckInTables = () => {
                   <div className="mt-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-gray-500">
                     <Wine className="h-3 w-3" /> Paid Online
                   </div>
-                  {paidOnline.map((b, i) => (
-                    <div key={i} className="flex justify-between text-gray-300">
-                      <span>{b.bottle_name}{b.size ? ` (${b.size})` : ''} × {b.quantity}</span>
+                  {paidOnline.map((b) => (
+                    <div key={b.id} className="flex items-center justify-between gap-2 py-0.5 text-gray-300">
+                      <span className="flex-1">{b.bottle_name}{b.size ? ` (${b.size})` : ''} × {b.quantity}</span>
                       <span>{money(b.line_total_cents, booking.currency)}</span>
+                      <Select value={b.service_status} onValueChange={(v) => handleServiceStatusChange(b.id, v as BottleServiceStatus)}>
+                        <SelectTrigger className="h-7 w-[128px] text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {BOTTLE_SERVICE_STATUSES.map((s) => (
+                            <SelectItem key={s} value={s}>{BOTTLE_SERVICE_STATUS_LABELS[s]}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   ))}
                 </div>
@@ -364,10 +398,20 @@ const CheckInTables = () => {
                   <div className="mt-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-orange-500">
                     <Wine className="h-3 w-3" /> Awaiting Club Payment
                   </div>
-                  {awaitingClub.map((b, i) => (
-                    <div key={i} className="flex justify-between text-orange-300">
-                      <span>{b.bottle_name}{b.size ? ` (${b.size})` : ''} × {b.quantity}</span>
+                  {awaitingClub.map((b) => (
+                    <div key={b.id} className="flex items-center justify-between gap-2 py-0.5 text-orange-300">
+                      <span className="flex-1">{b.bottle_name}{b.size ? ` (${b.size})` : ''} × {b.quantity}</span>
                       <span>{money(b.line_total_cents, booking.currency)}</span>
+                      <Select value={b.service_status} onValueChange={(v) => handleServiceStatusChange(b.id, v as BottleServiceStatus)}>
+                        <SelectTrigger className="h-7 w-[128px] text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {BOTTLE_SERVICE_STATUSES.map((s) => (
+                            <SelectItem key={s} value={s}>{BOTTLE_SERVICE_STATUS_LABELS[s]}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   ))}
                 </div>

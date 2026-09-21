@@ -38,7 +38,8 @@ import {
   type SplitLeg,
   type SplitLegMethod,
 } from '@/lib/clubPayment';
-import type { Database, OrderStatus } from '@/types/database';
+import { updateBottleServiceStatus, BOTTLE_SERVICE_STATUS_LABELS, BOTTLE_SERVICE_STATUSES } from '@/lib/bottleService';
+import type { Database, OrderStatus, BottleServiceStatus } from '@/types/database';
 
 type BookingRow = Database['public']['Tables']['site_table_bookings']['Row'] & {
   site_venues: { id: string; name: string; tax_rate_bps: number } | null;
@@ -337,6 +338,20 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
     else toast({ title: 'Could not open receipt', variant: 'destructive' });
   };
 
+  const handleServiceStatusChange = async (lineId: string, status: BottleServiceStatus) => {
+    setBottleLines((prev) => prev.map((l) => (l.id === lineId ? { ...l, service_status: status } : l)));
+    try {
+      await updateBottleServiceStatus(lineId, status);
+    } catch (err) {
+      toast({
+        title: 'Could not update service status',
+        description: err instanceof Error ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+      load();
+    }
+  };
+
   return (
     <Sheet open={!!bookingId} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full overflow-y-auto border-gray-800 bg-gray-950 sm:max-w-xl">
@@ -424,7 +439,23 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                             </TableCell>
                             <TableCell>{line.quantity}</TableCell>
                             <TableCell className="text-right">{money(line.line_total_cents, booking.currency)}</TableCell>
-                            <TableCell />
+                            <TableCell>
+                              {line.payment_status !== 'pending_payment' && (
+                                <Select
+                                  value={line.service_status}
+                                  onValueChange={(v) => handleServiceStatusChange(line.id, v as BottleServiceStatus)}
+                                >
+                                  <SelectTrigger className="h-7 w-[128px] text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {BOTTLE_SERVICE_STATUSES.map((s) => (
+                                      <SelectItem key={s} value={s}>{BOTTLE_SERVICE_STATUS_LABELS[s]}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </TableCell>
                           </TableRow>
                         ))}
                         {pending.map((p, i) => (
