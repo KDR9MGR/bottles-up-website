@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { StaffRole } from '@/types/database';
+import type { PaymentStatus } from '@/lib/clubPayment';
 
 export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
   door_staff: 'Door Staff',
@@ -22,6 +23,7 @@ export interface MyTable {
   dueAtVenueCount: number;
   balanceDueCents: number;
   fulfillmentStatus: string;
+  paymentStatus: PaymentStatus | null;
 }
 
 export async function listMyTables(): Promise<MyTable[]> {
@@ -40,6 +42,7 @@ export async function listMyTables(): Promise<MyTable[]> {
     dueAtVenueCount: r.due_at_venue_count as number,
     balanceDueCents: r.balance_due_cents as number,
     fulfillmentStatus: r.fulfillment_status as string,
+    paymentStatus: (r.payment_status as PaymentStatus | null) ?? null,
   }));
 }
 

@@ -70,6 +70,10 @@ export interface ReconciliationClubPayment {
   customerConfirmationStatus: 'pending' | 'confirmed' | 'disputed';
   managerVerifiedAt: string | null;
   correctsPaymentId: string | null;
+  bottleSubtotalCents: number;
+  discountCents: number;
+  taxCents: number;
+  gratuityCents: number;
 }
 
 export interface ReconciliationRefund {
@@ -166,6 +170,10 @@ export async function getBookingReconciliation(bookingId: string): Promise<Booki
       customerConfirmationStatus: p.customer_confirmation_status,
       managerVerifiedAt: p.manager_verified_at,
       correctsPaymentId: p.corrects_payment_id,
+      bottleSubtotalCents: (p.bottle_subtotal_cents as number) ?? 0,
+      discountCents: (p.discount_cents as number) ?? 0,
+      taxCents: (p.tax_cents as number) ?? 0,
+      gratuityCents: (p.gratuity_cents as number) ?? 0,
     })),
     refunds: (data.refunds ?? []).map((r: Record<string, unknown>) => ({
       id: r.id,

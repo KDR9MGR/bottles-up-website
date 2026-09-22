@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { listMyTables, listMyBottleOrders, type MyTable, type MyBottleOrder } from '@/lib/staffDashboard';
+import { PAYMENT_STATUS_LABELS } from '@/lib/clubPayment';
 import { doorSignOut } from '../../door/useDoorAuth';
 
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
@@ -83,8 +84,19 @@ const MyTables = () => {
             <div key={t.id} className="rounded-2xl border-2 border-gray-800 bg-gray-950 p-4">
               <div className="mb-1 flex items-center justify-between">
                 <div className="font-bold text-white">{t.tableTypeName}</div>
-                {t.balanceDueCents > 0 ? (
-                  <Badge variant="outline" className="border-orange-500/40 text-orange-400">Payment due</Badge>
+                {t.paymentStatus ? (
+                  <Badge
+                    variant="outline"
+                    className={
+                      t.paymentStatus === 'payment_due'
+                        ? 'border-orange-500/40 text-orange-400'
+                        : t.paymentStatus === 'payment_recorded'
+                          ? 'border-blue-600 text-blue-400'
+                          : 'border-purple-600 text-purple-400'
+                    }
+                  >
+                    {PAYMENT_STATUS_LABELS[t.paymentStatus]}
+                  </Badge>
                 ) : (
                   <Badge variant="outline" className="border-green-600 text-green-400">Paid</Badge>
                 )}

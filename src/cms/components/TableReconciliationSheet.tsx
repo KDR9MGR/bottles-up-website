@@ -16,6 +16,7 @@ import {
   closeTableBookingReconciliation,
   type BookingReconciliation,
 } from '@/lib/reconciliation';
+import { derivePaymentStatus, PAYMENT_STATUS_LABELS } from '@/lib/clubPayment';
 
 const money = (cents: number, currency = 'CAD') => `$${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
 
@@ -182,6 +183,25 @@ const TableReconciliationSheet = ({ bookingId, onOpenChange, onClosed }: TableRe
                   <span>Outstanding balance</span>
                   <span>{money(detail.balanceDueCents ?? 0, detail.currency)}</span>
                 </div>
+                {(() => {
+                  const status = derivePaymentStatus(detail.balanceDueCents ?? 0, detail.clubPayments ?? []);
+                  return status && (
+                    <div className="flex justify-end">
+                      <Badge
+                        variant="outline"
+                        className={
+                          status === 'payment_due'
+                            ? 'border-orange-500/40 text-[10px] text-orange-400'
+                            : status === 'payment_recorded'
+                              ? 'border-blue-600 text-[10px] text-blue-400'
+                              : 'border-purple-600 text-[10px] text-purple-400'
+                        }
+                      >
+                        {PAYMENT_STATUS_LABELS[status]}
+                      </Badge>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="space-y-1.5 rounded-lg border border-gray-800 p-4 text-sm">

@@ -35,6 +35,8 @@ import {
   managerVerifyClubPayment,
   listClubPayments,
   getReceiptSignedUrl,
+  derivePaymentStatus,
+  PAYMENT_STATUS_LABELS,
   type ClubPaymentMethod,
   type ClubPaymentRecord,
 } from '@/lib/clubPayment';
@@ -186,6 +188,8 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
     const balanceDueCents = Math.max(totalCents - booking.amount_paid_cents, 0);
     return { bottleSubtotalCents, taxCents, feeCents, totalCents, balanceDueCents };
   }, [booking, bottleLines, bottlesUpFeeBps]);
+
+  const paymentStatus = totals ? derivePaymentStatus(totals.balanceDueCents, paymentHistory) : null;
 
   const handleViewReceipt = async (path: string) => {
     const url = await getReceiptSignedUrl(path);
@@ -649,6 +653,22 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                   <span>Balance due</span>
                   <span>{money(totals.balanceDueCents, booking.currency)}</span>
                 </div>
+                {paymentStatus && (
+                  <div className="flex justify-end">
+                    <Badge
+                      variant="outline"
+                      className={
+                        paymentStatus === 'payment_due'
+                          ? 'border-orange-500/40 text-[10px] text-orange-400'
+                          : paymentStatus === 'payment_recorded'
+                            ? 'border-blue-600 text-[10px] text-blue-400'
+                            : 'border-purple-600 text-[10px] text-purple-400'
+                      }
+                    >
+                      {PAYMENT_STATUS_LABELS[paymentStatus]}
+                    </Badge>
+                  </div>
+                )}
               </div>
 
               {paymentHistory.length > 0 && (

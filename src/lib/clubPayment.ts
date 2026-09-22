@@ -192,6 +192,30 @@ export async function correctClubPayment(opts: {
   };
 }
 
+export type PaymentStatus = 'payment_due' | 'payment_recorded' | 'venue_verified';
+
+export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
+  payment_due: 'Payment Due',
+  payment_recorded: 'Payment Recorded',
+  venue_verified: 'Venue Verified',
+};
+
+// Section 7: a staff/manager-facing pipeline, distinct from
+// customer_confirmation_status (the customer's own agree/dispute signal).
+// Deliberately not a stored column - fully derivable from data that already
+// exists (the booking's balance and each payment's manager_verified_at), so
+// there's nothing new to keep in sync. Returns null when the balance was
+// covered without any club payment at all (paid entirely online) - there's
+// no club-side pipeline to show in that case.
+export function derivePaymentStatus(
+  balanceDueCents: number,
+  payments: Array<{ managerVerifiedAt: string | null }>,
+): PaymentStatus | null {
+  if (balanceDueCents > 0) return 'payment_due';
+  if (payments.length === 0) return null;
+  return payments.every((p) => p.managerVerifiedAt) ? 'venue_verified' : 'payment_recorded';
+}
+
 // Section 9 "No customer response": lets a manager note that they checked
 // the POS receipt themselves, WITHOUT ever marking the customer as having
 // confirmed - customer_confirmation_status stays untouched on the server.

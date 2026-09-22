@@ -21,6 +21,8 @@ import type { FulfillmentStatus, BottleServiceStatus } from '@/types/database';
 import {
   listClubPayments,
   getReceiptSignedUrl,
+  derivePaymentStatus,
+  PAYMENT_STATUS_LABELS,
   type ClubPaymentRecord,
 } from '@/lib/clubPayment';
 import { updateBottleServiceStatus, BOTTLE_SERVICE_STATUS_LABELS, BOTTLE_SERVICE_STATUSES } from '@/lib/bottleService';
@@ -291,6 +293,7 @@ const CheckInTables = () => {
   const awaitingClub = booking?.bottles.filter((b) => b.payment_status === 'due_at_venue' && !b.cancelled_at) ?? [];
   const cancelledBottles = booking?.bottles.filter((b) => b.cancelled_at) ?? [];
   const balanceDueCents = booking ? Math.max(booking.amount_total_cents - booking.amount_paid_cents, 0) : 0;
+  const paymentStatus = booking ? derivePaymentStatus(balanceDueCents, paymentHistory) : null;
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-black px-4 py-8">
@@ -459,6 +462,22 @@ const CheckInTables = () => {
                 <span>Remaining balance</span>
                 <span>{money(balanceDueCents, booking.currency)}</span>
               </div>
+              {paymentStatus && (
+                <div className="flex justify-end">
+                  <Badge
+                    variant="outline"
+                    className={
+                      paymentStatus === 'payment_due'
+                        ? 'border-orange-500/40 text-[10px] text-orange-400'
+                        : paymentStatus === 'payment_recorded'
+                          ? 'border-blue-600 text-[10px] text-blue-400'
+                          : 'border-purple-600 text-[10px] text-purple-400'
+                    }
+                  >
+                    {PAYMENT_STATUS_LABELS[paymentStatus]}
+                  </Badge>
+                </div>
+              )}
             </div>
           </div>
 
