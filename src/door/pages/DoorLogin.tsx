@@ -12,7 +12,7 @@ import { doorSignOut, useDoorAuth } from '../useDoorAuth';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const DoorLogin = () => {
-  const { session, isDoorStaff, loading } = useDoorAuth();
+  const { session, isDoorStaff, role, loading } = useDoorAuth();
   const location = useLocation();
   const { toast } = useToast();
   const [email, setEmail] = useState('');
@@ -20,7 +20,12 @@ const DoorLogin = () => {
   const [linkSent, setLinkSent] = useState(false);
 
   if (!loading && session && isDoorStaff) {
-    const from = (location.state as { from?: Location })?.from?.pathname ?? '/door/scan';
+    // door_staff still lands on the scanner; every other role (server,
+    // cashier, bartender, manager) lands on the server dashboard - section 2
+    // of the Server and Pay-at-Club spec. Whatever page they were actually
+    // trying to reach (state.from) always wins over this default.
+    const defaultDestination = role === 'door_staff' ? '/door/scan' : '/staff/tables';
+    const from = (location.state as { from?: Location })?.from?.pathname ?? defaultDestination;
     return <Navigate to={from} replace />;
   }
 
@@ -53,9 +58,13 @@ const DoorLogin = () => {
     }
 
     setSending(true);
+    // Redirect back through this same login page rather than straight to
+    // /door/scan - its own role-aware logic above sends door_staff to the
+    // scanner and every other role to their dashboard once the session
+    // resolves, whether they started at /door/login or /staff/login.
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${getAuthRedirectBase()}/door/scan` },
+      options: { emailRedirectTo: `${getAuthRedirectBase()}${location.pathname}` },
     });
     setSending(false);
 

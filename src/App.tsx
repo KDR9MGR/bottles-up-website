@@ -44,6 +44,12 @@ import RequireDoorAuth from "./door/RequireDoorAuth";
 import DoorLogin from "./door/pages/DoorLogin";
 import ScanTickets from "./door/pages/ScanTickets";
 import CheckInTables from "./door/pages/CheckInTables";
+import StaffLayout from "./staff/StaffLayout";
+import MyTables from "./staff/pages/MyTables";
+import BottleOrders from "./staff/pages/BottleOrders";
+import Alerts from "./staff/pages/Alerts";
+import Profile from "./staff/pages/Profile";
+import StaffTableDetail from "./staff/pages/StaffTableDetail";
 import PartnerApply from "./partners/pages/PartnerApply";
 import PartnerLogin from "./partners/pages/PartnerLogin";
 import PartnerOnboarding from "./partners/pages/PartnerOnboarding";
@@ -98,6 +104,20 @@ const App = () => {
                 </RequireDoorAuth>
               }
             />
+            <Route
+              path="/staff/*"
+              element={
+                <RequireDoorAuth>
+                  <StaffLayout />
+                </RequireDoorAuth>
+              }
+            >
+              <Route path="tables" element={<MyTables />} />
+              <Route path="tables/:code" element={<StaffTableDetail />} />
+              <Route path="orders" element={<BottleOrders />} />
+              <Route path="alerts" element={<Alerts />} />
+              <Route path="profile" element={<Profile />} />
+            </Route>
             <Route path="/cms/login" element={<CmsLogin />} />
             <Route
               path="/cms/*"

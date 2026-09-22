@@ -14,7 +14,8 @@ const RequireDoorAuth = ({ children }: { children: React.ReactNode }) => {
   }
 
   if (!session || !isDoorStaff) {
-    return <Navigate to="/door/login" state={{ from: location }} replace />;
+    const loginPath = location.pathname.startsWith('/staff') ? '/staff/login' : '/door/login';
+    return <Navigate to={loginPath} state={{ from: location }} replace />;
   }
 
   return <>{children}</>;

@@ -31,18 +31,11 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/auditLog';
+import { STAFF_ROLE_LABELS } from '@/lib/staffDashboard';
 import type { Database, StaffRole } from '@/types/database';
 
 type DoorStaffRow = Database['public']['Tables']['door_staff']['Row'] & {
   site_events: { title: string } | null;
-};
-
-const ROLE_LABELS: Record<StaffRole, string> = {
-  door_staff: 'Door Staff',
-  server: 'Server',
-  cashier: 'Cashier',
-  bartender: 'Bartender',
-  manager: 'Manager',
 };
 
 const emptyForm = {
@@ -183,8 +176,8 @@ const CmsDoorStaff = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {(Object.keys(ROLE_LABELS) as StaffRole[]).map((r) => (
-                        <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
+                      {(Object.keys(STAFF_ROLE_LABELS) as StaffRole[]).map((r) => (
+                        <SelectItem key={r} value={r}>{STAFF_ROLE_LABELS[r]}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -269,7 +262,7 @@ const CmsDoorStaff = () => {
                     {row.name && <div className="text-xs text-gray-500">{row.email}</div>}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="border-gray-700">{ROLE_LABELS[row.role] ?? row.role}</Badge>
+                    <Badge variant="outline" className="border-gray-700">{STAFF_ROLE_LABELS[row.role] ?? row.role}</Badge>
                   </TableCell>
                   <TableCell className="text-xs text-gray-400">{row.site_events?.title ?? '-'}</TableCell>
                   <TableCell className="max-w-[140px] text-xs text-gray-400">{row.assigned_tables ?? '-'}</TableCell>

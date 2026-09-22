@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import type { StaffRole } from '@/types/database';
 
 interface DoorAuthState {
   session: Session | null;
   isDoorStaff: boolean;
+  role: StaffRole | null;
   loading: boolean;
 }
 
@@ -12,6 +14,7 @@ export function useDoorAuth() {
   const [state, setState] = useState<DoorAuthState>({
     session: null,
     isDoorStaff: false,
+    role: null,
     loading: true,
   });
 
@@ -27,19 +30,19 @@ export function useDoorAuth() {
 
     const resolve = async (session: Session | null) => {
       if (!session) {
-        if (!cancelled) setState({ session: null, isDoorStaff: false, loading: false });
+        if (!cancelled) setState({ session: null, isDoorStaff: false, role: null, loading: false });
         hasResolvedOnce = true;
         return;
       }
 
       const { data, error } = await supabase
         .from('door_staff')
-        .select('id')
+        .select('id, role')
         .eq('id', session.user.id)
         .maybeSingle();
 
       if (!cancelled) {
-        setState({ session, isDoorStaff: !error && !!data, loading: false });
+        setState({ session, isDoorStaff: !error && !!data, role: data?.role ?? null, loading: false });
       }
       hasResolvedOnce = true;
     };
