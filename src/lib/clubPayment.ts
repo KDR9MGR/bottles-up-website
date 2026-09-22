@@ -20,6 +20,11 @@ export interface ClubPaymentRecord {
   receiptPhotoPath: string | null;
   recordedAt: string;
   customerConfirmationStatus: CustomerConfirmationStatus;
+  payerName: string | null;
+  payerEmail: string | null;
+  managerVerifiedAt: string | null;
+  managerVerifiedNote: string | null;
+  correctsPaymentId: string | null;
 }
 
 // Shared by the door-staff check-in screen and the CMS booking detail sheet,
@@ -34,6 +39,8 @@ export async function recordClubPayment(opts: {
   splitBreakdown?: SplitLeg[] | null;
   posReference?: string | null;
   receiptPhotoPath?: string | null;
+  payerName?: string | null;
+  payerEmail?: string | null;
 }): Promise<{ paymentId: string; newAmountPaidCents: number; balanceDueCents: number; confirmationEmailSent: boolean }> {
   const { data, error } = await supabase.rpc('record_club_payment', {
     p_booking_id: opts.bookingId,
@@ -43,6 +50,8 @@ export async function recordClubPayment(opts: {
     p_split_breakdown: opts.splitBreakdown ?? null,
     p_pos_reference: opts.posReference ?? null,
     p_receipt_photo_path: opts.receiptPhotoPath ?? null,
+    p_payer_name: opts.payerName ?? null,
+    p_payer_email: opts.payerEmail ?? null,
   });
   if (error) throw error;
 
@@ -84,6 +93,11 @@ export async function listClubPayments(bookingId: string): Promise<ClubPaymentRe
     receipt_photo_path: string | null;
     recorded_at: string;
     customer_confirmation_status: CustomerConfirmationStatus;
+    payer_name: string | null;
+    payer_email: string | null;
+    manager_verified_at: string | null;
+    manager_verified_note: string | null;
+    corrects_payment_id: string | null;
   }>).map((r) => ({
     id: r.id,
     billedAmountCents: r.billed_amount_cents,
@@ -94,7 +108,71 @@ export async function listClubPayments(bookingId: string): Promise<ClubPaymentRe
     receiptPhotoPath: r.receipt_photo_path,
     recordedAt: r.recorded_at,
     customerConfirmationStatus: r.customer_confirmation_status,
+    payerName: r.payer_name,
+    payerEmail: r.payer_email,
+    managerVerifiedAt: r.manager_verified_at,
+    managerVerifiedNote: r.manager_verified_note,
+    correctsPaymentId: r.corrects_payment_id,
   }));
+}
+
+// Section 9 "Incorrect entries": always inserts a NEW row rather than
+// editing the original - manager-only (is_cms_admin on the RPC side, a
+// tighter gate than recordClubPayment's cms_admin-or-door_staff). Reuses the
+// exact same confirmation-email step as a normal recording, since the
+// corrected numbers need their own fresh customer sign-off.
+export async function correctClubPayment(opts: {
+  originalPaymentId: string;
+  billedAmountCents: number;
+  amountPaidCents: number;
+  paymentMethod: ClubPaymentMethod;
+  splitBreakdown?: SplitLeg[] | null;
+  posReference?: string | null;
+  receiptPhotoPath?: string | null;
+  reason: string;
+}): Promise<{ paymentId: string; newAmountPaidCents: number; balanceDueCents: number; confirmationEmailSent: boolean }> {
+  const { data, error } = await supabase.rpc('correct_club_payment', {
+    p_original_payment_id: opts.originalPaymentId,
+    p_billed_amount_cents: opts.billedAmountCents,
+    p_amount_paid_cents: opts.amountPaidCents,
+    p_payment_method: opts.paymentMethod,
+    p_split_breakdown: opts.splitBreakdown ?? null,
+    p_pos_reference: opts.posReference ?? null,
+    p_receipt_photo_path: opts.receiptPhotoPath ?? null,
+    p_reason: opts.reason,
+  });
+  if (error) throw error;
+
+  let confirmationEmailSent = false;
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    const { error: emailError } = await supabase.functions.invoke('send-club-payment-confirmation', {
+      body: { payment_id: data.payment_id },
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    confirmationEmailSent = !emailError;
+  } catch (err) {
+    console.error('send-club-payment-confirmation failed:', err);
+  }
+
+  return {
+    paymentId: data.payment_id,
+    newAmountPaidCents: data.new_amount_paid_cents,
+    balanceDueCents: data.balance_due_cents,
+    confirmationEmailSent,
+  };
+}
+
+// Section 9 "No customer response": lets a manager note that they checked
+// the POS receipt themselves, WITHOUT ever marking the customer as having
+// confirmed - customer_confirmation_status stays untouched on the server.
+export async function managerVerifyClubPayment(paymentId: string, note?: string): Promise<void> {
+  const { error } = await supabase.rpc('manager_verify_club_payment', {
+    p_payment_id: paymentId,
+    p_note: note ?? null,
+  });
+  if (error) throw error;
 }
 
 export interface ClubPaymentLookup {

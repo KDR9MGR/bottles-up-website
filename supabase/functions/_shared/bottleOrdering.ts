@@ -71,6 +71,80 @@ export async function addBottlesToBooking(
       ? (opts.requestedPaymentChoice === 'pay_at_club' ? 'pay_at_club' : 'pay_ahead')
       : venue.bottle_payment_mode;
 
+  const { data: content } = await supabase
+    .from('site_content')
+    .select('payments_mode, bottlesup_fee_bps')
+    .eq('id', 1)
+    .maybeSingle();
+  const paymentsMode = content?.payments_mode === 'live' ? 'live' : 'test';
+  const bottlesupFeeBps = content?.bottlesup_fee_bps ?? 0;
+
+  const stripeSecretKey =
+    paymentsMode === 'live'
+      ? (Deno.env.get('STRIPE_SECRET_KEY_LIVE') ?? Deno.env.get('STRIPE_SECRET_KEY'))
+      : (Deno.env.get('STRIPE_SECRET_KEY_TEST') ??
+        Deno.env.get('test_SK') ??
+        Deno.env.get('STRIPE_SECRET_KEY'));
+  if (!stripeSecretKey) {
+    return { status: 500, body: { error: 'Stripe is not configured' } };
+  }
+  const stripe = new Stripe(stripeSecretKey, { apiVersion: '2024-06-20' });
+
+  // Section 9: "Payment-option changes - Prevent duplicate collection. Do
+  // not switch an order while an online payment is still processing." A
+  // customer with an already-open pay-ahead checkout for this booking can't
+  // start another one (of either mode) until it resolves - either they
+  // finish paying it, or it expires on Stripe's side, in which case it's
+  // stale and safe to clear automatically so they aren't stuck ("Failed
+  // online payments - allow retrying or selecting another permitted payment
+  // option"). The session is explicitly expired on Stripe's side too, so a
+  // customer can never come back to a stale checkout tab and pay for
+  // something we've already cleared out of the order.
+  const { data: pendingLines } = await supabase
+    .from('site_table_booking_bottles')
+    .select('id, stripe_checkout_session_id')
+    .eq('booking_id', opts.bookingId)
+    .eq('payment_status', 'pending_payment');
+
+  const pendingSessionIds = [...new Set((pendingLines ?? []).map((l: { stripe_checkout_session_id: string | null }) => l.stripe_checkout_session_id).filter((id): id is string => !!id))];
+
+  for (const sessionId of pendingSessionIds) {
+    let session: Stripe.Checkout.Session;
+    try {
+      session = await stripe.checkout.sessions.retrieve(sessionId);
+    } catch (err) {
+      console.error('addBottlesToBooking: failed to check pending session', sessionId, err);
+      continue;
+    }
+
+    if (session.status === 'open') {
+      return {
+        status: 409,
+        body: {
+          error: 'You already have an order waiting on payment. Finish or cancel it before adding more.',
+          pending_checkout_url: session.url,
+        },
+      };
+    }
+
+    if (session.status === 'expired') {
+      const staleLineIds = (pendingLines ?? [])
+        .filter((l: { stripe_checkout_session_id: string | null }) => l.stripe_checkout_session_id === sessionId)
+        .map((l: { id: string }) => l.id);
+      await supabase.from('site_table_booking_bottles').delete().in('id', staleLineIds);
+    }
+    // session.status === 'complete' with lines still pending_payment means the
+    // webhook hasn't confirmed it yet - block briefly rather than risk a
+    // double charge; the booking page's own confirm-bottle-addon self-heal
+    // will resolve it within moments.
+    else if (session.status === 'complete') {
+      return {
+        status: 409,
+        body: { error: 'Your last order is still being confirmed. Refresh your booking page in a moment and try again.' },
+      };
+    }
+  }
+
   // Re-read bottle prices from the DB (never trust the client), scoped to
   // this venue and currently orderable. Best-effort stock check against
   // everything already committed to a paid booking (charged online or
@@ -196,25 +270,6 @@ export async function addBottlesToBooking(
   // pay_ahead: charge these specific new bottles now via their own Stripe
   // Checkout session - the original booking's session already completed and
   // is never reopened or adjusted.
-  const { data: content } = await supabase
-    .from('site_content')
-    .select('payments_mode, bottlesup_fee_bps')
-    .eq('id', 1)
-    .maybeSingle();
-  const paymentsMode = content?.payments_mode === 'live' ? 'live' : 'test';
-  const bottlesupFeeBps = content?.bottlesup_fee_bps ?? 0;
-
-  const stripeSecretKey =
-    paymentsMode === 'live'
-      ? (Deno.env.get('STRIPE_SECRET_KEY_LIVE') ?? Deno.env.get('STRIPE_SECRET_KEY'))
-      : (Deno.env.get('STRIPE_SECRET_KEY_TEST') ??
-        Deno.env.get('test_SK') ??
-        Deno.env.get('STRIPE_SECRET_KEY'));
-  if (!stripeSecretKey) {
-    return { status: 500, body: { error: 'Stripe is not configured' } };
-  }
-  const stripe = new Stripe(stripeSecretKey, { apiVersion: '2024-06-20' });
-
   const taxCents = Math.round((bottleSubtotalCents * (venue.tax_rate_bps ?? 0)) / 10000);
   const bottlesUpFeeCents = Math.round((bottleSubtotalCents * bottlesupFeeBps) / 10000);
 

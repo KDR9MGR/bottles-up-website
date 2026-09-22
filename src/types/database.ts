@@ -436,6 +436,9 @@ export interface Database {
           payment_status: BottleLinePaymentStatus;
           service_status: BottleServiceStatus;
           stripe_checkout_session_id: string | null;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          cancellation_reason: string | null;
           created_at: string;
         };
         Insert: Partial<Database['public']['Tables']['site_table_booking_bottles']['Row']> & {

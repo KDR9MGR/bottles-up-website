@@ -28,6 +28,7 @@ import BookingSuccess from "./pages/BookingSuccess";
 import BookingCancel from "./pages/BookingCancel";
 import ClubPaymentConfirm from "./pages/ClubPaymentConfirm";
 import OrderByCode from "./pages/OrderByCode";
+import BottleSubstitutionConfirm from "./pages/BottleSubstitutionConfirm";
 import EventDetail from "./pages/EventDetail";
 import Events from "./pages/Events";
 import VipTables from "./pages/VipTables";
@@ -69,6 +70,7 @@ const App = () => {
             <Route path="/booking/success" element={<BookingSuccess />} />
             <Route path="/booking/cancel" element={<BookingCancel />} />
             <Route path="/club-payment/confirm/:token" element={<ClubPaymentConfirm />} />
+            <Route path="/bottle-substitution/confirm/:token" element={<BottleSubstitutionConfirm />} />
             <Route path="/order/:code" element={<OrderByCode />} />
             <Route path="/my-tickets" element={<MyTickets />} />
             <Route path="/dashboard" element={<UserDashboard />} />

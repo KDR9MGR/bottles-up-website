@@ -35,7 +35,7 @@ export async function recomputeTableBookingTotals(
       .single(),
     supabase
       .from('site_table_booking_bottles')
-      .select('line_total_cents, payment_status')
+      .select('line_total_cents, payment_status, cancelled_at')
       .eq('booking_id', bookingId),
     supabase.from('site_content').select('bottlesup_fee_bps').eq('id', 1).maybeSingle(),
   ]);
@@ -45,12 +45,15 @@ export async function recomputeTableBookingTotals(
   }
 
   const venue = booking.venue as { tax_rate_bps: number; deposit_is_credit: boolean };
-  const allLines = (lines ?? []) as { line_total_cents: number; payment_status: string }[];
+  const allLines = (lines ?? []) as { line_total_cents: number; payment_status: string; cancelled_at: string | null }[];
 
-  const taxedBottleCents = allLines
+  // Section 9: a cancelled line is preserved for history but never counted
+  // toward what's owed - same reasoning as excluding pending_payment lines.
+  const activeLines = allLines.filter((l) => !l.cancelled_at);
+  const taxedBottleCents = activeLines
     .filter((l) => l.payment_status === 'paid')
     .reduce((sum, l) => sum + l.line_total_cents, 0);
-  const dueAtVenueBottleCentsRaw = allLines
+  const dueAtVenueBottleCentsRaw = activeLines
     .filter((l) => l.payment_status === 'due_at_venue')
     .reduce((sum, l) => sum + l.line_total_cents, 0);
 

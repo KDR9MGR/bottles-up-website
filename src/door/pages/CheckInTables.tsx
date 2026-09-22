@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
-import { CheckCircle2, XCircle, Search, Wine, Plus, X, Receipt } from 'lucide-react';
+import { CheckCircle2, XCircle, Search, Wine, Plus, X, Receipt, Ban, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -28,6 +29,7 @@ import {
   type SplitLegMethod,
 } from '@/lib/clubPayment';
 import { updateBottleServiceStatus, BOTTLE_SERVICE_STATUS_LABELS, BOTTLE_SERVICE_STATUSES } from '@/lib/bottleService';
+import { cancelBottleLine, flagBottleUnavailable } from '@/lib/bottleExceptions';
 import AddBottlesDialog from '@/components/AddBottlesDialog';
 import CreateWalkInDialog from '@/components/CreateWalkInDialog';
 
@@ -42,6 +44,8 @@ interface BottleLine {
   line_total_cents: number;
   payment_status: 'paid' | 'due_at_venue';
   service_status: BottleServiceStatus;
+  cancelled_at: string | null;
+  cancellation_reason: string | null;
 }
 
 interface BookingLookup {
@@ -111,6 +115,12 @@ const CheckInTables = () => {
   const [recordingPayment, setRecordingPayment] = useState(false);
   const [addBottlesOpen, setAddBottlesOpen] = useState(false);
   const [walkInOpen, setWalkInOpen] = useState(false);
+  const [cancellingLineId, setCancellingLineId] = useState<string | null>(null);
+  const [cancelLineReason, setCancelLineReason] = useState('');
+  const [cancellingLine, setCancellingLine] = useState(false);
+  const [flaggingLineId, setFlaggingLineId] = useState<string | null>(null);
+  const [flagReason, setFlagReason] = useState('');
+  const [flaggingLine, setFlaggingLine] = useState(false);
 
   const runLookup = async (code: string) => {
     if (!code.trim() || busyRef.current) return;
@@ -314,8 +324,52 @@ const CheckInTables = () => {
     resetPaymentForm();
   };
 
-  const paidOnline = booking?.bottles.filter((b) => b.payment_status === 'paid') ?? [];
-  const awaitingClub = booking?.bottles.filter((b) => b.payment_status === 'due_at_venue') ?? [];
+  const handleCancelLine = async (lineId: string) => {
+    if (!cancelLineReason.trim()) {
+      toast({ title: 'A reason is required', variant: 'destructive' });
+      return;
+    }
+    setCancellingLine(true);
+    try {
+      const result = await cancelBottleLine(lineId, cancelLineReason.trim());
+      toast({
+        title: 'Item cancelled',
+        description: result.refundSuggested ? 'This item was already paid - a manager can record a refund in the CMS.' : undefined,
+      });
+      setCancellingLineId(null);
+      setCancelLineReason('');
+      if (booking) runLookup(booking.confirmation_code);
+    } catch (err) {
+      toast({ title: 'Could not cancel item', description: err instanceof Error ? err.message : 'Please try again.', variant: 'destructive' });
+    } finally {
+      setCancellingLine(false);
+    }
+  };
+
+  const handleFlagUnavailable = async (lineId: string) => {
+    if (!flagReason.trim()) {
+      toast({ title: 'A reason is required', variant: 'destructive' });
+      return;
+    }
+    setFlaggingLine(true);
+    try {
+      const result = await flagBottleUnavailable({ bottleLineId: lineId, reason: flagReason.trim() });
+      toast({
+        title: 'Customer notified',
+        description: result.emailSent ? 'Waiting for their approval.' : 'Could not email the customer - follow up directly.',
+      });
+      setFlaggingLineId(null);
+      setFlagReason('');
+    } catch (err) {
+      toast({ title: 'Could not flag this item', description: err instanceof Error ? err.message : 'Please try again.', variant: 'destructive' });
+    } finally {
+      setFlaggingLine(false);
+    }
+  };
+
+  const paidOnline = booking?.bottles.filter((b) => b.payment_status === 'paid' && !b.cancelled_at) ?? [];
+  const awaitingClub = booking?.bottles.filter((b) => b.payment_status === 'due_at_venue' && !b.cancelled_at) ?? [];
+  const cancelledBottles = booking?.bottles.filter((b) => b.cancelled_at) ?? [];
   const balanceDueCents = booking ? Math.max(booking.amount_total_cents - booking.amount_paid_cents, 0) : 0;
 
   return (
@@ -383,7 +437,7 @@ const CheckInTables = () => {
                       <span className="flex-1">{b.bottle_name}{b.size ? ` (${b.size})` : ''} × {b.quantity}</span>
                       <span>{money(b.line_total_cents, booking.currency)}</span>
                       <Select value={b.service_status} onValueChange={(v) => handleServiceStatusChange(b.id, v as BottleServiceStatus)}>
-                        <SelectTrigger className="h-7 w-[128px] text-xs">
+                        <SelectTrigger className="h-7 w-[100px] text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -392,6 +446,12 @@ const CheckInTables = () => {
                           ))}
                         </SelectContent>
                       </Select>
+                      <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-amber-400" onClick={() => { setFlaggingLineId((v) => (v === b.id ? null : b.id)); setCancellingLineId(null); }}>
+                        <ShieldAlert className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-red-400" onClick={() => { setCancellingLineId((v) => (v === b.id ? null : b.id)); setFlaggingLineId(null); }}>
+                        <Ban className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -407,7 +467,7 @@ const CheckInTables = () => {
                       <span className="flex-1">{b.bottle_name}{b.size ? ` (${b.size})` : ''} × {b.quantity}</span>
                       <span>{money(b.line_total_cents, booking.currency)}</span>
                       <Select value={b.service_status} onValueChange={(v) => handleServiceStatusChange(b.id, v as BottleServiceStatus)}>
-                        <SelectTrigger className="h-7 w-[128px] text-xs">
+                        <SelectTrigger className="h-7 w-[100px] text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -416,8 +476,60 @@ const CheckInTables = () => {
                           ))}
                         </SelectContent>
                       </Select>
+                      <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-amber-400" onClick={() => { setFlaggingLineId((v) => (v === b.id ? null : b.id)); setCancellingLineId(null); }}>
+                        <ShieldAlert className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-red-400" onClick={() => { setCancellingLineId((v) => (v === b.id ? null : b.id)); setFlaggingLineId(null); }}>
+                        <Ban className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {cancelledBottles.length > 0 && (
+                <div>
+                  <div className="mt-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-gray-600">
+                    <Ban className="h-3 w-3" /> Cancelled
+                  </div>
+                  {cancelledBottles.map((b) => (
+                    <div key={b.id} className="py-0.5 text-xs text-gray-500 line-through">
+                      {b.bottle_name}{b.size ? ` (${b.size})` : ''} × {b.quantity}
+                      <span className="ml-1 no-underline">- {b.cancellation_reason}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(cancellingLineId || flaggingLineId) && (
+                <div className={`mt-2 space-y-2 rounded-lg border p-3 ${cancellingLineId ? 'border-red-900/50 bg-red-950/10' : 'border-amber-900/50 bg-amber-950/10'}`}>
+                  {cancellingLineId ? (
+                    <>
+                      <Label className="text-xs text-red-300">Why is this item being cancelled?</Label>
+                      <Textarea value={cancelLineReason} onChange={(e) => setCancelLineReason(e.target.value)} />
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" className="flex-1 border-gray-700" onClick={() => setCancellingLineId(null)}>
+                          Back
+                        </Button>
+                        <Button size="sm" className="flex-1 bg-red-600 text-white hover:bg-red-700" disabled={cancellingLine} onClick={() => handleCancelLine(cancellingLineId)}>
+                          {cancellingLine ? 'Cancelling...' : 'Cancel Item'}
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Label className="text-xs text-amber-300">Why is this item unavailable? (Customer will be offered removal)</Label>
+                      <Textarea value={flagReason} onChange={(e) => setFlagReason(e.target.value)} />
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" className="flex-1 border-gray-700" onClick={() => setFlaggingLineId(null)}>
+                          Back
+                        </Button>
+                        <Button size="sm" className="flex-1 bg-gradient-orange text-black font-bold hover:opacity-90" disabled={flaggingLine} onClick={() => handleFlagUnavailable(flaggingLineId!)}>
+                          {flaggingLine ? 'Sending...' : 'Notify Customer'}
+                        </Button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
