@@ -30,6 +30,7 @@ import { Mail, RefreshCw, Ban, Trash2, Search, Eye } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { logAudit } from '@/lib/auditLog';
+import { cancelTableBooking } from '@/lib/bottleExceptions';
 import { sessionMode, type PaymentModeFilter } from '../lib/paymentMode';
 import TableBookingDetailSheet from '../components/TableBookingDetailSheet';
 import type { Database, FulfillmentStatus, OrderStatus } from '@/types/database';
@@ -160,37 +161,27 @@ const CmsTableBookings = () => {
 
   // Only offered for paid bookings. Keeps the row (with a required reason) instead of
   // deleting outright - a real completed payment should never disappear with no
-  // trace, and there's no refund flow wired up here to unwind the charge itself.
+  // trace. Routed through the same cancel-table-booking edge function the CMS
+  // booking detail sheet uses (Bottle Payment Options section 9) - that one also
+  // cascades the cancellation to every active bottle line and recomputes totals,
+  // which a bare status update here never did.
   const submitCancel = async () => {
     if (!cancelTarget || !cancelReason.trim()) return;
     setCancelling(true);
-    const { error } = await supabase
-      .from('site_table_bookings')
-      .update({
-        status: 'cancelled',
-        cancellation_reason: cancelReason.trim(),
-        cancelled_at: new Date().toISOString(),
-        cancelled_by: (await supabase.auth.getUser()).data.user?.id ?? null,
-      })
-      .eq('id', cancelTarget.id);
-    setCancelling(false);
-
-    if (error) {
-      toast({ title: 'Failed to cancel booking', description: error.message, variant: 'destructive' });
-      return;
+    try {
+      const result = await cancelTableBooking(cancelTarget.id, cancelReason.trim());
+      toast({
+        title: 'Booking cancelled',
+        description: result.refundSuggested ? 'This booking had money collected - consider recording a refund.' : undefined,
+      });
+      setCancelTarget(null);
+      setCancelReason('');
+      loadBookings();
+    } catch (err) {
+      toast({ title: 'Failed to cancel booking', description: err instanceof Error ? err.message : 'Please try again.', variant: 'destructive' });
+    } finally {
+      setCancelling(false);
     }
-
-    await logAudit({
-      action: 'table_booking.cancelled',
-      entityType: 'site_table_bookings',
-      entityId: cancelTarget.id,
-      details: { reason: cancelReason.trim(), previous_status: cancelTarget.status },
-    });
-
-    toast({ title: 'Booking cancelled' });
-    setCancelTarget(null);
-    setCancelReason('');
-    loadBookings();
   };
 
   // One click, for anything that was never a completed payment (pending/failed) or

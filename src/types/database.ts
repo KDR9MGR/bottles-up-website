@@ -405,6 +405,9 @@ export interface Database {
           cancelled_by: string | null;
           bottle_payment_choice: BottlePaymentChoice;
           bottle_sign_text: string | null;
+          reconciled_at: string | null;
+          reconciled_by: string | null;
+          reconciliation_override_reason: string | null;
           created_at: string;
           updated_at: string;
         };
