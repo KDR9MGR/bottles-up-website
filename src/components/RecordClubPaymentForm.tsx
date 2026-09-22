@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -9,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, X } from 'lucide-react';
+import { Camera, ImageIcon, Plus, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   recordClubPayment,
@@ -18,6 +19,19 @@ import {
   type SplitLeg,
   type SplitLegMethod,
 } from '@/lib/clubPayment';
+import { getMyProfile } from '@/lib/staffDashboard';
+
+// Section 6: manual checklist, not automated OCR/vision (Rey's explicit
+// choice) - staff self-confirms the photo is usable before it can be
+// attached. Relies on staff honesty; bad-faith cases are caught after the
+// fact by the audit-correction rules (Bottle Payment Options section 9).
+const RECEIPT_CHECKLIST_ITEMS = [
+  { key: 'legible', label: 'Photo is clear and not blurry' },
+  { key: 'venueName', label: 'Venue name is visible on the receipt' },
+  { key: 'date', label: "Today's date is visible on the receipt" },
+  { key: 'receiptNumber', label: 'Receipt / reference number is visible' },
+  { key: 'amount', label: 'Total amount is visible and matches what was charged' },
+] as const;
 
 const money = (cents: number, currency = 'CAD') => `$${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
 const dollarsToCents = (v: string) => Math.round((parseFloat(v) || 0) * 100);
@@ -28,6 +42,13 @@ interface RecordClubPaymentFormProps {
   currency: string;
   customerName?: string;
   customerEmail?: string;
+  // Gates the "choose from gallery" upload path (section 6: camera capture
+  // is open to everyone, picking an existing photo needs manager
+  // permission). When omitted, the component resolves it itself from the
+  // signed-in door_staff profile - callers that aren't door_staff-backed
+  // (the CMS, where every admin is already equally privileged) pass it
+  // explicitly instead.
+  isManager?: boolean;
   onRecorded: (result: { newAmountPaidCents: number; confirmationEmailSent: boolean }) => void;
 }
 
@@ -47,6 +68,7 @@ const RecordClubPaymentForm = ({
   currency,
   customerName,
   customerEmail,
+  isManager,
   onRecorded,
 }: RecordClubPaymentFormProps) => {
   const { toast } = useToast();
@@ -61,12 +83,25 @@ const RecordClubPaymentForm = ({
   const [splitLegs, setSplitLegs] = useState<SplitLeg[]>([{ method: 'cash', amountCents: 0 }]);
   const [posReference, setPosReference] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptChecklist, setReceiptChecklist] = useState<Record<string, boolean>>({});
   const [payerName, setPayerName] = useState('');
   const [payerEmail, setPayerEmail] = useState('');
   const [recording, setRecording] = useState(false);
+  const [resolvedIsManager, setResolvedIsManager] = useState(isManager ?? false);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isManager !== undefined) {
+      setResolvedIsManager(isManager);
+      return;
+    }
+    getMyProfile().then((p) => setResolvedIsManager(p?.role === 'manager'));
+  }, [isManager]);
 
   const suggestedBilledCents =
     dollarsToCents(bottleSubtotal) - dollarsToCents(discount) + dollarsToCents(tax) + dollarsToCents(gratuity);
+  const receiptChecklistComplete = RECEIPT_CHECKLIST_ITEMS.every((item) => receiptChecklist[item.key]);
 
   const openForm = () => {
     const dollars = (balanceDueCents / 100).toFixed(2);
@@ -87,8 +122,14 @@ const RecordClubPaymentForm = ({
     setSplitLegs([{ method: 'cash', amountCents: 0 }]);
     setPosReference('');
     setReceiptFile(null);
+    setReceiptChecklist({});
     setPayerName('');
     setPayerEmail('');
+  };
+
+  const selectReceiptFile = (file: File | null) => {
+    setReceiptFile(file);
+    setReceiptChecklist({});
   };
 
   const updateSplitLeg = (index: number, patch: Partial<SplitLeg>) =>
@@ -104,13 +145,18 @@ const RecordClubPaymentForm = ({
       toast({ title: 'Enter a valid amount', variant: 'destructive' });
       return;
     }
+    if (!receiptFile) {
+      toast({ title: 'A receipt photo is required', variant: 'destructive' });
+      return;
+    }
+    if (!receiptChecklistComplete) {
+      toast({ title: 'Confirm every checklist item before recording', variant: 'destructive' });
+      return;
+    }
 
     setRecording(true);
     try {
-      let receiptPhotoPath: string | null = null;
-      if (receiptFile) {
-        receiptPhotoPath = await uploadReceiptPhoto(bookingId, receiptFile);
-      }
+      const receiptPhotoPath = await uploadReceiptPhoto(bookingId, receiptFile);
       const splitBreakdown = paymentMethod === 'split' ? splitLegs.filter((leg) => leg.amountCents > 0) : null;
 
       const { newAmountPaidCents, confirmationEmailSent } = await recordClubPayment({
@@ -254,9 +300,53 @@ const RecordClubPaymentForm = ({
         <Input value={posReference} onChange={(e) => setPosReference(e.target.value)} />
       </div>
 
-      <div className="space-y-1">
-        <Label className="text-xs">Receipt photo (optional)</Label>
-        <Input type="file" accept="image/*" onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)} />
+      <div className="space-y-2">
+        <Label className="text-xs">Receipt photo (required)</Label>
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => selectReceiptFile(e.target.files?.[0] ?? null)}
+        />
+        {resolvedIsManager && (
+          <input
+            ref={galleryInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => selectReceiptFile(e.target.files?.[0] ?? null)}
+          />
+        )}
+        <div className={`grid gap-2 ${resolvedIsManager ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          <Button type="button" variant="outline" className="border-gray-700" onClick={() => cameraInputRef.current?.click()}>
+            <Camera className="mr-2 h-4 w-4" /> Take Photo
+          </Button>
+          {resolvedIsManager && (
+            <Button type="button" variant="outline" className="border-gray-700" onClick={() => galleryInputRef.current?.click()}>
+              <ImageIcon className="mr-2 h-4 w-4" /> Choose from Gallery
+            </Button>
+          )}
+        </div>
+
+        {receiptFile && (
+          <div className="space-y-2 rounded-lg border border-gray-800 p-3">
+            <p className="truncate text-xs text-gray-400">{receiptFile.name}</p>
+            <p className="text-[11px] uppercase tracking-wide text-gray-500">Confirm before recording</p>
+            {RECEIPT_CHECKLIST_ITEMS.map((item) => (
+              <label key={item.key} className="flex items-center gap-2 text-xs text-gray-300">
+                <Checkbox
+                  checked={!!receiptChecklist[item.key]}
+                  onCheckedChange={(checked) =>
+                    setReceiptChecklist((prev) => ({ ...prev, [item.key]: checked === true }))
+                  }
+                />
+                {item.label}
+              </label>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -281,7 +371,7 @@ const RecordClubPaymentForm = ({
         </Button>
         <Button
           className="flex-1 bg-gradient-orange text-black font-bold hover:opacity-90"
-          disabled={recording}
+          disabled={recording || !receiptFile || !receiptChecklistComplete}
           onClick={handleSubmit}
         >
           {recording ? 'Saving...' : 'Record Payment'}

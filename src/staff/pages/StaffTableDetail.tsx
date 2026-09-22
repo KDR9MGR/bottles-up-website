@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import AddBottlesDialog from '@/components/AddBottlesDialog';
 import RecordClubPaymentForm from '@/components/RecordClubPaymentForm';
-import { getMyProfile, requestTablePayment } from '@/lib/staffDashboard';
+import { getMyProfile, requestTablePayment, type MyProfile } from '@/lib/staffDashboard';
 
 const money = (cents: number, currency = 'CAD') => `$${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
 
@@ -49,7 +49,7 @@ const StaffTableDetail = () => {
   const { toast } = useToast();
   const [booking, setBooking] = useState<BookingDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [canRecordPayments, setCanRecordPayments] = useState(false);
+  const [profile, setProfile] = useState<MyProfile | null>(null);
 
   const [addBottlesOpen, setAddBottlesOpen] = useState(false);
   const [requestingPayment, setRequestingPayment] = useState(false);
@@ -69,7 +69,7 @@ const StaffTableDetail = () => {
 
   useEffect(() => {
     load();
-    getMyProfile().then((p) => setCanRecordPayments(!!p?.canRecordPayments));
+    getMyProfile().then(setProfile);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
 
@@ -167,7 +167,7 @@ const StaffTableDetail = () => {
             </Button>
           )}
 
-          {canRecordPayments && balanceDueCents > 0 && (
+          {profile?.canRecordPayments && balanceDueCents > 0 && (
             <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-4">
               <RecordClubPaymentForm
                 bookingId={booking.id}
@@ -175,6 +175,7 @@ const StaffTableDetail = () => {
                 currency={booking.currency}
                 customerName={booking.customer_name}
                 customerEmail={booking.customer_email}
+                isManager={profile.role === 'manager'}
                 onRecorded={() => load()}
               />
             </div>

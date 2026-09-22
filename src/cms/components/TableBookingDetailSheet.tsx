@@ -775,6 +775,7 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                     currency={booking.currency}
                     customerName={booking.customer_name}
                     customerEmail={booking.customer_email}
+                    isManager
                     onRecorded={() => {
                       onUpdated();
                       load();
