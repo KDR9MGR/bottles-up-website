@@ -25,6 +25,10 @@ export interface ClubPaymentRecord {
   managerVerifiedAt: string | null;
   managerVerifiedNote: string | null;
   correctsPaymentId: string | null;
+  bottleSubtotalCents: number;
+  discountCents: number;
+  taxCents: number;
+  gratuityCents: number;
 }
 
 // Shared by the door-staff check-in screen and the CMS booking detail sheet,
@@ -41,6 +45,10 @@ export async function recordClubPayment(opts: {
   receiptPhotoPath?: string | null;
   payerName?: string | null;
   payerEmail?: string | null;
+  bottleSubtotalCents?: number;
+  discountCents?: number;
+  taxCents?: number;
+  gratuityCents?: number;
 }): Promise<{ paymentId: string; newAmountPaidCents: number; balanceDueCents: number; confirmationEmailSent: boolean }> {
   const { data, error } = await supabase.rpc('record_club_payment', {
     p_booking_id: opts.bookingId,
@@ -52,6 +60,10 @@ export async function recordClubPayment(opts: {
     p_receipt_photo_path: opts.receiptPhotoPath ?? null,
     p_payer_name: opts.payerName ?? null,
     p_payer_email: opts.payerEmail ?? null,
+    p_bottle_subtotal_cents: opts.bottleSubtotalCents ?? 0,
+    p_discount_cents: opts.discountCents ?? 0,
+    p_tax_cents: opts.taxCents ?? 0,
+    p_gratuity_cents: opts.gratuityCents ?? 0,
   });
   if (error) throw error;
 
@@ -98,6 +110,10 @@ export async function listClubPayments(bookingId: string): Promise<ClubPaymentRe
     manager_verified_at: string | null;
     manager_verified_note: string | null;
     corrects_payment_id: string | null;
+    bottle_subtotal_cents: number;
+    discount_cents: number;
+    tax_cents: number;
+    gratuity_cents: number;
   }>).map((r) => ({
     id: r.id,
     billedAmountCents: r.billed_amount_cents,
@@ -113,6 +129,10 @@ export async function listClubPayments(bookingId: string): Promise<ClubPaymentRe
     managerVerifiedAt: r.manager_verified_at,
     managerVerifiedNote: r.manager_verified_note,
     correctsPaymentId: r.corrects_payment_id,
+    bottleSubtotalCents: r.bottle_subtotal_cents,
+    discountCents: r.discount_cents,
+    taxCents: r.tax_cents,
+    gratuityCents: r.gratuity_cents,
   }));
 }
 
@@ -130,6 +150,10 @@ export async function correctClubPayment(opts: {
   posReference?: string | null;
   receiptPhotoPath?: string | null;
   reason: string;
+  bottleSubtotalCents?: number;
+  discountCents?: number;
+  taxCents?: number;
+  gratuityCents?: number;
 }): Promise<{ paymentId: string; newAmountPaidCents: number; balanceDueCents: number; confirmationEmailSent: boolean }> {
   const { data, error } = await supabase.rpc('correct_club_payment', {
     p_original_payment_id: opts.originalPaymentId,
@@ -140,6 +164,10 @@ export async function correctClubPayment(opts: {
     p_pos_reference: opts.posReference ?? null,
     p_receipt_photo_path: opts.receiptPhotoPath ?? null,
     p_reason: opts.reason,
+    p_bottle_subtotal_cents: opts.bottleSubtotalCents ?? 0,
+    p_discount_cents: opts.discountCents ?? 0,
+    p_tax_cents: opts.taxCents ?? 0,
+    p_gratuity_cents: opts.gratuityCents ?? 0,
   });
   if (error) throw error;
 
