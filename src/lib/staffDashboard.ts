@@ -115,6 +115,11 @@ export interface MyProfile {
   canRecordPayments: boolean;
 }
 
+export async function requestTablePayment(bookingId: string): Promise<void> {
+  const { error } = await supabase.rpc('request_table_payment', { p_booking_id: bookingId });
+  if (error) throw error;
+}
+
 export async function getMyProfile(): Promise<MyProfile | null> {
   const { data: sessionData } = await supabase.auth.getSession();
   const uid = sessionData.session?.user.id;
