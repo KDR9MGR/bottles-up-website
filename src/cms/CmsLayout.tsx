@@ -26,7 +26,7 @@ const navItems = [
   { to: '/cms/promo-codes', label: 'Promo Codes', icon: Tag },
   { to: '/cms/vip-list', label: 'VIP List', icon: Users },
   { to: '/cms/vip-guest-list', label: 'VIP Guest List', icon: Crown },
-  { to: '/cms/door-staff', label: 'Door Staff', icon: ScanLine },
+  { to: '/cms/door-staff', label: 'Team & Staff', icon: ScanLine },
   { to: '/cms/check-ins', label: 'Check-ins', icon: CheckCircle2 },
   { to: '/cms/audit-log', label: 'Audit Log', icon: ScrollText },
   { to: '/cms/content', label: 'Site Content', icon: Settings },

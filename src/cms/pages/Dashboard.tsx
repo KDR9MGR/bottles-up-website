@@ -168,7 +168,7 @@ const CmsDashboard = () => {
     { label: 'Tickets Sold', value: kpis.ticketsSold },
     { label: 'Tickets Checked In', value: kpis.ticketsCheckedIn },
     { label: 'Occupancy', value: `${kpis.occupancy}%` },
-    { label: 'Door Staff', value: doorStaffCount },
+    { label: 'Team & Staff', value: doorStaffCount },
   ];
 
   if (loading) {

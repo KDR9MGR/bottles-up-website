@@ -29,7 +29,7 @@ const DoorLogin = () => {
       <div className="flex min-h-screen flex-col items-center justify-center bg-black px-4 text-center">
         <h1 className="mb-2 text-2xl font-bold text-white">Not authorized</h1>
         <p className="mb-6 max-w-sm text-gray-400">
-          {session.user.email} isn't registered as door staff. Ask an admin to add you in the CMS.
+          {session.user.email} isn't registered as team staff. Ask an admin to add you in the CMS.
         </p>
         <Button variant="outline" className="border-gray-700 text-white hover:bg-gray-900" onClick={() => doorSignOut()}>
           Try a different email
@@ -76,7 +76,7 @@ const DoorLogin = () => {
         Back to website
       </Link>
       <div className="w-full max-w-sm rounded-2xl border border-gray-800 bg-gray-900/50 p-8 text-center">
-        <h1 className="mb-6 text-2xl font-bold text-white">Door Staff Sign In</h1>
+        <h1 className="mb-6 text-2xl font-bold text-white">Team Sign In</h1>
 
         {linkSent ? (
           <p className="text-gray-300">

@@ -27,6 +27,7 @@ export type BottleServiceStatus = 'awaiting_prep' | 'preparing' | 'ready' | 'ser
 export type FulfillmentStatus = 'confirmed' | 'preparing' | 'served' | 'completed';
 export type DiscountType = 'percentage' | 'fixed_amount';
 export type PromoAppliesTo = 'tickets' | 'tables' | 'both';
+export type StaffRole = 'door_staff' | 'server' | 'cashier' | 'bartender' | 'manager';
 
 export interface Database {
   public: {
@@ -179,16 +180,37 @@ export interface Database {
         Row: {
           id: string;
           email: string;
+          name: string | null;
+          role: StaffRole;
+          event_id: string | null;
+          assigned_tables: string | null;
+          access_start_at: string | null;
+          access_end_at: string | null;
+          can_record_payments: boolean;
           created_at: string;
         };
         Insert: {
           id: string;
           email: string;
+          name?: string | null;
+          role?: StaffRole;
+          event_id?: string | null;
+          assigned_tables?: string | null;
+          access_start_at?: string | null;
+          access_end_at?: string | null;
+          can_record_payments?: boolean;
           created_at?: string;
         };
         Update: Partial<{
           id: string;
           email: string;
+          name: string | null;
+          role: StaffRole;
+          event_id: string | null;
+          assigned_tables: string | null;
+          access_start_at: string | null;
+          access_end_at: string | null;
+          can_record_payments: boolean;
           created_at: string;
         }>;
         Relationships: [];
