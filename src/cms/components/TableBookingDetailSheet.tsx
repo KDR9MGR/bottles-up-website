@@ -275,6 +275,11 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
         amountPaidCents: paidCents,
         paymentMethod: correctMethod,
         reason: correctReason.trim(),
+        // This form has never captured a new receipt photo for a
+        // correction - reuse the required correction reason as the
+        // missing-receipt reason too, satisfying section 12's rule without
+        // adding a second, redundant "why no receipt" field.
+        missingReceiptReason: correctReason.trim(),
       });
       toast({
         title: 'Correction recorded',
@@ -709,6 +714,10 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                           )}
                         </div>
                       </div>
+
+                      {p.missingReceiptReason && (
+                        <p className="text-[11px] text-amber-400">No receipt - {p.missingReceiptReason}</p>
+                      )}
 
                       {p.customerConfirmationStatus === 'pending' && (
                         <div className="flex flex-wrap gap-3 text-xs">

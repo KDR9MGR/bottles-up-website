@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -15,6 +16,8 @@ import { useToast } from '@/hooks/use-toast';
 import {
   recordClubPayment,
   uploadReceiptPhoto,
+  hashReceiptPhoto,
+  getOrCreateDeviceId,
   type ClubPaymentMethod,
   type SplitLeg,
   type SplitLegMethod,
@@ -84,6 +87,8 @@ const RecordClubPaymentForm = ({
   const [posReference, setPosReference] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptChecklist, setReceiptChecklist] = useState<Record<string, boolean>>({});
+  const [noReceiptOverride, setNoReceiptOverride] = useState(false);
+  const [missingReceiptReason, setMissingReceiptReason] = useState('');
   const [payerName, setPayerName] = useState('');
   const [payerEmail, setPayerEmail] = useState('');
   const [recording, setRecording] = useState(false);
@@ -123,6 +128,8 @@ const RecordClubPaymentForm = ({
     setPosReference('');
     setReceiptFile(null);
     setReceiptChecklist({});
+    setNoReceiptOverride(false);
+    setMissingReceiptReason('');
     setPayerName('');
     setPayerEmail('');
   };
@@ -145,18 +152,30 @@ const RecordClubPaymentForm = ({
       toast({ title: 'Enter a valid amount', variant: 'destructive' });
       return;
     }
-    if (!receiptFile) {
-      toast({ title: 'A receipt photo is required', variant: 'destructive' });
-      return;
-    }
-    if (!receiptChecklistComplete) {
-      toast({ title: 'Confirm every checklist item before recording', variant: 'destructive' });
-      return;
+    if (noReceiptOverride) {
+      if (!missingReceiptReason.trim()) {
+        toast({ title: 'A reason is required to record without a receipt', variant: 'destructive' });
+        return;
+      }
+    } else {
+      if (!receiptFile) {
+        toast({ title: 'A receipt photo is required', variant: 'destructive' });
+        return;
+      }
+      if (!receiptChecklistComplete) {
+        toast({ title: 'Confirm every checklist item before recording', variant: 'destructive' });
+        return;
+      }
     }
 
     setRecording(true);
     try {
-      const receiptPhotoPath = await uploadReceiptPhoto(bookingId, receiptFile);
+      let receiptPhotoPath: string | null = null;
+      let receiptPhotoHash: string | null = null;
+      if (!noReceiptOverride && receiptFile) {
+        receiptPhotoHash = await hashReceiptPhoto(receiptFile);
+        receiptPhotoPath = await uploadReceiptPhoto(bookingId, receiptFile);
+      }
       const splitBreakdown = paymentMethod === 'split' ? splitLegs.filter((leg) => leg.amountCents > 0) : null;
 
       const { newAmountPaidCents, confirmationEmailSent } = await recordClubPayment({
@@ -167,6 +186,9 @@ const RecordClubPaymentForm = ({
         splitBreakdown,
         posReference: posReference.trim() || null,
         receiptPhotoPath,
+        receiptPhotoHash,
+        deviceId: getOrCreateDeviceId(),
+        missingReceiptReason: noReceiptOverride ? missingReceiptReason.trim() : null,
         payerName: payerName.trim() || null,
         payerEmail: payerEmail.trim() || null,
         bottleSubtotalCents: dollarsToCents(bottleSubtotal),
@@ -301,51 +323,76 @@ const RecordClubPaymentForm = ({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs">Receipt photo (required)</Label>
-        <input
-          ref={cameraInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(e) => selectReceiptFile(e.target.files?.[0] ?? null)}
-        />
-        {resolvedIsManager && (
-          <input
-            ref={galleryInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => selectReceiptFile(e.target.files?.[0] ?? null)}
-          />
-        )}
-        <div className={`grid gap-2 ${resolvedIsManager ? 'grid-cols-2' : 'grid-cols-1'}`}>
-          <Button type="button" variant="outline" className="border-gray-700" onClick={() => cameraInputRef.current?.click()}>
-            <Camera className="mr-2 h-4 w-4" /> Take Photo
-          </Button>
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">Receipt photo {noReceiptOverride ? '' : '(required)'}</Label>
           {resolvedIsManager && (
-            <Button type="button" variant="outline" className="border-gray-700" onClick={() => galleryInputRef.current?.click()}>
-              <ImageIcon className="mr-2 h-4 w-4" /> Choose from Gallery
-            </Button>
+            <button
+              type="button"
+              className="text-[10px] text-gray-500 underline hover:text-gray-300"
+              onClick={() => {
+                setNoReceiptOverride((v) => !v);
+                selectReceiptFile(null);
+                setMissingReceiptReason('');
+              }}
+            >
+              {noReceiptOverride ? 'Attach a receipt instead' : 'No receipt available (manager override)'}
+            </button>
           )}
         </div>
 
-        {receiptFile && (
-          <div className="space-y-2 rounded-lg border border-gray-800 p-3">
-            <p className="truncate text-xs text-gray-400">{receiptFile.name}</p>
-            <p className="text-[11px] uppercase tracking-wide text-gray-500">Confirm before recording</p>
-            {RECEIPT_CHECKLIST_ITEMS.map((item) => (
-              <label key={item.key} className="flex items-center gap-2 text-xs text-gray-300">
-                <Checkbox
-                  checked={!!receiptChecklist[item.key]}
-                  onCheckedChange={(checked) =>
-                    setReceiptChecklist((prev) => ({ ...prev, [item.key]: checked === true }))
-                  }
-                />
-                {item.label}
-              </label>
-            ))}
+        {noReceiptOverride ? (
+          <div className="space-y-1">
+            <Label className="text-xs text-amber-400">Reason no receipt is attached (required)</Label>
+            <Textarea value={missingReceiptReason} onChange={(e) => setMissingReceiptReason(e.target.value)} />
           </div>
+        ) : (
+          <>
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => selectReceiptFile(e.target.files?.[0] ?? null)}
+            />
+            {resolvedIsManager && (
+              <input
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => selectReceiptFile(e.target.files?.[0] ?? null)}
+              />
+            )}
+            <div className={`grid gap-2 ${resolvedIsManager ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              <Button type="button" variant="outline" className="border-gray-700" onClick={() => cameraInputRef.current?.click()}>
+                <Camera className="mr-2 h-4 w-4" /> Take Photo
+              </Button>
+              {resolvedIsManager && (
+                <Button type="button" variant="outline" className="border-gray-700" onClick={() => galleryInputRef.current?.click()}>
+                  <ImageIcon className="mr-2 h-4 w-4" /> Choose from Gallery
+                </Button>
+              )}
+            </div>
+
+            {receiptFile && (
+              <div className="space-y-2 rounded-lg border border-gray-800 p-3">
+                <p className="truncate text-xs text-gray-400">{receiptFile.name}</p>
+                <p className="text-[11px] uppercase tracking-wide text-gray-500">Confirm before recording</p>
+                {RECEIPT_CHECKLIST_ITEMS.map((item) => (
+                  <label key={item.key} className="flex items-center gap-2 text-xs text-gray-300">
+                    <Checkbox
+                      checked={!!receiptChecklist[item.key]}
+                      onCheckedChange={(checked) =>
+                        setReceiptChecklist((prev) => ({ ...prev, [item.key]: checked === true }))
+                      }
+                    />
+                    {item.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -371,7 +418,10 @@ const RecordClubPaymentForm = ({
         </Button>
         <Button
           className="flex-1 bg-gradient-orange text-black font-bold hover:opacity-90"
-          disabled={recording || !receiptFile || !receiptChecklistComplete}
+          disabled={
+            recording ||
+            (noReceiptOverride ? !missingReceiptReason.trim() : !receiptFile || !receiptChecklistComplete)
+          }
           onClick={handleSubmit}
         >
           {recording ? 'Saving...' : 'Record Payment'}

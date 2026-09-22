@@ -29,6 +29,7 @@ export interface ClubPaymentRecord {
   discountCents: number;
   taxCents: number;
   gratuityCents: number;
+  missingReceiptReason: string | null;
 }
 
 // Shared by the door-staff check-in screen and the CMS booking detail sheet,
@@ -49,6 +50,9 @@ export async function recordClubPayment(opts: {
   discountCents?: number;
   taxCents?: number;
   gratuityCents?: number;
+  receiptPhotoHash?: string | null;
+  deviceId?: string | null;
+  missingReceiptReason?: string | null;
 }): Promise<{ paymentId: string; newAmountPaidCents: number; balanceDueCents: number; confirmationEmailSent: boolean }> {
   const { data, error } = await supabase.rpc('record_club_payment', {
     p_booking_id: opts.bookingId,
@@ -64,6 +68,9 @@ export async function recordClubPayment(opts: {
     p_discount_cents: opts.discountCents ?? 0,
     p_tax_cents: opts.taxCents ?? 0,
     p_gratuity_cents: opts.gratuityCents ?? 0,
+    p_receipt_photo_hash: opts.receiptPhotoHash ?? null,
+    p_device_id: opts.deviceId ?? null,
+    p_missing_receipt_reason: opts.missingReceiptReason ?? null,
   });
   if (error) throw error;
 
@@ -114,6 +121,7 @@ export async function listClubPayments(bookingId: string): Promise<ClubPaymentRe
     discount_cents: number;
     tax_cents: number;
     gratuity_cents: number;
+    missing_receipt_reason: string | null;
   }>).map((r) => ({
     id: r.id,
     billedAmountCents: r.billed_amount_cents,
@@ -133,6 +141,7 @@ export async function listClubPayments(bookingId: string): Promise<ClubPaymentRe
     discountCents: r.discount_cents,
     taxCents: r.tax_cents,
     gratuityCents: r.gratuity_cents,
+    missingReceiptReason: r.missing_receipt_reason,
   }));
 }
 
@@ -154,6 +163,9 @@ export async function correctClubPayment(opts: {
   discountCents?: number;
   taxCents?: number;
   gratuityCents?: number;
+  receiptPhotoHash?: string | null;
+  deviceId?: string | null;
+  missingReceiptReason?: string | null;
 }): Promise<{ paymentId: string; newAmountPaidCents: number; balanceDueCents: number; confirmationEmailSent: boolean }> {
   const { data, error } = await supabase.rpc('correct_club_payment', {
     p_original_payment_id: opts.originalPaymentId,
@@ -168,6 +180,9 @@ export async function correctClubPayment(opts: {
     p_discount_cents: opts.discountCents ?? 0,
     p_tax_cents: opts.taxCents ?? 0,
     p_gratuity_cents: opts.gratuityCents ?? 0,
+    p_receipt_photo_hash: opts.receiptPhotoHash ?? null,
+    p_device_id: opts.deviceId ?? null,
+    p_missing_receipt_reason: opts.missingReceiptReason ?? null,
   });
   if (error) throw error;
 
@@ -275,6 +290,36 @@ export async function respondToClubPayment(opts: {
   });
   if (error) throw error;
   return data;
+}
+
+// Section 12 "record staff + device + time": staff (recorded_by) and time
+// (recorded_at) were already captured on every payment - this adds a
+// per-browser device id, generated once and persisted in localStorage, so
+// multiple payments from the same physical device can be correlated. Not
+// true device fingerprinting (a cleared browser gets a new id), just a
+// lightweight, honest proxy - consistent with this feature's manual-
+// checklist-over-vision-API approach elsewhere.
+const DEVICE_ID_KEY = 'bottlesup_device_id';
+export function getOrCreateDeviceId(): string | null {
+  try {
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+// Section 12 "block duplicate receipt photos": a content hash, checked
+// server-side against every other payment at the same venue before a
+// recording is accepted (see record_club_payment/correct_club_payment).
+export async function hashReceiptPhoto(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // club-payment-receipts is a private bucket (receipts can show partial card

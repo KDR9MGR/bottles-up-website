@@ -228,6 +228,10 @@ const CmsReconciliation = () => {
               <div className="text-xl font-bold text-white">{money(report.bottlesupFeeCents)}</div>
             </div>
             <div className="rounded-lg border border-gray-800 p-4">
+              <div className="text-xs uppercase tracking-wide text-gray-500">Club Fee Owed (not auto-collected)</div>
+              <div className="text-xl font-bold text-white">{money(report.clubBottlesupFeeCents)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-800 p-4">
               <div className="text-xs uppercase tracking-wide text-gray-500">Refunds (Online + Club)</div>
               <div className="text-xl font-bold text-red-400">
                 {money(report.onlineRefundsCents + report.clubRefundsCents)}

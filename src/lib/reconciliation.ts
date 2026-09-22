@@ -77,6 +77,7 @@ export interface ReconciliationClubPayment {
   discountCents: number;
   taxCents: number;
   gratuityCents: number;
+  missingReceiptReason: string | null;
 }
 
 export interface ReconciliationRefund {
@@ -112,6 +113,7 @@ export interface BookingReconciliation {
   clubCollectedCents?: number;
   onlineRefundsCents?: number;
   clubRefundsCents?: number;
+  clubBottlesupFeeCents?: number;
   bottles?: ReconciliationBottleLine[];
   clubPayments?: ReconciliationClubPayment[];
   refunds?: ReconciliationRefund[];
@@ -150,6 +152,7 @@ export async function getBookingReconciliation(bookingId: string): Promise<Booki
     clubCollectedCents: data.club_collected_cents,
     onlineRefundsCents: data.online_refunds_cents,
     clubRefundsCents: data.club_refunds_cents,
+    clubBottlesupFeeCents: data.club_bottlesup_fee_cents,
     bottles: (data.bottles ?? []).map((b: Record<string, unknown>) => ({
       id: b.id,
       bottleName: b.bottle_name,
@@ -179,6 +182,7 @@ export async function getBookingReconciliation(bookingId: string): Promise<Booki
       discountCents: (p.discount_cents as number) ?? 0,
       taxCents: (p.tax_cents as number) ?? 0,
       gratuityCents: (p.gratuity_cents as number) ?? 0,
+      missingReceiptReason: (p.missing_receipt_reason as string | null) ?? null,
     })),
     refunds: (data.refunds ?? []).map((r: Record<string, unknown>) => ({
       id: r.id,
@@ -215,6 +219,7 @@ export interface VenueRevenueReport {
   bottlesupCollectedCents: number;
   clubCollectedCents: number;
   bottlesupFeeCents: number;
+  clubBottlesupFeeCents: number;
   onlineRefundsCents: number;
   clubRefundsCents: number;
   outstandingBalanceCents: number;
@@ -238,6 +243,7 @@ export async function getVenueRevenueReport(
     bottlesupCollectedCents: data.bottlesup_collected_cents,
     clubCollectedCents: data.club_collected_cents,
     bottlesupFeeCents: data.bottlesup_fee_cents,
+    clubBottlesupFeeCents: data.club_bottlesup_fee_cents,
     onlineRefundsCents: data.online_refunds_cents,
     clubRefundsCents: data.club_refunds_cents,
     outstandingBalanceCents: data.outstanding_balance_cents,

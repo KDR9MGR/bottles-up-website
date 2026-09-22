@@ -174,6 +174,12 @@ const TableReconciliationSheet = ({ bookingId, onOpenChange, onClosed }: TableRe
                   <span>Total paid directly to the venue</span>
                   <span>{money(detail.clubCollectedCents ?? 0, detail.currency)}</span>
                 </div>
+                {(detail.clubBottlesupFeeCents ?? 0) > 0 && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>BottlesUp fee owed on club sales (not auto-collected)</span>
+                    <span>{money(detail.clubBottlesupFeeCents ?? 0, detail.currency)}</span>
+                  </div>
+                )}
                 {((detail.onlineRefundsCents ?? 0) > 0 || (detail.clubRefundsCents ?? 0) > 0) && (
                   <div className="flex justify-between text-red-400">
                     <span>Refunds (online + club)</span>
@@ -234,20 +240,25 @@ const TableReconciliationSheet = ({ bookingId, onOpenChange, onClosed }: TableRe
                 <div className="space-y-1.5 rounded-lg border border-gray-800 p-4 text-sm">
                   <div className="text-xs uppercase tracking-wide text-gray-500">Club Payments &amp; Confirmations</div>
                   {(detail.clubPayments ?? []).map((p) => (
-                    <div key={p.id} className="flex items-center justify-between text-gray-300">
-                      <span>
-                        {money(p.amountPaidCents, detail.currency)} · {p.paymentMethod}
-                        {p.posReference ? ` · ${p.posReference}` : ''}
-                        {p.payerName && <span className="text-gray-500"> · {p.payerName}</span>}
-                      </span>
-                      {p.customerConfirmationStatus === 'confirmed' ? (
-                        <Badge variant="outline" className="border-green-600 text-[10px] text-green-400">Confirmed</Badge>
-                      ) : p.customerConfirmationStatus === 'disputed' ? (
-                        <Badge variant="outline" className="border-red-600 text-[10px] text-red-400">Disputed</Badge>
-                      ) : p.managerVerifiedAt ? (
-                        <Badge variant="outline" className="border-purple-600 text-[10px] text-purple-400">Manager verified</Badge>
-                      ) : (
-                        <Badge variant="outline" className="border-gray-700 text-[10px] text-gray-500">Awaiting customer</Badge>
+                    <div key={p.id} className="space-y-1 border-b border-gray-900 pb-1.5 last:border-0 last:pb-0">
+                      <div className="flex items-center justify-between text-gray-300">
+                        <span>
+                          {money(p.amountPaidCents, detail.currency)} · {p.paymentMethod}
+                          {p.posReference ? ` · ${p.posReference}` : ''}
+                          {p.payerName && <span className="text-gray-500"> · {p.payerName}</span>}
+                        </span>
+                        {p.customerConfirmationStatus === 'confirmed' ? (
+                          <Badge variant="outline" className="border-green-600 text-[10px] text-green-400">Confirmed</Badge>
+                        ) : p.customerConfirmationStatus === 'disputed' ? (
+                          <Badge variant="outline" className="border-red-600 text-[10px] text-red-400">Disputed</Badge>
+                        ) : p.managerVerifiedAt ? (
+                          <Badge variant="outline" className="border-purple-600 text-[10px] text-purple-400">Manager verified</Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-gray-700 text-[10px] text-gray-500">Awaiting customer</Badge>
+                        )}
+                      </div>
+                      {p.missingReceiptReason && (
+                        <p className="text-[11px] text-amber-400">No receipt - {p.missingReceiptReason}</p>
                       )}
                     </div>
                   ))}
