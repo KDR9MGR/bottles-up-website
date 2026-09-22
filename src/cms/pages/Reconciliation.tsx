@@ -145,13 +145,16 @@ const CmsReconciliation = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
+                        {item.closeoutRequestedAt && (
+                          <Badge variant="outline" className="border-blue-600 text-[10px] text-blue-400">Closeout requested</Badge>
+                        )}
                         {item.hasDispute && (
                           <Badge variant="outline" className="border-red-600 text-[10px] text-red-400">Disputed</Badge>
                         )}
                         {item.hasUnserved && (
                           <Badge variant="outline" className="border-amber-600 text-[10px] text-amber-400">Unserved</Badge>
                         )}
-                        {!item.hasDispute && !item.hasUnserved && item.balanceDueCents === 0 && (
+                        {!item.closeoutRequestedAt && !item.hasDispute && !item.hasUnserved && item.balanceDueCents === 0 && (
                           <span className="text-xs text-gray-600">-</span>
                         )}
                       </div>

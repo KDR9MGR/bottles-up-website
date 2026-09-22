@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import AddBottlesDialog from '@/components/AddBottlesDialog';
 import RecordClubPaymentForm from '@/components/RecordClubPaymentForm';
-import { getMyProfile, requestTablePayment, type MyProfile } from '@/lib/staffDashboard';
+import { getMyProfile, requestTablePayment, requestTableCloseout, type MyProfile } from '@/lib/staffDashboard';
 
 const money = (cents: number, currency = 'CAD') => `$${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
 
@@ -37,6 +37,8 @@ interface BookingDetail {
   amount_total_cents: number;
   amount_paid_cents: number;
   currency: string;
+  reconciled_at: string | null;
+  closeout_requested_at: string | null;
   bottles: BottleLine[];
 }
 
@@ -53,6 +55,7 @@ const StaffTableDetail = () => {
 
   const [addBottlesOpen, setAddBottlesOpen] = useState(false);
   const [requestingPayment, setRequestingPayment] = useState(false);
+  const [requestingCloseout, setRequestingCloseout] = useState(false);
 
   const load = async () => {
     if (!code) return;
@@ -85,6 +88,20 @@ const StaffTableDetail = () => {
       toast({ title: 'Could not request payment', description: err instanceof Error ? err.message : undefined, variant: 'destructive' });
     } finally {
       setRequestingPayment(false);
+    }
+  };
+
+  const handleRequestCloseout = async () => {
+    if (!booking) return;
+    setRequestingCloseout(true);
+    try {
+      await requestTableCloseout(booking.id);
+      toast({ title: 'Closeout requested', description: 'A manager will review and close this table.' });
+      load();
+    } catch (err) {
+      toast({ title: 'Could not request closeout', description: err instanceof Error ? err.message : undefined, variant: 'destructive' });
+    } finally {
+      setRequestingCloseout(false);
     }
   };
 
@@ -165,6 +182,24 @@ const StaffTableDetail = () => {
             >
               {requestingPayment ? 'Requesting...' : 'Request Payment'}
             </Button>
+          )}
+
+          {balanceDueCents === 0 && !booking.reconciled_at && (
+            booking.closeout_requested_at ? (
+              <div className="rounded-lg border border-gray-800 p-3 text-center text-xs text-gray-500">
+                Closeout requested - waiting on a manager.
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full border-gray-700"
+                disabled={requestingCloseout}
+                onClick={handleRequestCloseout}
+              >
+                {requestingCloseout ? 'Requesting...' : 'Request Closeout'}
+              </Button>
+            )
           )}
 
           {profile?.canRecordPayments && balanceDueCents > 0 && (

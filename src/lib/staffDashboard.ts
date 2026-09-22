@@ -123,6 +123,15 @@ export async function requestTablePayment(bookingId: string): Promise<void> {
   if (error) throw error;
 }
 
+// Section 11: a server flags a table as ready for a manager to review and
+// close - it never closes the table itself (close_table_booking_
+// reconciliation still requires is_cms_admin()). Purely a signal surfaced
+// on the manager's reconciliation queue/detail view.
+export async function requestTableCloseout(bookingId: string): Promise<void> {
+  const { error } = await supabase.rpc('request_table_closeout', { p_booking_id: bookingId });
+  if (error) throw error;
+}
+
 export async function getMyProfile(): Promise<MyProfile | null> {
   const { data: sessionData } = await supabase.auth.getSession();
   const uid = sessionData.session?.user.id;

@@ -12,6 +12,7 @@ export interface ReconciliationQueueItem {
   balanceDueCents: number;
   hasDispute: boolean;
   hasUnserved: boolean;
+  closeoutRequestedAt: string | null;
 }
 
 export async function listReconciliationQueue(venueId?: string | null): Promise<ReconciliationQueueItem[]> {
@@ -29,6 +30,7 @@ export async function listReconciliationQueue(venueId?: string | null): Promise<
     balance_due_cents: number;
     has_dispute: boolean;
     has_unserved: boolean;
+    closeout_requested_at: string | null;
   }>).map((r) => ({
     id: r.id,
     confirmationCode: r.confirmation_code,
@@ -41,6 +43,7 @@ export async function listReconciliationQueue(venueId?: string | null): Promise<
     balanceDueCents: r.balance_due_cents,
     hasDispute: r.has_dispute,
     hasUnserved: r.has_unserved,
+    closeoutRequestedAt: r.closeout_requested_at,
   }));
 }
 
@@ -115,6 +118,8 @@ export interface BookingReconciliation {
   flags?: string[];
   reconciledAt?: string | null;
   reconciliationOverrideReason?: string | null;
+  closeoutRequestedAt?: string | null;
+  closeoutRequestedByEmail?: string | null;
 }
 
 export async function getBookingReconciliation(bookingId: string): Promise<BookingReconciliation> {
@@ -187,6 +192,8 @@ export async function getBookingReconciliation(bookingId: string): Promise<Booki
     flags: data.flags ?? [],
     reconciledAt: data.reconciled_at,
     reconciliationOverrideReason: data.reconciliation_override_reason,
+    closeoutRequestedAt: data.closeout_requested_at,
+    closeoutRequestedByEmail: data.closeout_requested_by_email,
   };
 }
 

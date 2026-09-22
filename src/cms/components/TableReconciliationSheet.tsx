@@ -110,6 +110,11 @@ const TableReconciliationSheet = ({ bookingId, onOpenChange, onClosed }: TableRe
                 {detail.reconciledAt && (
                   <Badge variant="outline" className="border-green-600 text-green-400">Already closed</Badge>
                 )}
+                {!detail.reconciledAt && detail.closeoutRequestedAt && (
+                  <Badge variant="outline" className="border-blue-600 text-blue-400">
+                    Closeout requested{detail.closeoutRequestedByEmail ? ` by ${detail.closeoutRequestedByEmail}` : ''}
+                  </Badge>
+                )}
               </div>
 
               {flags.length > 0 ? (
