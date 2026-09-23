@@ -46,6 +46,14 @@ interface BottleLine {
   cancellation_reason: string | null;
 }
 
+interface GuestTicket {
+  id: string;
+  guest_name: string;
+  guest_email: string;
+  ticket_sent_at: string | null;
+  checked_in_at: string | null;
+}
+
 interface BookingLookup {
   found: boolean;
   id: string;
@@ -53,6 +61,7 @@ interface BookingLookup {
   customer_name: string;
   customer_email: string;
   guest_count: number;
+  max_guests: number;
   venue_name: string;
   table_type_name: string;
   booking_date: string;
@@ -66,6 +75,14 @@ interface BookingLookup {
   amount_paid_cents: number;
   currency: string;
   bottles: BottleLine[];
+  guests: GuestTicket[];
+  // Which code was actually scanned/entered - the holder's confirmation_code,
+  // or one specific guest's own guest_code. Check-in acts on this person only.
+  scanned_code: string;
+  scanned_entity: 'holder' | 'guest';
+  scanned_guest_id: string | null;
+  scanned_name: string;
+  scanned_checked_in_at: string | null;
 }
 
 interface SearchHit {
@@ -161,7 +178,7 @@ const CheckInTables = () => {
         description: err instanceof Error ? err.message : 'Please try again.',
         variant: 'destructive',
       });
-      runLookup(booking.confirmation_code);
+      runLookup(booking.scanned_code);
     }
   };
 
@@ -216,7 +233,9 @@ const CheckInTables = () => {
   const handleCheckIn = async () => {
     if (!booking || checkingIn) return;
     setCheckingIn(true);
-    const { data, error } = await supabase.rpc('checkin_ticket', { p_ticket_code: booking.confirmation_code });
+    // Act on whichever code was actually scanned/entered - a guest's own
+    // code checks in just that guest, not the booking holder.
+    const { data, error } = await supabase.rpc('checkin_ticket', { p_ticket_code: booking.scanned_code });
     setCheckingIn(false);
 
     if (error) {
@@ -225,7 +244,7 @@ const CheckInTables = () => {
     }
     const outcome = data?.[0]?.result;
     if (outcome === 'ok') {
-      toast({ title: 'Checked in', description: `${booking.customer_name} is in.` });
+      toast({ title: 'Checked in', description: `${booking.scanned_name} is in.` });
     } else if (outcome === 'already_checked_in') {
       toast({ title: 'Already checked in' });
     } else if (outcome === 'expired') {
@@ -235,7 +254,7 @@ const CheckInTables = () => {
     }
     // Refresh from the source of truth rather than assuming the RPC's outcome
     // maps 1:1 onto what changed - re-lookup shows exactly what's on the row now.
-    runLookup(booking.confirmation_code);
+    runLookup(booking.scanned_code);
   };
 
   const scanNext = () => {
@@ -260,7 +279,7 @@ const CheckInTables = () => {
       });
       setCancellingLineId(null);
       setCancelLineReason('');
-      if (booking) runLookup(booking.confirmation_code);
+      if (booking) runLookup(booking.scanned_code);
     } catch (err) {
       toast({ title: 'Could not cancel item', description: err instanceof Error ? err.message : 'Please try again.', variant: 'destructive' });
     } finally {
@@ -314,10 +333,12 @@ const CheckInTables = () => {
           <div className="rounded-2xl border-2 border-gray-800 bg-gray-950 p-5">
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <div className="text-lg font-bold text-white">{booking.customer_name}</div>
-                <div className="text-xs text-gray-500">{booking.customer_email}</div>
+                <div className="text-lg font-bold text-white">{booking.scanned_name}</div>
+                <div className="text-xs text-gray-500">
+                  {booking.scanned_entity === 'guest' ? `Guest of ${booking.customer_name}` : booking.customer_email}
+                </div>
               </div>
-              {booking.checked_in_at ? (
+              {booking.scanned_checked_in_at ? (
                 <Badge variant="outline" className="border-green-600 text-green-400">
                   Checked In
                 </Badge>
@@ -330,13 +351,22 @@ const CheckInTables = () => {
 
             <div className="mb-3 space-y-1 text-sm text-gray-300">
               <div>{booking.table_type_name} - {booking.venue_name}</div>
-              <div className="text-gray-500">{booking.guest_count} guests · Confirmation {booking.confirmation_code}</div>
+              <div className="text-gray-500">
+                {booking.guest_count} guests · Confirmation{' '}
+                {booking.scanned_entity === 'guest' ? booking.confirmation_code : booking.scanned_code}
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-gray-500">Service status:</span>
                 <Badge variant="outline" className="border-gray-700 text-gray-300">
                   {FULFILLMENT_LABELS[booking.fulfillment_status]}
                 </Badge>
               </div>
+              {booking.guests.length > 0 && (
+                <div className="text-gray-500">
+                  Party: {booking.guests.filter((g) => g.checked_in_at).length + (booking.checked_in_at ? 1 : 0)} of{' '}
+                  {booking.guests.length + 1} checked in
+                </div>
+              )}
             </div>
 
             <div className="space-y-2 rounded-lg border border-gray-800 p-3 text-sm">
@@ -523,7 +553,7 @@ const CheckInTables = () => {
                 currency={booking.currency}
                 customerName={booking.customer_name}
                 customerEmail={booking.customer_email}
-                onRecorded={() => runLookup(booking.confirmation_code)}
+                onRecorded={() => runLookup(booking.scanned_code)}
               />
             </div>
           )}
@@ -539,7 +569,7 @@ const CheckInTables = () => {
             </Button>
           )}
 
-          {booking.checked_in_at ? (
+          {booking.scanned_checked_in_at ? (
             <div className="rounded-2xl border-2 border-green-600 bg-green-950 p-4 text-center text-green-400">
               <CheckCircle2 className="mx-auto mb-2 h-8 w-8" />
               Checked in
@@ -639,7 +669,7 @@ const CheckInTables = () => {
           mode="staff"
           open={addBottlesOpen}
           onOpenChange={setAddBottlesOpen}
-          onAdded={() => runLookup(booking.confirmation_code)}
+          onAdded={() => runLookup(booking.scanned_code)}
         />
       )}
 

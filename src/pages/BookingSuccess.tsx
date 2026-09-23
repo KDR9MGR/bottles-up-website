@@ -251,6 +251,15 @@ const BookingSuccess = () => {
           </div>
         )}
 
+        {booking && (
+          <Button
+            asChild
+            className="mt-4 w-full max-w-sm bg-gradient-orange text-black font-bold hover:opacity-90"
+          >
+            <Link to={`/booking/${booking.confirmationCode}`}>Send Guest Tickets</Link>
+          </Button>
+        )}
+
         {showAccountPrompt && customerEmail && (
           <CreateAccountPrompt email={customerEmail} name={customerName} />
         )}

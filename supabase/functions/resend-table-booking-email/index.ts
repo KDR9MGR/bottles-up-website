@@ -87,6 +87,7 @@ Deno.serve(async (req: Request) => {
       hours: booking.hours,
       confirmationCode: booking.confirmation_code,
       qrDataUrl,
+      manageBookingUrl: `${Deno.env.get('SITE_URL') ?? 'https://bottlesupapp.com'}/booking/${booking.confirmation_code}`,
       orderMoreUrl: `${Deno.env.get('SITE_URL') ?? 'https://bottlesupapp.com'}/order/${booking.confirmation_code}`,
     });
 

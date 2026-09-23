@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Plus, Wine, X, Receipt, Ban, ShieldAlert, RotateCcw } from 'lucide-react';
+import { Plus, Wine, X, Receipt, Ban, ShieldAlert, RotateCcw, Users, CheckCircle2 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
@@ -57,6 +57,14 @@ type BookingRow = Database['public']['Tables']['site_table_bookings']['Row'] & {
 
 type BottleLine = Database['public']['Tables']['site_table_booking_bottles']['Row'];
 
+interface GuestTicket {
+  id: string;
+  guest_name: string;
+  guest_email: string;
+  ticket_sent_at: string | null;
+  checked_in_at: string | null;
+}
+
 const statusVariant: Record<OrderStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   paid: 'default',
   pending: 'secondary',
@@ -83,6 +91,7 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
   const [paymentHistory, setPaymentHistory] = useState<ClubPaymentRecord[]>([]);
 
   const [venueBottles, setVenueBottles] = useState<{ id: string; name: string; size: string | null; price_cents: number }[]>([]);
+  const [guestTickets, setGuestTickets] = useState<GuestTicket[]>([]);
 
   const [cancellingLineId, setCancellingLineId] = useState<string | null>(null);
   const [cancelLineReason, setCancelLineReason] = useState('');
@@ -116,7 +125,7 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
     if (!bookingId) return;
     setLoading(true);
 
-    const [{ data: bookingData }, { data: linesData }, { data: contentData }] = await Promise.all([
+    const [{ data: bookingData }, { data: linesData }, { data: contentData }, { data: guestsData }] = await Promise.all([
       supabase
         .from('site_table_bookings')
         .select('*, site_venues(id, name, tax_rate_bps), site_table_types(name), site_venue_time_slots(start_time)')
@@ -128,12 +137,18 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
         .eq('booking_id', bookingId)
         .order('created_at', { ascending: true }),
       supabase.from('site_content').select('bottlesup_fee_bps').eq('id', 1).maybeSingle(),
+      supabase
+        .from('guest_tickets')
+        .select('id, guest_name, guest_email, ticket_sent_at, checked_in_at')
+        .eq('booking_id', bookingId)
+        .order('created_at', { ascending: true }),
     ]);
 
     const loadedBooking = bookingData as BookingRow | null;
     setBooking(loadedBooking);
     setBottleLines((linesData as BottleLine[]) ?? []);
     setBottlesUpFeeBps(contentData?.bottlesup_fee_bps ?? 0);
+    setGuestTickets((guestsData as GuestTicket[]) ?? []);
 
     if (loadedBooking) {
       listClubPayments(loadedBooking.id)
@@ -619,6 +634,53 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                 >
                   <Plus className="mr-2 h-4 w-4" /> Add Bottles
                 </Button>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center gap-2 text-white">
+                  <Users className="h-4 w-4 text-primary" />
+                  <span className="font-semibold">Guest Tickets</span>
+                </div>
+                {guestTickets.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No guest tickets sent yet.</p>
+                ) : (
+                  <div className="rounded-lg border border-gray-800">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Guest</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Sent</TableHead>
+                          <TableHead>Checked In</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {guestTickets.map((g) => (
+                          <TableRow key={g.id}>
+                            <TableCell className="text-white">{g.guest_name}</TableCell>
+                            <TableCell className="text-gray-400">{g.guest_email}</TableCell>
+                            <TableCell>
+                              {g.ticket_sent_at ? (
+                                <span className="text-xs text-emerald-400">Sent</span>
+                              ) : (
+                                <span className="text-xs text-amber-400">Not sent</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {g.checked_in_at ? (
+                                <span className="flex items-center gap-1 text-xs text-emerald-400">
+                                  <CheckCircle2 className="h-3.5 w-3.5" /> Checked in
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-500">Not yet</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1.5 rounded-lg border border-gray-800 p-4 text-sm">
