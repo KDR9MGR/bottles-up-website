@@ -31,6 +31,7 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('STRIPE_WEBHOOK_SECRET_TEST'),
     Deno.env.get('STRIPE_WEBHOOK_SECRET_LIVE'),
     Deno.env.get('STRIPE_WEBHOOK_SECRET'),
+    Deno.env.get('STRIPE_WEBHOOK_SECRET_KEY'),
   ].filter((s): s is string => !!s);
 
   let event: Stripe.Event;
