@@ -151,11 +151,12 @@ const CmsBookings = () => {
   };
 
   const handleExportCsv = () => {
-    const header = ['Customer', 'Email', 'Event', 'Tier', 'Qty', 'Total', 'Status', 'Ticket Code', 'Created At'];
+    const header = ['Customer', 'Email', 'Event', 'Event Date', 'Tier', 'Qty', 'Total', 'Status', 'Ticket Code', 'Booked At'];
     const rows = filtered.map((o) => [
       o.customer_name,
       o.customer_email,
       o.events?.title ?? '',
+      o.events?.start_date ?? '',
       o.ticket_tiers?.name ?? '',
       String(o.quantity),
       (o.amount_total_cents / 100).toFixed(2),
@@ -271,11 +272,13 @@ const CmsBookings = () => {
               <TableRow>
                 <TableHead>Customer</TableHead>
                 <TableHead>Event</TableHead>
+                <TableHead>Event Date</TableHead>
                 <TableHead>Tier</TableHead>
                 <TableHead>Qty</TableHead>
                 <TableHead>Total</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Ticket Code</TableHead>
+                <TableHead>Booked</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -287,6 +290,15 @@ const CmsBookings = () => {
                     <div className="text-xs text-gray-500">{order.customer_email}</div>
                   </TableCell>
                   <TableCell>{order.events?.title ?? '-'}</TableCell>
+                  <TableCell>
+                    {order.events?.start_date ? (
+                      <span title={format(parseISO(order.events.start_date), "PPpp")}>
+                        {format(parseISO(order.events.start_date), 'MMM d, yyyy')}
+                      </span>
+                    ) : (
+                      '-'
+                    )}
+                  </TableCell>
                   <TableCell>{order.ticket_tiers?.name ?? '-'}</TableCell>
                   <TableCell>{order.quantity}</TableCell>
                   <TableCell>${(order.amount_total_cents / 100).toFixed(2)}</TableCell>
@@ -294,6 +306,11 @@ const CmsBookings = () => {
                     <Badge variant={statusVariant[order.status]}>{order.status}</Badge>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{order.ticket_code ?? '-'}</TableCell>
+                  <TableCell>
+                    <span title={format(parseISO(order.created_at), 'PPpp')}>
+                      {format(parseISO(order.created_at), 'MMM d, yyyy')}
+                    </span>
+                  </TableCell>
                   <TableCell className="text-right">
                     {(order.status === 'pending' || order.status === 'failed') && (
                       <Button
@@ -324,7 +341,7 @@ const CmsBookings = () => {
               ))}
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-gray-500">
+                  <TableCell colSpan={10} className="text-center text-gray-500">
                     No bookings yet.
                   </TableCell>
                 </TableRow>

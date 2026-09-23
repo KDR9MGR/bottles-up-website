@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { format, parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -298,6 +299,7 @@ const CmsTableBookings = () => {
                 <TableHead>Status</TableHead>
                 <TableHead>Fulfillment</TableHead>
                 <TableHead>Code</TableHead>
+                <TableHead>Booked</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -345,6 +347,11 @@ const CmsTableBookings = () => {
                     </Select>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{booking.confirmation_code ?? '-'}</TableCell>
+                  <TableCell>
+                    <span title={format(parseISO(booking.created_at), 'PPpp')}>
+                      {format(parseISO(booking.created_at), 'MMM d, yyyy')}
+                    </span>
+                  </TableCell>
                   <TableCell className="text-right">
                     <Button size="sm" variant="ghost" onClick={() => setOpenBookingId(booking.id)}>
                       <Eye className="mr-1 h-3 w-3" />
@@ -402,7 +409,7 @@ const CmsTableBookings = () => {
               ))}
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={11} className="text-center text-gray-500">
+                  <TableCell colSpan={12} className="text-center text-gray-500">
                     No table bookings yet.
                   </TableCell>
                 </TableRow>
