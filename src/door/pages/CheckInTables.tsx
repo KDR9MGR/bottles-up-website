@@ -30,6 +30,7 @@ import { cancelBottleLine, flagBottleUnavailable } from '@/lib/bottleExceptions'
 import AddBottlesDialog from '@/components/AddBottlesDialog';
 import CreateWalkInDialog from '@/components/CreateWalkInDialog';
 import RecordClubPaymentForm from '@/components/RecordClubPaymentForm';
+import { isAfterMidnightSlot, computeNightDate, formatWeekday, formatTimeSlot } from '@/lib/bookingNight';
 
 const READER_ID = 'door-table-qr-reader';
 const SAME_CODE_COOLDOWN_MS = 5000;
@@ -351,6 +352,11 @@ const CheckInTables = () => {
 
             <div className="mb-3 space-y-1 text-sm text-gray-300">
               <div>{booking.table_type_name} - {booking.venue_name}</div>
+              <div className="text-gray-500">
+                {isAfterMidnightSlot(booking.start_time)
+                  ? `${formatWeekday(computeNightDate(booking.booking_date, booking.start_time))} night's event · Arrival: ${formatWeekday(booking.booking_date)}, ${formatTimeSlot(booking.start_time)}`
+                  : `${formatWeekday(booking.booking_date)} · Arrival: ${formatTimeSlot(booking.start_time)}`}
+              </div>
               <div className="text-gray-500">
                 {booking.guest_count} guests · Confirmation{' '}
                 {booking.scanned_entity === 'guest' ? booking.confirmation_code : booking.scanned_code}

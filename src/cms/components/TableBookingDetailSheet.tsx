@@ -47,6 +47,7 @@ import {
   refundBookingPayment,
 } from '@/lib/bottleExceptions';
 import { updateBottleServiceStatus, BOTTLE_SERVICE_STATUS_LABELS, BOTTLE_SERVICE_STATUSES } from '@/lib/bottleService';
+import { isAfterMidnightSlot, computeNightDate, formatWeekday, formatTimeSlot } from '@/lib/bookingNight';
 import type { Database, OrderStatus, BottleServiceStatus } from '@/types/database';
 
 type BookingRow = Database['public']['Tables']['site_table_bookings']['Row'] & {
@@ -443,8 +444,24 @@ const TableBookingDetailSheet = ({ bookingId, onOpenChange, onUpdated }: TableBo
                   <div className="text-white">{booking.site_table_types?.name ?? '-'}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-500">Date</div>
-                  <div className="text-white">{booking.booking_date}</div>
+                  <div className="text-xs text-gray-500">
+                    {booking.site_venue_time_slots && isAfterMidnightSlot(booking.site_venue_time_slots.start_time)
+                      ? "Night's event"
+                      : 'Date'}
+                  </div>
+                  {booking.site_venue_time_slots && isAfterMidnightSlot(booking.site_venue_time_slots.start_time) ? (
+                    <div className="text-white">
+                      {formatWeekday(computeNightDate(booking.booking_date, booking.site_venue_time_slots.start_time))} night
+                      <div className="text-xs text-gray-400">
+                        Arrival: {booking.booking_date} ({formatTimeSlot(booking.site_venue_time_slots.start_time)})
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-white">
+                      {booking.booking_date}
+                      {booking.site_venue_time_slots && ` (${formatTimeSlot(booking.site_venue_time_slots.start_time)})`}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <div className="text-xs text-gray-500">Guests</div>

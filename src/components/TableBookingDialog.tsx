@@ -24,6 +24,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import type { Database, BottlePaymentChoice } from '@/types/database';
 import type { TableTypeWithVenue } from '@/pages/VipTables';
+import { isAfterMidnightSlot, computeArrivalDate, formatWeekday } from '@/lib/bookingNight';
 
 type BottleRow = Database['public']['Tables']['site_bottles']['Row'];
 
@@ -350,6 +351,17 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
                   ))}
                 </SelectContent>
               </Select>
+              {date && (() => {
+                const selectedSlot = slotsForSelectedDate.find((s) => s.id === slotId);
+                if (!selectedSlot || !isAfterMidnightSlot(selectedSlot.start_time)) return null;
+                const nightDateStr = format(date, 'yyyy-MM-dd');
+                const arrivalDateStr = computeArrivalDate(nightDateStr, selectedSlot.start_time);
+                return (
+                  <p className="text-xs text-orange-400">
+                    {formatWeekday(nightDateStr)} night's event - you'll be arriving {formatWeekday(arrivalDateStr)}, {formatTimeSlot(selectedSlot.start_time)}.
+                  </p>
+                );
+              })()}
             </div>
 
             <div className="space-y-2">

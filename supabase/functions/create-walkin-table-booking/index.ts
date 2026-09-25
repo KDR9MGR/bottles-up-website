@@ -2,6 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import QRCode from 'npm:qrcode@1.5.3';
 import { corsHeadersFor, handleOptions, isPreviewOrLocalOrigin } from '../_shared/cors.ts';
 import { generateConfirmationCode, sendTableBookingEmail, formatTimeSlot } from '../_shared/tableBookingEmail.ts';
+import { computeArrivalDate } from '../_shared/bookingNight.ts';
 
 // Bottle Payment Options section 8: "for customers without reservations,
 // staff creates a Walk-In Table Tab, assigns the table and follows the same
@@ -88,13 +89,17 @@ Deno.serve(async (req: Request) => {
 
     const { data: timeSlot, error: timeSlotError } = await supabase
       .from('site_venue_time_slots')
-      .select('id')
+      .select('id, start_time')
       .eq('id', time_slot_id)
       .eq('venue_id', venue_id)
       .single();
     if (timeSlotError || !timeSlot) {
       return json({ error: 'Time slot not found' }, 404);
     }
+
+    // Same "which calendar day does this slot's guest actually arrive on" logic
+    // as the real checkout flow - see create-table-booking-checkout for why.
+    const arrivalDate = computeArrivalDate(booking_date, timeSlot.start_time);
 
     let depositCents: number;
     let bookedHours: number | null = null;
@@ -120,7 +125,7 @@ Deno.serve(async (req: Request) => {
       .select('id', { count: 'exact', head: true })
       .eq('table_type_id', table_type_id)
       .eq('time_slot_id', time_slot_id)
-      .eq('booking_date', booking_date)
+      .eq('booking_date', arrivalDate)
       .eq('status', 'paid');
     if ((paidCount ?? 0) >= tableType.inventory_count) {
       return json({ error: 'No tables of this type left for that date and time' }, 409);
@@ -134,7 +139,7 @@ Deno.serve(async (req: Request) => {
         venue_id,
         table_type_id,
         time_slot_id,
-        booking_date,
+        booking_date: arrivalDate,
         customer_name,
         customer_email,
         customer_phone: customer_phone ?? null,
@@ -178,12 +183,6 @@ Deno.serve(async (req: Request) => {
       : (Deno.env.get('SITE_URL') ?? 'https://bottlesupapp.com');
 
     const venue = tableType.venue as { name: string };
-    const { data: timeSlotRow } = await supabase
-      .from('site_venue_time_slots')
-      .select('start_time')
-      .eq('id', time_slot_id)
-      .single();
-
     const qrDataUrl = await QRCode.toDataURL(confirmationCode, { width: 400, margin: 1 });
 
     const email = await sendTableBookingEmail({
@@ -191,8 +190,9 @@ Deno.serve(async (req: Request) => {
       toName: customer_name,
       venueName: venue.name,
       tableTypeName: tableType.name,
-      bookingDate: booking_date,
-      timeSlotLabel: timeSlotRow ? formatTimeSlot(timeSlotRow.start_time) : '',
+      bookingDate: arrivalDate,
+      startTime: timeSlot.start_time,
+      timeSlotLabel: formatTimeSlot(timeSlot.start_time),
       guestCount: guests,
       depositCents,
       bottleSubtotalCents: 0,

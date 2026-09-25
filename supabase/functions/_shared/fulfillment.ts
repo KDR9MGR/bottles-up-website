@@ -181,6 +181,7 @@ export async function fulfillTableBooking(
     venueName: venue.name,
     tableTypeName: tableType.name,
     bookingDate: booking.booking_date,
+    startTime: timeSlot.start_time,
     timeSlotLabel: formatTimeSlot(timeSlot.start_time),
     guestCount: booking.guest_count,
     depositCents: booking.deposit_cents,

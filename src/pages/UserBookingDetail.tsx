@@ -12,6 +12,7 @@ import Header from '@/components/Header';
 import AddBottlesDialog from '@/components/AddBottlesDialog';
 import ClubPaymentConfirmCard from '@/components/ClubPaymentConfirmCard';
 import type { ClubPaymentMethod } from '@/lib/clubPayment';
+import { isAfterMidnightSlot, computeNightDate, formatWeekday, formatTimeSlot } from '@/lib/bookingNight';
 
 type BookingType = 'ticket' | 'table';
 
@@ -21,6 +22,8 @@ interface DetailData {
   venue: string;
   date: string | null;
   time: string;
+  crossesMidnight?: boolean;
+  nightDate?: string | null;
   guestCount?: number;
   status: string;
   currency: string;
@@ -136,7 +139,9 @@ export default function UserBookingDetail() {
           title: tableType?.name ?? 'VIP Table',
           venue: venue?.name ?? '',
           date: booking.booking_date,
-          time: timeSlot?.start_time ?? '',
+          time: timeSlot ? formatTimeSlot(timeSlot.start_time) : '',
+          crossesMidnight: timeSlot ? isAfterMidnightSlot(timeSlot.start_time) : false,
+          nightDate: timeSlot ? computeNightDate(booking.booking_date, timeSlot.start_time) : null,
           guestCount: booking.guest_count,
           status: booking.status,
           currency: booking.currency,
@@ -357,17 +362,32 @@ export default function UserBookingDetail() {
             <Separator className="bg-white/5" />
 
             <div className="p-5 space-y-3">
-              {dateStr && (
-                <div className="flex items-center gap-3 text-sm">
-                  <Calendar className="h-4 w-4 text-gray-500 shrink-0" />
-                  <span className="text-gray-300">{dateStr}</span>
-                </div>
-              )}
-              {data.time && (
-                <div className="flex items-center gap-3 text-sm">
-                  <Clock className="h-4 w-4 text-gray-500 shrink-0" />
-                  <span className="text-gray-300">{data.time}</span>
-                </div>
+              {data.crossesMidnight && data.nightDate ? (
+                <>
+                  <div className="flex items-center gap-3 text-sm">
+                    <Calendar className="h-4 w-4 text-gray-500 shrink-0" />
+                    <span className="text-gray-300">{formatWeekday(data.nightDate)} night's event</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm">
+                    <Clock className="h-4 w-4 text-gray-500 shrink-0" />
+                    <span className="text-gray-300">Arrival: {dateStr}, {data.time}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {dateStr && (
+                    <div className="flex items-center gap-3 text-sm">
+                      <Calendar className="h-4 w-4 text-gray-500 shrink-0" />
+                      <span className="text-gray-300">{dateStr}</span>
+                    </div>
+                  )}
+                  {data.time && (
+                    <div className="flex items-center gap-3 text-sm">
+                      <Clock className="h-4 w-4 text-gray-500 shrink-0" />
+                      <span className="text-gray-300">{data.time}</span>
+                    </div>
+                  )}
+                </>
               )}
               {data.venue && (
                 <div className="flex items-center gap-3 text-sm">

@@ -5,12 +5,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
+import { formatWeekday } from '@/lib/bookingNight';
+import BackLink from '@/components/BackLink';
 
 interface BookingSummary {
   customerName: string;
   venueName: string;
   tableTypeName: string;
   bookingDate: string;
+  startTime: string;
+  crossesMidnight: boolean;
+  nightDate: string;
   timeSlotLabel: string;
   maxGuests: number;
   remainingCapacity: number;
@@ -164,11 +169,14 @@ const BookingByCode = () => {
   return (
     <div className="min-h-screen bg-black px-4 py-10">
       <div className="mx-auto max-w-sm">
-        <h1 className="mb-1 text-center text-xl font-bold text-white">
+        <BackLink to="/" label="Back to BottlesUp" />
+        <h1 className="mb-1 mt-4 text-center text-xl font-bold text-white">
           {booking.tableTypeName} - {booking.venueName}
         </h1>
         <p className="mb-1 text-center text-sm text-gray-500">
-          {formattedDate(booking.bookingDate)} &middot; Arrival {booking.timeSlotLabel}
+          {booking.crossesMidnight
+            ? `${formatWeekday(booking.nightDate)} night's event · Arrival: ${formatWeekday(booking.bookingDate)}, ${booking.timeSlotLabel}`
+            : `${formattedDate(booking.bookingDate)} · Arrival ${booking.timeSlotLabel}`}
         </p>
         <p className="mb-6 text-center text-xs text-gray-600">Booked by {booking.customerName}</p>
 

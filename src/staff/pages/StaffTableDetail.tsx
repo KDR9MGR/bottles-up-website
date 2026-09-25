@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import AddBottlesDialog from '@/components/AddBottlesDialog';
 import RecordClubPaymentForm from '@/components/RecordClubPaymentForm';
 import { getMyProfile, requestTablePayment, requestTableCloseout, type MyProfile } from '@/lib/staffDashboard';
+import { isAfterMidnightSlot, computeNightDate, formatWeekday, formatTimeSlot } from '@/lib/bookingNight';
 
 const money = (cents: number, currency = 'CAD') => `$${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
 
@@ -31,6 +32,7 @@ interface BookingDetail {
   venue_name: string;
   table_type_name: string;
   booking_date: string;
+  start_time: string;
   status: string;
   checked_in_at: string | null;
   deposit_cents: number;
@@ -119,8 +121,13 @@ const StaffTableDetail = () => {
         <div className="space-y-4">
           <div className="rounded-2xl border-2 border-gray-800 bg-gray-950 p-4">
             <div className="mb-1 text-lg font-bold text-white">{booking.customer_name}</div>
-            <div className="mb-3 text-sm text-gray-400">
+            <div className="mb-1 text-sm text-gray-400">
               {booking.table_type_name} - {booking.venue_name} · {booking.guest_count} guests
+            </div>
+            <div className="mb-3 text-sm text-gray-500">
+              {isAfterMidnightSlot(booking.start_time)
+                ? `${formatWeekday(computeNightDate(booking.booking_date, booking.start_time))} night's event · Arrival: ${formatWeekday(booking.booking_date)}, ${formatTimeSlot(booking.start_time)}`
+                : `${formatWeekday(booking.booking_date)} · Arrival: ${formatTimeSlot(booking.start_time)}`}
             </div>
             <div className="flex items-center gap-2">
               {booking.checked_in_at ? (

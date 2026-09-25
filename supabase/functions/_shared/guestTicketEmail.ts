@@ -1,3 +1,5 @@
+import { isAfterMidnightSlot, computeNightDate, formatWeekday } from './bookingNight.ts';
+
 const resendApiKey = Deno.env.get('RESEND_API_KEY');
 const fromEmail = Deno.env.get('TICKETS_FROM_EMAIL') ?? 'tickets@bottlesupapp.com';
 
@@ -22,6 +24,7 @@ export async function sendGuestTicketEmail(opts: {
   venueName: string;
   tableTypeName: string;
   bookingDate: string;
+  startTime: string; // raw slot start time, e.g. "01:00:00" - used to detect after-midnight slots
   timeSlotLabel: string;
   guestCode: string;
   qrDataUrl: string;
@@ -37,6 +40,9 @@ export async function sendGuestTicketEmail(opts: {
     day: 'numeric',
     timeZone: 'UTC',
   });
+  const nightLine = isAfterMidnightSlot(opts.startTime)
+    ? `${formatWeekday(computeNightDate(opts.bookingDate, opts.startTime))} night's event<br/>Arrival: ${formattedDate}, ${opts.timeSlotLabel}`
+    : `${formattedDate}<br/>Arrival: ${opts.timeSlotLabel}`;
 
   const html = `
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0a0a0a; color: #fff; border-radius: 16px;">
@@ -44,7 +50,7 @@ export async function sendGuestTicketEmail(opts: {
       <p>Hi ${opts.toName},</p>
       <p><strong>${opts.hostName}</strong> added you to their VIP table at:</p>
       <h2 style="margin-bottom: 4px;">${opts.tableTypeName} - ${opts.venueName}</h2>
-      <p style="color: #999; margin-top: 0;">${formattedDate}<br/>Arrival: ${opts.timeSlotLabel}</p>
+      <p style="color: #999; margin-top: 0;">${nightLine}</p>
       <div style="text-align: center; margin: 24px 0;">
         <img src="cid:qrcode" alt="Guest ticket QR code" width="200" height="200" style="background: #fff; padding: 12px; border-radius: 8px;" />
       </div>

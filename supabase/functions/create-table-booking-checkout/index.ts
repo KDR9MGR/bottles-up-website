@@ -3,6 +3,7 @@ import Stripe from 'npm:stripe@17';
 import { corsHeadersFor, handleOptions, isPreviewOrLocalOrigin } from '../_shared/cors.ts';
 import { validatePromoCode } from '../_shared/promoCode.ts';
 import { dueAtVenueBottleCents } from '../_shared/bottlePayment.ts';
+import { computeArrivalDate } from '../_shared/bookingNight.ts';
 
 Deno.serve(async (req: Request) => {
   const preflight = handleOptions(req);
@@ -134,7 +135,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: timeSlot, error: timeSlotError } = await supabase
       .from('site_venue_time_slots')
-      .select('id, day_of_week, venue_id')
+      .select('id, day_of_week, start_time, venue_id')
       .eq('id', time_slot_id)
       .eq('venue_id', venue_id)
       .single();
@@ -143,11 +144,20 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'Time slot not found' }, 404);
     }
 
-    // The requested date must actually fall on the day of week this slot is offered.
+    // `booking_date` from the client is the "night" the customer picked (the
+    // calendar date they clicked, e.g. a Saturday) - that's what the day-of-week
+    // must match, not the actual arrival date computed below.
     const requestedDayOfWeek = new Date(`${booking_date}T00:00:00Z`).getUTCDay();
     if (requestedDayOfWeek !== timeSlot.day_of_week) {
       return json({ error: 'This time slot is not offered on the selected date' }, 400);
     }
+
+    // A slot before the after-midnight cutoff (e.g. "1:00 AM") is the tail end
+    // of the picked night's party, not the start of a new one - the guest is
+    // actually arriving on the following calendar day. This is the date that
+    // gets stored and checked for availability; `booking_date` above stays the
+    // night the booking conceptually belongs to.
+    const arrivalDate = computeArrivalDate(booking_date, timeSlot.start_time);
 
     // Hourly-priced tables: the customer picks how many hours, total scales with it.
     // Flat-priced tables charge the fixed deposit, exactly as before.
@@ -180,7 +190,7 @@ Deno.serve(async (req: Request) => {
       .select('id', { count: 'exact', head: true })
       .eq('table_type_id', table_type_id)
       .eq('time_slot_id', time_slot_id)
-      .eq('booking_date', booking_date)
+      .eq('booking_date', arrivalDate)
       .eq('status', 'paid');
 
     if ((paidCount ?? 0) >= tableType.inventory_count) {
@@ -287,7 +297,7 @@ Deno.serve(async (req: Request) => {
         venue_id,
         table_type_id,
         time_slot_id,
-        booking_date,
+        booking_date: arrivalDate,
         customer_name,
         customer_email,
         customer_phone: customer_phone ?? null,

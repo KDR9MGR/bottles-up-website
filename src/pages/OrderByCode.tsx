@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import type { Database, BottlePaymentMode, BottlePaymentChoice } from '@/types/database';
+import BackLink from '@/components/BackLink';
 
 type BottleRow = Database['public']['Tables']['site_bottles']['Row'];
 
@@ -130,7 +131,8 @@ const OrderByCode = () => {
   return (
     <div className="min-h-screen bg-black px-4 py-10">
       <div className="mx-auto max-w-sm">
-        <h1 className="mb-1 text-center text-xl font-bold text-white">
+        <BackLink to="/" label="Back to BottlesUp" />
+        <h1 className="mb-1 mt-4 text-center text-xl font-bold text-white">
           {context.tableTypeName} - {context.venueName}
         </h1>
         <p className="mb-6 text-center text-sm text-gray-500">Order more bottles for your table</p>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
+import { isAfterMidnightSlot, computeNightDate, formatWeekday, formatTimeSlot } from '@/lib/bookingNight';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -40,6 +41,7 @@ type BookingRow = Database['public']['Tables']['site_table_bookings']['Row'] & {
   site_venues: { name: string } | null;
   site_table_types: { name: string } | null;
   site_table_booking_bottles: { bottle_name: string; size: string | null; quantity: number }[];
+  site_venue_time_slots: { start_time: string } | null;
 };
 
 const statusVariant: Record<OrderStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -78,7 +80,7 @@ const CmsTableBookings = () => {
     setLoading(true);
     const { data } = await supabase
       .from('site_table_bookings')
-      .select('*, site_venues(name), site_table_types(name), site_table_booking_bottles(bottle_name, size, quantity)')
+      .select('*, site_venues(name), site_table_types(name), site_table_booking_bottles(bottle_name, size, quantity), site_venue_time_slots(start_time)')
       .order('created_at', { ascending: false });
     setBookings((data as BookingRow[]) ?? []);
     setLoading(false);
@@ -312,7 +314,20 @@ const CmsTableBookings = () => {
                   </TableCell>
                   <TableCell>{booking.site_venues?.name ?? '-'}</TableCell>
                   <TableCell>{booking.site_table_types?.name ?? '-'}</TableCell>
-                  <TableCell>{booking.booking_date}</TableCell>
+                  <TableCell>
+                    {booking.site_venue_time_slots && isAfterMidnightSlot(booking.site_venue_time_slots.start_time) ? (
+                      <span
+                        title={`${formatWeekday(computeNightDate(booking.booking_date, booking.site_venue_time_slots.start_time))} night's event · Arrival: ${formatWeekday(booking.booking_date)}, ${formatTimeSlot(booking.site_venue_time_slots.start_time)}`}
+                      >
+                        <div>{booking.booking_date}</div>
+                        <div className="text-xs text-orange-400">
+                          {formatWeekday(computeNightDate(booking.booking_date, booking.site_venue_time_slots.start_time))} night's event
+                        </div>
+                      </span>
+                    ) : (
+                      booking.booking_date
+                    )}
+                  </TableCell>
                   <TableCell>{booking.guest_count}</TableCell>
                   <TableCell className="max-w-[180px] text-xs text-gray-400">
                     {booking.site_table_booking_bottles.length === 0

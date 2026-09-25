@@ -16,6 +16,7 @@ import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 import Reveal from '@/components/motion/Reveal';
 import Tilt from '@/components/motion/Tilt';
+import { isAfterMidnightSlot, computeArrivalDate, formatWeekday } from '@/lib/bookingNight';
 
 type VenueRow = Database['public']['Tables']['site_venues']['Row'];
 type TableTypeRow = Database['public']['Tables']['site_table_types']['Row'];
@@ -169,6 +170,17 @@ const VenueFloorPlanPicker = ({ venue, floors, tableTypes, timeSlots, onSelectTa
             </SelectContent>
           </Select>
         </div>
+        {date && (() => {
+          const selectedSlot = slotsForSelectedDate.find((s) => s.id === slotId);
+          if (!selectedSlot || !isAfterMidnightSlot(selectedSlot.start_time)) return null;
+          const nightDateStr = format(date, 'yyyy-MM-dd');
+          const arrivalDateStr = computeArrivalDate(nightDateStr, selectedSlot.start_time);
+          return (
+            <p className="mt-2 text-xs text-orange-500">
+              {formatWeekday(nightDateStr)} night's event - you'll be arriving {formatWeekday(arrivalDateStr)}, {formatTimeSlot(selectedSlot.start_time)}.
+            </p>
+          );
+        })()}
         {(bookingStart || bookingEnd) && (
           <p className="mt-2 text-xs text-muted-foreground">
             Bookings open {bookingStart ? format(bookingStart, 'MMM d, yyyy') : 'now'}

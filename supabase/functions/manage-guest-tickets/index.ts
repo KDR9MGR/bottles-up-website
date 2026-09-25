@@ -3,6 +3,7 @@ import QRCode from 'npm:qrcode@1.5.3';
 import { corsHeadersFor, handleOptions } from '../_shared/cors.ts';
 import { formatTimeSlot } from '../_shared/tableBookingEmail.ts';
 import { generateGuestCode, sendGuestTicketEmail } from '../_shared/guestTicketEmail.ts';
+import { isAfterMidnightSlot, computeNightDate } from '../_shared/bookingNight.ts';
 
 // Public, unauthenticated - powers the /booking/:code page's guest-list
 // section the same way lookup-order-context/order-bottles-by-code power the
@@ -77,6 +78,9 @@ Deno.serve(async (req: Request) => {
           venueName: venue.name,
           tableTypeName: tableType.name,
           bookingDate: booking.booking_date,
+          startTime: timeSlot.start_time,
+          crossesMidnight: isAfterMidnightSlot(timeSlot.start_time),
+          nightDate: computeNightDate(booking.booking_date, timeSlot.start_time),
           timeSlotLabel: formatTimeSlot(timeSlot.start_time),
           maxGuests,
           remainingCapacity,
@@ -139,6 +143,7 @@ Deno.serve(async (req: Request) => {
             venueName: venue.name,
             tableTypeName: tableType.name,
             bookingDate: booking.booking_date,
+            startTime: timeSlot.start_time,
             timeSlotLabel: formatTimeSlot(timeSlot.start_time),
             guestCode: guest.guest_code,
             qrDataUrl,
@@ -179,6 +184,7 @@ Deno.serve(async (req: Request) => {
         venueName: venue.name,
         tableTypeName: tableType.name,
         bookingDate: booking.booking_date,
+        startTime: timeSlot.start_time,
         timeSlotLabel: formatTimeSlot(timeSlot.start_time),
         guestCode: guest.guest_code,
         qrDataUrl,

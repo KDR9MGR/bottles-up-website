@@ -1,3 +1,5 @@
+import { isAfterMidnightSlot, computeNightDate, formatWeekday } from './bookingNight.ts';
+
 const resendApiKey = Deno.env.get('RESEND_API_KEY');
 const fromEmail = Deno.env.get('TICKETS_FROM_EMAIL') ?? 'tickets@bottlesupapp.com';
 
@@ -31,7 +33,8 @@ export async function sendTableBookingEmail(opts: {
   toName: string;
   venueName: string;
   tableTypeName: string;
-  bookingDate: string; // YYYY-MM-DD
+  bookingDate: string; // YYYY-MM-DD - the actual calendar date the guest arrives
+  startTime: string; // raw slot start time, e.g. "01:00:00" - used to detect after-midnight slots
   timeSlotLabel: string; // e.g. "10:00 PM"
   guestCount: number;
   depositCents: number;
@@ -69,11 +72,17 @@ export async function sendTableBookingEmail(opts: {
     day: 'numeric',
     timeZone: 'UTC',
   });
+  // A slot before the after-midnight cutoff (e.g. "1:00 AM") is the tail end
+  // of the previous night's party, not a new day - show which night's event
+  // this belongs to alongside the actual arrival date, so "1 AM" doesn't read
+  // as a booking for the wrong day.
+  const crossesMidnight = isAfterMidnightSlot(opts.startTime);
+  const durationSuffix = opts.hours ? `<br/>Duration: ${opts.hours} hour${opts.hours === 1 ? '' : 's'}` : '';
+  const nightLine = crossesMidnight
+    ? `<p style="color: #999; margin-top: 0;">${formatWeekday(computeNightDate(opts.bookingDate, opts.startTime))} night's event<br/>Arrival: ${formattedDate}, ${opts.timeSlotLabel}${durationSuffix}</p>`
+    : `<p style="color: #999; margin-top: 0;">${formattedDate}<br/>Arrival: ${opts.timeSlotLabel}${durationSuffix}</p>`;
   const money = (cents: number) => `$${(cents / 100).toFixed(2)} ${opts.currency.toUpperCase()}`;
   const depositLabel = opts.hours ? `Table (${opts.hours} hour${opts.hours === 1 ? '' : 's'})` : 'Table deposit';
-  const durationLine = opts.hours
-    ? `<br/>Duration: ${opts.hours} hour${opts.hours === 1 ? '' : 's'}`
-    : '';
 
   const bottleRows = (opts.bottles ?? [])
     .map(
@@ -126,7 +135,7 @@ export async function sendTableBookingEmail(opts: {
       <p>Hi ${opts.toName},</p>
       <p>You're confirmed for:</p>
       <h2 style="margin-bottom: 4px;">${opts.tableTypeName} - ${opts.venueName}</h2>
-      <p style="color: #999; margin-top: 0;">${formattedDate}<br/>Arrival: ${opts.timeSlotLabel}${durationLine}</p>
+      ${nightLine}
       <p><strong>${opts.guestCount}</strong> guests</p>
       ${orderSummaryHtml}
       <div style="text-align: center; margin: 24px 0;">

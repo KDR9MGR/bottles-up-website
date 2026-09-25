@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { useUserAuth, userSignUp } from '@/hooks/useUserAuth';
 import TicketCard, { type TicketCardData } from '@/components/TicketCard';
+import { isAfterMidnightSlot, computeNightDate, formatWeekday, formatTimeSlot } from '@/lib/bookingNight';
 
 type PaidTicket = TicketCardData & { customerEmail?: string };
 
@@ -188,10 +189,18 @@ const BookingSuccess = () => {
             quantity: booking.guestCount,
             eventTitle: booking.tableTypeName,
             venueName: booking.venueName,
-            startDate: `${booking.bookingDate}T${booking.startTime}`,
+            // Table bookings store a plain local date + time, not a real
+            // timezone-aware timestamp like an event's start_date - shown
+            // separately below instead of through TicketCard's generic
+            // Date-parsing date line, which would otherwise apply the
+            // viewer's own browser timezone to a value that isn't one.
+            startDate: '',
             tierName: 'Guests',
           }
         : null;
+
+    const bookingCrossesMidnight = booking ? isAfterMidnightSlot(booking.startTime) : false;
+    const bookingNightDate = booking ? computeNightDate(booking.bookingDate, booking.startTime) : '';
 
     const customerEmail = ticket?.customerEmail ?? booking?.customerEmail ?? '';
     const customerName = ticket?.customerName ?? booking?.customerName ?? '';
@@ -207,6 +216,14 @@ const BookingSuccess = () => {
         </p>
 
         {cardData && <TicketCard ticket={cardData} label={booking ? 'VIP Table Reservation' : undefined} />}
+
+        {booking && (
+          <p className="mt-4 w-full max-w-sm text-center text-sm text-gray-400">
+            {bookingCrossesMidnight
+              ? `${formatWeekday(bookingNightDate)} night's event · Arrival: ${formatWeekday(booking.bookingDate)}, ${formatTimeSlot(booking.startTime)}`
+              : `${formatWeekday(booking.bookingDate)} · Arrival: ${formatTimeSlot(booking.startTime)}`}
+          </p>
+        )}
 
         {booking && (
           <div className="mt-4 w-full max-w-sm space-y-2 rounded-2xl border border-gray-800 bg-gray-950 p-5 text-left text-sm">

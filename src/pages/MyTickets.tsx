@@ -8,6 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { getAuthRedirectBase } from '@/lib/authRedirect';
 import TicketCard, { type TicketCardData } from '@/components/TicketCard';
+import BackLink from '@/components/BackLink';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -114,6 +115,9 @@ const MyTickets = () => {
   if (!session) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-black px-4 text-center">
+        <div className="mb-6 self-start">
+          <BackLink to="/" label="Back to BottlesUp" />
+        </div>
         <Mail className="mb-4 h-10 w-10 text-orange-500" />
         <h1 className="mb-2 text-2xl font-bold text-white">Find your tickets</h1>
         <p className="mb-8 max-w-sm text-gray-400">
@@ -147,6 +151,9 @@ const MyTickets = () => {
   return (
     <div className="min-h-screen bg-black px-4 py-12">
       <div className="mx-auto flex max-w-sm flex-col items-center">
+        <div className="mb-6 self-start">
+          <BackLink to="/" label="Back to BottlesUp" />
+        </div>
         <h1 className="mb-8 text-2xl font-bold text-white">Your Tickets</h1>
 
         {loadingTickets ? (
