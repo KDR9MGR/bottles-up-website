@@ -11,6 +11,7 @@ import { Minus, Plus, Wine, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import type { Database, BottlePaymentMode, BottlePaymentChoice } from '@/types/database';
+import BottlePreviewDialog from '@/components/BottlePreviewDialog';
 
 type BottleRow = Database['public']['Tables']['site_bottles']['Row'];
 
@@ -34,8 +35,10 @@ const AddBottlesDialog = ({ bookingId, open, onOpenChange, onAdded, mode = 'cust
   const [bottles, setBottles] = useState<BottleRow[]>([]);
   const [cart, setCart] = useState<Record<string, number>>({});
   const [venuePaymentMode, setVenuePaymentMode] = useState<BottlePaymentMode>('pay_ahead');
+  const [showBottleImages, setShowBottleImages] = useState(true);
   const [paymentChoice, setPaymentChoice] = useState<BottlePaymentChoice>('pay_ahead');
   const [submitting, setSubmitting] = useState(false);
+  const [previewBottle, setPreviewBottle] = useState<BottleRow | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -54,7 +57,7 @@ const AddBottlesDialog = ({ bookingId, open, onOpenChange, onAdded, mode = 'cust
       }
 
       const [{ data: venue }, { data: bottleRows }] = await Promise.all([
-        supabase.from('site_venues').select('bottle_payment_mode').eq('id', booking.venue_id).maybeSingle(),
+        supabase.from('site_venues').select('bottle_payment_mode, show_bottle_images').eq('id', booking.venue_id).maybeSingle(),
         supabase
           .from('site_bottles')
           .select('*')
@@ -66,6 +69,7 @@ const AddBottlesDialog = ({ bookingId, open, onOpenChange, onAdded, mode = 'cust
 
       const mode = venue?.bottle_payment_mode ?? 'pay_ahead';
       setVenuePaymentMode(mode);
+      setShowBottleImages(venue?.show_bottle_images ?? true);
       setPaymentChoice(mode === 'pay_at_club' ? 'pay_at_club' : 'pay_ahead');
       setBottles(bottleRows ?? []);
       setLoading(false);
@@ -144,16 +148,27 @@ const AddBottlesDialog = ({ bookingId, open, onOpenChange, onAdded, mode = 'cust
                 const qty = cart[bottle.id] ?? 0;
                 return (
                   <div key={bottle.id} className="flex items-center gap-3 rounded-lg border border-gray-800 p-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-gray-900 text-gray-600">
-                      <Wine className="h-5 w-5" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-medium text-white">
-                        {bottle.name}
-                        {bottle.size ? <span className="text-gray-500"> ({bottle.size})</span> : ''}
+                    <button
+                      type="button"
+                      onClick={() => setPreviewBottle(bottle)}
+                      className="flex flex-1 items-center gap-3 text-left"
+                    >
+                      {showBottleImages && bottle.image_url ? (
+                        <img src={bottle.image_url} alt={bottle.name} className="h-12 w-12 shrink-0 rounded object-cover" />
+                      ) : (
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-gray-900 text-gray-600">
+                          <Wine className="h-5 w-5" />
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-white">
+                          {bottle.name}
+                          {bottle.size ? <span className="text-gray-500"> ({bottle.size})</span> : ''}
+                        </div>
+                        {bottle.description && <div className="text-xs text-gray-500">{bottle.description}</div>}
+                        <div className="text-sm text-gray-400">{money(bottle.price_cents)}</div>
                       </div>
-                      <div className="text-sm text-gray-400">{money(bottle.price_cents)}</div>
-                    </div>
+                    </button>
                     <div className="flex items-center gap-2">
                       <Button
                         type="button"
@@ -241,6 +256,11 @@ const AddBottlesDialog = ({ bookingId, open, onOpenChange, onAdded, mode = 'cust
           </div>
         )}
       </DialogContent>
+      <BottlePreviewDialog
+        bottle={previewBottle}
+        onOpenChange={(nextOpen) => !nextOpen && setPreviewBottle(null)}
+        showImage={showBottleImages}
+      />
     </Dialog>
   );
 };

@@ -33,7 +33,7 @@ Deno.serve(async (req: Request) => {
     const { data: booking, error } = await supabase
       .from('site_table_bookings')
       .select(
-        'status, currency, venue:site_venues(id, name, bottle_payment_mode), table_type:site_table_types(name)',
+        'status, currency, venue:site_venues(id, name, bottle_payment_mode, show_bottle_images), table_type:site_table_types(name)',
       )
       .eq('confirmation_code', confirmation_code)
       .maybeSingle();
@@ -42,7 +42,7 @@ Deno.serve(async (req: Request) => {
       return json({ found: false });
     }
 
-    const venue = booking.venue as unknown as { id: string; name: string; bottle_payment_mode: string };
+    const venue = booking.venue as unknown as { id: string; name: string; bottle_payment_mode: string; show_bottle_images: boolean };
     const tableType = booking.table_type as unknown as { name: string };
 
     return json({
@@ -50,6 +50,7 @@ Deno.serve(async (req: Request) => {
       venueId: venue.id,
       venueName: venue.name,
       bottlePaymentMode: venue.bottle_payment_mode,
+      showBottleImages: venue.show_bottle_images,
       tableTypeName: tableType.name,
       currency: booking.currency,
     });

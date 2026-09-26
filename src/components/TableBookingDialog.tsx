@@ -25,6 +25,7 @@ import { supabase } from '@/lib/supabase';
 import type { Database, BottlePaymentChoice } from '@/types/database';
 import type { TableTypeWithVenue } from '@/pages/VipTables';
 import { isAfterMidnightSlot, computeArrivalDate, formatWeekday } from '@/lib/bookingNight';
+import BottlePreviewDialog from '@/components/BottlePreviewDialog';
 
 type BottleRow = Database['public']['Tables']['site_bottles']['Row'];
 
@@ -65,6 +66,7 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
   const [bottles, setBottles] = useState<BottleRow[]>([]);
   const [loadingBottles, setLoadingBottles] = useState(false);
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [previewBottle, setPreviewBottle] = useState<BottleRow | null>(null);
   const [bottlesupFeeBps, setBottlesupFeeBps] = useState(0);
   const [bottlePaymentChoice, setBottlePaymentChoice] = useState<BottlePaymentChoice>('pay_ahead');
 
@@ -441,21 +443,27 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
                   const qty = cart[bottle.id] ?? 0;
                   return (
                     <div key={bottle.id} className="flex items-center gap-3 rounded-lg border border-gray-800 p-3">
-                      {tableType.venue.show_bottle_images && bottle.image_url ? (
-                        <img src={bottle.image_url} alt={bottle.name} className="h-14 w-14 shrink-0 rounded object-cover" />
-                      ) : (
-                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded bg-gray-900 text-gray-600">
-                          <Wine className="h-6 w-6" />
+                      <button
+                        type="button"
+                        onClick={() => setPreviewBottle(bottle)}
+                        className="flex flex-1 items-center gap-3 text-left"
+                      >
+                        {tableType.venue.show_bottle_images && bottle.image_url ? (
+                          <img src={bottle.image_url} alt={bottle.name} className="h-14 w-14 shrink-0 rounded object-cover" />
+                        ) : (
+                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded bg-gray-900 text-gray-600">
+                            <Wine className="h-6 w-6" />
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-white">
+                            {bottle.name}
+                            {bottle.size ? <span className="text-gray-500"> ({bottle.size})</span> : null}
+                          </div>
+                          {bottle.description && <div className="text-xs text-gray-500">{bottle.description}</div>}
+                          <div className="text-sm text-gray-400">{money(bottle.price_cents)}</div>
                         </div>
-                      )}
-                      <div className="flex-1">
-                        <div className="text-sm font-medium text-white">
-                          {bottle.name}
-                          {bottle.size ? <span className="text-gray-500"> ({bottle.size})</span> : null}
-                        </div>
-                        {bottle.description && <div className="text-xs text-gray-500">{bottle.description}</div>}
-                        <div className="text-sm text-gray-400">{money(bottle.price_cents)}</div>
-                      </div>
+                      </button>
                       <div className="flex items-center gap-2">
                         <Button
                           type="button"
@@ -649,6 +657,11 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
           </div>
         )}
       </DialogContent>
+      <BottlePreviewDialog
+        bottle={previewBottle}
+        onOpenChange={(nextOpen) => !nextOpen && setPreviewBottle(null)}
+        showImage={tableType?.venue.show_bottle_images}
+      />
     </Dialog>
   );
 };
