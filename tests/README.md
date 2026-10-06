@@ -1,0 +1,37 @@
+# Tests
+
+Two kinds, both run in CI (`.github/workflows/ci.yml`).
+
+## 1. Unit tests: `npm test` (vitest, about a second)
+
+| Area | File | What it pins down |
+|---|---|---|
+| Stripe webhook | `tests/edge/siteStripeWebhook.test.ts` | Real Stripe signatures: wrong secret, tampered body and missing header are rejected; test or live secret accepted; routes to ticket / table / bottle add-on; ignores sessions it did not create; does not swallow a fulfillment failure |
+| Fulfillment | `tests/edge/fulfillment.test.ts` | Marks paid and emails exactly once; redelivery is a no-op; a retry after a failed email re-sends the same code without re-counting; competing writers (atomic claim); pay-at-club amounts |
+| Pricing | `tests/edge/pricing.test.ts` | Tax and platform fee, due-at-venue bottles, deposit credit, discounts before tax, cancelled lines, rounding |
+| Promo and access codes | `tests/edge/promoCode.test.ts`, `tierAccessCode.test.ts` | Every rejection reason, limits, venue scoping, rounding; real bcrypt |
+| After-midnight logic | `tests/edge/bookingNight.test.ts` | Browser and edge copies of `bookingNight` agree, round-trip, year and leap-day rollover |
+| Small helpers | `src/lib/*.test.ts` | `formatMoney`, `derivePaymentStatus`, disposable emails, delete-blocked errors |
+
+The edge functions are written for Deno (`npm:` imports). `vitest.config.ts` aliases those imports to real packages or the stubs in `tests/edge/stubs/`, so the function source runs unmodified. `tests/edge/stubs/fakeDb.ts` is a small in-memory Supabase client; embedded relations are not resolved, so seed rows with nested objects already attached.
+
+## 2. Database tests: `tests/db/run.sh` (needs `psql` and a throwaway Postgres)
+
+```bash
+PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres tests/db/run.sh
+PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres tests/db/run.sh --with-fix
+```
+
+It creates a database called `bottlesup_test` (never point it at a real project), replays `supabase/migrations` on plain Postgres through a small Supabase stand-in (`00_supabase_shim.sql`), then runs `tests/db/tests/*.sql` and `concurrency.sh`: who may scan, every `checkin_ticket` outcome, the entry-code lockout, RLS on orders, and two staff scanning one ticket at the same time.
+
+### Known bug, and the proposed fix
+
+Checks marked **KNOWN BUG** document a real defect: `checkin_ticket()` does not `return` after answering `expired` or `code_required`, so it also admits the ticket. They pass while the bug exists and fail the moment it is fixed, so the marker gets removed. The fix is `supabase/proposed/20260830_fix_checkin_ticket_early_returns.sql` (kept outside `migrations/` so `supabase db push` cannot ship it by accident). `run.sh --with-fix` applies it and requires every check to pass for real. CI runs both modes.
+
+### The migrations do not describe production
+
+`01_prod_prerequisites.sql` exists because the committed migrations assume things that no committed migration creates (`public.set_updated_at()`). More importantly, 17 of the 24 RPCs the website calls (the whole server, pay-at-club and reconciliation system), plus the `profiles`, `promo_codes` and `guest_tickets` tables and several `door_staff` columns, exist **only in the production database**. They cannot be tested here until their definitions are committed (`supabase db pull` against production is the way).
+
+## Type check, lint, and the baseline
+
+`npm run typecheck` fails on any type error that is not in `tsc-baseline.json` (about 127 today, nearly all because `src/types/database.ts` is out of date). When you fix some, run `node scripts/tsc-ratchet.mjs --update` so they cannot come back. `npm run lint:ci` allows at most 8 warnings and no errors.
