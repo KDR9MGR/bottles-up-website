@@ -19,6 +19,10 @@ import {
   type LegacyStaffRole,
 } from '@/lib/accountRouting';
 import type { SetupStep } from '@/lib/venueSetup';
+import {
+  parseShift, parseTeamInvitation, parseTeamMember,
+  type EmailOutcome, type InvitePayload, type Shift, type TeamInvitation, type TeamMember,
+} from '@/lib/team';
 
 // The generated Database type lags the schema (see tests/README.md), and these calls return
 // shapes this file validates itself. A narrow, local view of the client keeps the rest of the
@@ -422,4 +426,92 @@ export async function fetchClaimQueue(): Promise<QueuedClaim[]> {
     message: text(r.message),
     createdAt: String(r.created_at ?? ''),
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Team and invitations
+// ---------------------------------------------------------------------------
+
+export async function listTeam(orgId: string): Promise<TeamMember[]> {
+  const rows = await call<Record<string, unknown>[] | null>('list_team', { p_org: orgId });
+  return (rows ?? []).map(parseTeamMember).filter((m): m is TeamMember => m !== null);
+}
+
+export async function listTeamInvitations(orgId: string): Promise<TeamInvitation[]> {
+  const rows = await call<Record<string, unknown>[] | null>('list_team_invitations', { p_org: orgId });
+  return (rows ?? []).map(parseTeamInvitation).filter((i): i is TeamInvitation => i !== null);
+}
+
+export async function listShifts(venueId: string): Promise<Shift[]> {
+  const rows = await call<Record<string, unknown>[] | null>('list_shifts', { p_venue: venueId });
+  return (rows ?? []).map(parseShift).filter((x): x is Shift => x !== null);
+}
+
+/** The roles this person may appoint at this club, as decided by the database. */
+export async function invitableRoles(orgId: string, venueId: string): Promise<string[]> {
+  const rows = await call<string[] | null>('invitable_roles', { p_org: orgId, p_venue: venueId });
+  return rows ?? [];
+}
+
+export interface IssuedLink {
+  invitationId: string;
+  /** The link token. It exists only now: the database keeps a hash, so it cannot be shown again. */
+  token: string;
+}
+
+export async function inviteMember(orgId: string, p: InvitePayload): Promise<IssuedLink> {
+  const rows = await call<Record<string, unknown>[] | null>('invite_member', {
+    p_org: orgId,
+    p_email: p.email,
+    p_role: p.role,
+    p_venue: p.venueId,
+    p_event: null,
+    p_shift: p.shiftId,
+    p_access_start: p.accessStartAt,
+    p_access_end: p.accessEndAt,
+  });
+  const row = rows?.[0];
+  if (!row || typeof row.invitation_id !== 'string' || typeof row.token !== 'string') throw new AccountError('Could not create the invitation.');
+  return { invitationId: row.invitation_id, token: row.token };
+}
+
+/** A new link for an invitation that is waiting or has expired. The old link stops working. */
+export async function sendNewLink(invitationId: string): Promise<IssuedLink> {
+  const rows = await call<Record<string, unknown>[] | null>('resend_invitation', { p_invitation: invitationId });
+  const row = rows?.[0];
+  if (!row || typeof row.token !== 'string') throw new AccountError('Could not create a new link.');
+  return { invitationId, token: row.token };
+}
+
+export async function cancelInvitation(invitationId: string): Promise<void> {
+  await call('revoke_invitation', { p_invitation: invitationId });
+}
+
+export async function removeMember(membershipId: string): Promise<void> {
+  await call('revoke_membership', { p_membership: membershipId });
+}
+
+export async function createShift(venueId: string, name: string, startsAtIso: string, endsAtIso: string): Promise<string> {
+  return call<string>('create_shift', { p_venue: venueId, p_name: name, p_starts: startsAtIso, p_ends: endsAtIso });
+}
+
+/**
+ * Emails the link to the address on the invitation. Never throws: the invitation already exists, and the screen
+ * shows the link either way, so the only question is what to say about the email.
+ */
+export async function emailInvitation(invitationId: string, token: string): Promise<EmailOutcome> {
+  try {
+    const { data, error } = await supabase.functions.invoke('send-team-invitation', {
+      method: 'POST',
+      body: { invitation_id: invitationId, token },
+    });
+    if (error) {
+      const status = (error as { context?: { status?: number } }).context?.status;
+      return { sent: false, reason: status === 429 ? 'rate_limited' : 'send_failed' };
+    }
+    const result = data as { sent?: boolean; reason?: string } | null;
+    return result?.sent === true ? { sent: true } : { sent: false, reason: result?.reason ?? 'send_failed' };
+  } catch {
+    return { sent: false, reason: 'send_failed' };
+  }
 }
