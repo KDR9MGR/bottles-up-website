@@ -66,4 +66,7 @@ bash tests/db/concurrency.sh
 echo "--- migration_guard.sh"
 bash tests/db/migration_guard.sh
 
-echo "==> all database tests passed ($assertions assertions + 2 script tests)$([ "$WITH_FIX" = "1" ] && echo " with $NPROP proposed fix(es) applied")"
+echo "--- migration_guard_verify.sh"
+bash tests/db/migration_guard_verify.sh
+
+echo "==> all database tests passed ($assertions assertions + 3 script tests)$([ "$WITH_FIX" = "1" ] && echo " with $NPROP proposed fix(es) applied")"
