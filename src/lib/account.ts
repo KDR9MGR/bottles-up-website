@@ -20,6 +20,10 @@ import {
 } from '@/lib/accountRouting';
 import type { SetupStep } from '@/lib/venueSetup';
 import {
+  emptyOutcome, normalizeScan, outcomeFromErrorMessage, parseDoorEvent, parseGuest, parseScanOutcome,
+  type DoorEvent, type Guest, type ScanOutcome,
+} from '@/lib/doorScan';
+import {
   parseShift, parseTeamInvitation, parseTeamMember,
   type EmailOutcome, type InvitePayload, type Shift, type TeamInvitation, type TeamMember,
 } from '@/lib/team';
@@ -62,9 +66,12 @@ async function call<T = unknown>(fn: string, args?: Record<string, unknown>): Pr
 // Messages
 // ---------------------------------------------------------------------------
 
+export const ACCESS_ENDED_MESSAGE = 'Your access has ended, or you are signed out.';
+
 const FRIENDLY: [RegExp, string][] = [
   [/username is not available/i, 'That username is taken or not allowed. Try another.'],
   [/not authenticated/i, 'Please sign in to continue.'],
+  [/not authori[sz]ed/i, ACCESS_ENDED_MESSAGE],
   [/not allowed|permission denied/i, "You don't have access to do that."],
   [/already under review/i, 'This business is already under review.'],
   [/already verified/i, 'This business is already verified.'],
@@ -514,4 +521,47 @@ export async function emailInvitation(invitationId: string, token: string): Prom
   } catch {
     return { sent: false, reason: 'send_failed' };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Door scanner
+// ---------------------------------------------------------------------------
+
+/** The events one door workspace can work now, with how many guests are in. */
+export async function doorEvents(membershipId: string): Promise<DoorEvent[]> {
+  const rows = await call<Record<string, unknown>[] | null>('door_events', { p_membership: membershipId });
+  return (rows ?? []).map(parseDoorEvent).filter((e): e is DoorEvent => e !== null);
+}
+
+/**
+ * Admits a ticket for the selected event. Never throws: a scan must always end in something the person at the door
+ * can act on, so a failure becomes an outcome ("your access has ended", "scan failed") instead of a stuck screen.
+ */
+export async function doorScan(ticketCode: string, eventId: string): Promise<ScanOutcome> {
+  try {
+    const rows = await call<Record<string, unknown>[] | null>('door_scan_ticket', { p_ticket_code: normalizeScan(ticketCode), p_event: eventId });
+    return parseScanOutcome(rows?.[0]);
+  } catch (err) {
+    return emptyOutcome(outcomeFromErrorMessage(err instanceof Error ? err.message : ''));
+  }
+}
+
+/** The entry code for a non-transferable ticket. Same promise as doorScan: it never throws. */
+export async function doorVerifyCode(ticketCode: string, code: string, eventId: string): Promise<ScanOutcome> {
+  try {
+    const rows = await call<Record<string, unknown>[] | null>('door_verify_ticket_code', {
+      p_ticket_code: normalizeScan(ticketCode),
+      p_code: code.trim(),
+      p_event: eventId,
+    });
+    return parseScanOutcome(rows?.[0]);
+  } catch (err) {
+    return emptyOutcome(outcomeFromErrorMessage(err instanceof Error ? err.message : ''));
+  }
+}
+
+/** Paid guests of the event matching a name or ticket code (at least two characters; the database caps it at 50). */
+export async function doorGuests(eventId: string, query: string): Promise<Guest[]> {
+  const rows = await call<Record<string, unknown>[] | null>('door_guests', { p_event: eventId, p_query: query });
+  return (rows ?? []).map(parseGuest).filter((g): g is Guest => g !== null);
 }
