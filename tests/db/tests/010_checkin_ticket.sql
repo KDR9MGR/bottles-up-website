@@ -81,14 +81,14 @@ begin
   perform tests.assert_eq('a ticket for an event that has ended is expired', arr[1], 'expired');
   select array_agg(result) into arr from public.checkin_ticket('T-STALE');
   perform tests.assert_eq('no end time: the event counts as over 12 hours after it started', arr[1], 'expired');
-  -- BUG: checkin_ticket() uses RETURN QUERY for 'expired' but never RETURNs, so it
-  -- carries on into the admit code: the scan returns 2 rows (expired, ok).
-  perform tests.assert_known_bug('a scan of an expired ticket returns exactly one result', cardinality(arr), 1);
+  -- Regression: checkin_ticket() used RETURN QUERY for 'expired' without RETURNing, so it carried on into the admit
+  -- code and the scan returned two rows (expired, ok). Fixed by 20260830120000_fix_checkin_ticket_early_returns.sql.
+  perform tests.assert_eq('a scan of an expired ticket returns exactly one result', cardinality(arr), 1);
   select * into r from public.checkin_ticket('T-LIVE');
   perform tests.assert_eq('no end time, started 1 hour ago: still valid', r.result, 'ok');
   perform tests.logout();
   select count(*) into n from public.site_orders where ticket_code in ('T-ENDED', 'T-STALE') and checked_in_at is not null;
-  perform tests.assert_known_bug('an expired ticket is NOT marked as checked in', n, 0);
+  perform tests.assert_eq('an expired ticket is NOT marked as checked in', n, 0);
 
   ---------------------------------------------------------------- order of the checks
   perform tests.login(staff);
@@ -103,11 +103,11 @@ begin
   ---------------------------------------------------------------- non-transferable tickets
   select array_agg(result) into arr from public.checkin_ticket('T-NT');
   perform tests.assert_eq('a non-transferable ticket asks for the entry code first', arr[1], 'code_required');
-  -- BUG (same cause as above): 'code_required' falls through into the admit code.
-  perform tests.assert_known_bug('...and the scan returns exactly one result', cardinality(arr), 1);
+  -- Regression (same cause as above): 'code_required' used to fall through into the admit code.
+  perform tests.assert_eq('...and the scan returns exactly one result', cardinality(arr), 1);
   perform tests.logout();
   select count(*) into n from public.site_orders where ticket_code = 'T-NT' and checked_in_at is not null;
-  perform tests.assert_known_bug('...and is NOT admitted by the scan alone (the entry-code step cannot be skipped)', n, 0);
+  perform tests.assert_eq('...and is NOT admitted by the scan alone (the entry-code step cannot be skipped)', n, 0);
   perform tests.login(staff);
   select * into r from public.checkin_ticket('T-NT-OK');
   perform tests.assert_eq('once its code is verified, a non-transferable ticket is admitted', r.result, 'ok');
@@ -125,7 +125,7 @@ begin
   select count(*) into n from public.scan_attempts where ticket_code_attempted = 'T-PAID' and scanned_by in (rando, cust);
   perform tests.assert_eq('refused (unauthorized) attempts leave no scan record', n, 0);
   select count(*) into n from public.scan_attempts where ticket_code_attempted in ('T-ENDED', 'T-STALE', 'T-NT') and result = 'ok';
-  perform tests.assert_known_bug('a refused scan is not ALSO logged as an admitted one', n, 0);
+  perform tests.assert_eq('a refused scan is not ALSO logged as an admitted one', n, 0);
 end $$;
 
 rollback;

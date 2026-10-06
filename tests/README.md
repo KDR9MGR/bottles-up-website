@@ -22,11 +22,17 @@ PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres tests/db/run.sh
 PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres tests/db/run.sh --with-fix
 ```
 
-It creates a database called `bottlesup_test` (never point it at a real project), replays `supabase/migrations` on plain Postgres through a small Supabase stand-in (`00_supabase_shim.sql`), then runs `tests/db/tests/*.sql` and `concurrency.sh`: who may scan, every `checkin_ticket` outcome, the entry-code lockout, RLS on orders, and two staff scanning one ticket at the same time.
+It creates a database called `bottlesup_test` (never point it at a real project), replays `supabase/migrations` on plain Postgres through a small Supabase stand-in (`00_supabase_shim.sql`), then runs `tests/db/tests/*.sql`, `concurrency.sh` and `migration_guard.sh`: who may scan, every `checkin_ticket` outcome, the entry-code lockout, RLS on orders, two staff scanning one ticket at the same time, and the safe application of the check-in fix.
 
-### Known bug, and the proposed fix
+### The check-in expiry fix, and how it is applied safely
 
-Checks marked **KNOWN BUG** document a real defect: `checkin_ticket()` does not `return` after answering `expired` or `code_required`, so it also admits the ticket. They pass while the bug exists and fail the moment it is fixed, so the marker gets removed. The fix is `supabase/proposed/20260830_fix_checkin_ticket_early_returns.sql` (kept outside `migrations/` so `supabase db push` cannot ship it by accident). `run.sh --with-fix` applies it and requires every check to pass for real. CI runs both modes.
+`checkin_ticket()` used to answer `expired` and `code_required` without returning, so it also admitted the ticket (an expired ticket showed as checked in, and a non-transferable ticket was admitted before its entry code was checked). It is fixed by `supabase/migrations/20260830120000_fix_checkin_ticket_early_returns.sql`.
+
+That migration replaces a **live** function that may differ from this repository (not every change to the live database is in a migration), so it is a compare-and-swap: it replaces `checkin_ticket()` only if the live one is exactly the version it was written against, does nothing if it already has the fix, and **stops without changing anything** if the live one is anything else. `tests/db/migration_guard.sh` runs the real migration against a database in each of those situations (and with Windows line endings, which must not count as a difference), and also checks that the fingerprints the migration declares are the ones the functions really have. `tests/db/fixtures/checkin_ticket_before_fix.sql` is the old function, used to recreate the "before" state.
+
+To see what the bug already did to real guests, run `supabase/audit/checkin_fallthrough.sql` (read-only) in production. The test suite runs it against a database where the bug has just happened.
+
+`supabase/proposed/` is where a written-but-unshipped fix would live (see its README). `run.sh --with-fix` applies whatever is there and requires its `assert_known_bug` checks to pass for real; there is nothing proposed right now.
 
 ### The migrations do not describe production
 
