@@ -19,7 +19,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'tests/edge/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'tests/edge/**/*.test.ts'],
     exclude: ['node_modules', 'dist', '.claude/**'],
     // src/lib/supabase.ts throws at import time without these.
     env: {

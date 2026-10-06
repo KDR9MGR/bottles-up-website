@@ -12,6 +12,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useUserAuth, userSignOut } from '@/hooks/useUserAuth';
 import UserAuthModal from '@/components/UserAuthModal';
+import { useAccountOptional } from '@/hooks/useAccount';
+import { ACCOUNT_ONBOARDING_ENABLED } from '@/lib/features';
+import { currentPathAsNext, withNext } from '@/lib/safeNext';
 import Magnetic from '@/components/motion/Magnetic';
 
 const navLinkClass =
@@ -25,6 +28,10 @@ const Header = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { session, profile } = useUserAuth();
+  // Present only when the new account flow is switched on (see lib/features.ts).
+  const account = useAccountOptional();
+  const nextHere = currentPathAsNext(location);
+  const hasWorkspaces = !!account && (account.snapshot.workspaces.length > 0 || account.snapshot.isCmsAdmin);
 
   useEffect(() => {
     const onScroll = () => {
@@ -117,18 +124,22 @@ const Header = () => {
 
             {/* Desktop CTA */}
             <div className="hidden items-center gap-3 md:flex">
-              <Button
-                variant="ghost"
-                className="text-sm text-gray-300 hover:bg-white/5 hover:text-white"
-              >
-                Promoter Login
-              </Button>
-              <Button
-                onClick={() => window.open('https://vendor.bottlesupapp.com/', '_blank')}
-                variant="brandOutline"
-              >
-                Be Partner
-              </Button>
+              {!ACCOUNT_ONBOARDING_ENABLED && (
+                <>
+                  <Button
+                    variant="ghost"
+                    className="text-sm text-gray-300 hover:bg-white/5 hover:text-white"
+                  >
+                    Promoter Login
+                  </Button>
+                  <Button
+                    onClick={() => window.open('https://vendor.bottlesupapp.com/', '_blank')}
+                    variant="brandOutline"
+                  >
+                    Be Partner
+                  </Button>
+                </>
+              )}
 
               {/* User auth */}
               {session ? (
@@ -168,6 +179,15 @@ const Header = () => {
                       <User className="h-4 w-4 text-gray-400" />
                       Profile
                     </DropdownMenuItem>
+                    {ACCOUNT_ONBOARDING_ENABLED && hasWorkspaces && (
+                      <DropdownMenuItem
+                        className="gap-2 cursor-pointer hover:bg-white/5 focus:bg-white/5"
+                        onClick={() => navigate('/home')}
+                      >
+                        <LayoutDashboard className="h-4 w-4 text-gray-400" />
+                        My workspaces
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuSeparator className="bg-white/10" />
                     <DropdownMenuItem
                       className="gap-2 cursor-pointer text-red-500 hover:bg-red-500/10 focus:bg-red-500/10 focus:text-red-400"
@@ -178,6 +198,20 @@ const Header = () => {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+              ) : ACCOUNT_ONBOARDING_ENABLED ? (
+                <>
+                  <Button asChild variant="ghost" className="text-sm text-gray-300 hover:bg-white/5 hover:text-white">
+                    <Link to={withNext('/login', nextHere)}>Log in</Link>
+                  </Button>
+                  <Button asChild variant="brandOutline">
+                    <Link to={withNext('/signup/business', nextHere)}>For business</Link>
+                  </Button>
+                  <Magnetic>
+                    <Button asChild variant="brand">
+                      <Link to={withNext('/signup', nextHere)}>Sign up</Link>
+                    </Button>
+                  </Magnetic>
+                </>
               ) : (
                 <Magnetic>
                   <Button onClick={() => setAuthOpen(true)} variant="brand">
@@ -239,6 +273,11 @@ const Header = () => {
                     <Link to="/profile" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-2 text-gray-300 hover:text-orange-500">
                       <User className="h-4 w-4" /> Profile
                     </Link>
+                    {ACCOUNT_ONBOARDING_ENABLED && hasWorkspaces && (
+                      <Link to="/home" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-2 text-gray-300 hover:text-orange-500">
+                        <LayoutDashboard className="h-4 w-4" /> My workspaces
+                      </Link>
+                    )}
                     <Button
                       variant="ghost"
                       className="justify-start text-red-500 hover:bg-red-500/10 hover:text-red-400 px-0"
@@ -248,6 +287,19 @@ const Header = () => {
                     </Button>
                   </div>
                 ) : (
+                  ACCOUNT_ONBOARDING_ENABLED ? (
+                    <div className="flex flex-col gap-2 pt-3">
+                      <Button asChild variant="brandOutline" onClick={() => setIsMenuOpen(false)}>
+                        <Link to={withNext('/login', nextHere)}>Log in</Link>
+                      </Button>
+                      <Button asChild variant="brandOutline" onClick={() => setIsMenuOpen(false)}>
+                        <Link to={withNext('/signup/business', nextHere)}>For business</Link>
+                      </Button>
+                      <Button asChild variant="brand" onClick={() => setIsMenuOpen(false)}>
+                        <Link to={withNext('/signup', nextHere)}>Sign up</Link>
+                      </Button>
+                    </div>
+                  ) : (
                   <div className="flex flex-col gap-2 pt-3">
                     <Button variant="brandOutline">
                       Promoter Login
@@ -265,6 +317,7 @@ const Header = () => {
                       Sign In
                     </Button>
                   </div>
+                  )
                 )}
               </nav>
             </div>

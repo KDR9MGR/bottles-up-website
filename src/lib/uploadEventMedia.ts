@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase';
 // decode one of the two real XNO Lounge files used to verify this
 // (ERR_LIBHEIF format not supported) - heic-to's more recently-updated
 // build handled both fine, confirmed live in the browser before switching.
-async function toUploadableFile(file: File): Promise<File> {
+export async function toUploadableFile(file: File): Promise<File> {
   const { isHeic, heicTo } = await import('heic-to');
   if (!(await isHeic(file))) return file;
 
