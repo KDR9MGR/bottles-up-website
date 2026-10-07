@@ -1,3 +1,5 @@
+import { siteOrigin } from './bookingLink';
+
 // Build-time switches for work that must not reach live visitors until its backend is deployed.
 //
 // ACCOUNT_ONBOARDING covers the new sign-up / log-in / business onboarding / workspace pages and
@@ -16,3 +18,8 @@ export const ACCOUNT_ONBOARDING_ENABLED = import.meta.env.VITE_ENABLE_ACCOUNT_ON
 //   VITE_PLAY_STORE_URL=https://play.google.com/store/apps/details?id=...
 export const APP_STORE_URL: string | undefined = import.meta.env.VITE_APP_STORE_URL;
 export const PLAY_STORE_URL: string | undefined = import.meta.env.VITE_PLAY_STORE_URL;
+
+// The address booking links and QR codes point at (the Booking Link section). Defaults to the real site; set
+//   VITE_SITE_URL=https://staging.example.com
+// to point them somewhere else. Anything that is not a plain https address is ignored (see siteOrigin).
+export const SITE_URL: string = siteOrigin(import.meta.env.VITE_SITE_URL);

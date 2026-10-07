@@ -401,6 +401,21 @@ begin
   perform tests.assert_eq('...its arrival times', (select count(*) from public.site_venue_time_slots where venue_id = venue_b)::int, 1);
   perform tests.assert_eq('...and its floors', (select count(*) from public.site_venue_floors where venue_id = venue_b)::int, 1);
 
+  ---------------------------------------------------------------- the booking link page reads each venue's slug and status
+  perform tests.login(owner_u, 'owner@club.example');
+  select string_agg(slug || ':' || status, ',' order by slug) into txt from public.site_venues where id in (venue_a, venue_b);
+  perform tests.assert_eq('an owner can read the address name and status of each of their venues', txt, 'club-a:draft,club-b:published');
+  perform tests.login(mgr_a, 'mgra@club.example');
+  select string_agg(slug, ',') into txt from public.site_venues where id in (venue_a, venue_b) and status = 'draft';
+  perform tests.assert_eq('a manager of Club A reads Club A, which is still a draft (Club B is public, so anyone could read it)', txt, 'club-a');
+  perform tests.login(mgr_b, 'mgrb@club.example');
+  perform tests.assert_eq('a manager of Club B cannot read Club A while it is a draft', (select count(*) from public.site_venues where id = venue_a)::int, 0);
+  perform tests.login(rival_u, 'rival@club2.example');
+  perform tests.assert_eq('a rival owner reads neither, though one is only a draft', (select count(*) from public.site_venues where id in (venue_a, venue_b) and status = 'draft')::int, 0);
+  perform tests.login_anon();
+  perform tests.assert_eq('the public finds the published club by the same slug the link uses', (select count(*) from public.site_venues where slug = 'club-b' and status = 'published')::int, 1);
+  perform tests.assert_eq('...and never the draft one, even by its exact slug', (select count(*) from public.site_venues where slug = 'club-a')::int, 0);
+
   ---------------------------------------------------------------- attribution
   perform tests.login(admin_u, 'admin@test.example');
   perform tests.assert_true('every change is in the audit log', (select count(*) from public.audit_log where action like 'venue_setup.%') > 20);

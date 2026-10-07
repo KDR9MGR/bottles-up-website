@@ -20,6 +20,7 @@ entry point, personal and business onboarding, verification states, and where ea
 | Admin review of businesses and ownership requests | `/cms/verifications` |
 | Door scanner for invited door staff: scan tickets by camera or by typing the code, entry codes for non-transferable tickets, find a guest by name and admit them from the list, how many are in. Scoped to the person's own event or club | `/w/<membership>/scan` and `/guests`, `src/account/door/`, rules in `src/lib/doorScan.ts`, DB `door_scan_ticket`, `door_verify_ticket_code`, `door_guests`, `door_events` |
 | Venue setup (owner, and the database allows managers): floor plan pictures, the kinds of table guests book (capacity, minimum spend, deposit, flat or hourly price, photo, badge), the bottle menu (price, size, stock, on the menu / sold out), and the days and arrival times bookings are accepted | `/w/<membership>/venues`, `src/account/setup/`, rules in `src/lib/venueSetupForms.ts`, DB `list_venue_*`, `save_venue_*`, `remove_venue_*`, `add_venue_time_slot` |
+| Booking Link (owner): each venue's booking address, copy, a QR code to download for print, whether it works yet (only a published venue's does), and a preview of what guests see | `/w/<membership>/booking-link`, `src/account/workspace/BookingLinkSection.tsx`, rules in `src/lib/bookingLink.ts` |
 | Team and invitations (owner and manager): invite with a role, a club, ongoing or temporary access and an optional shift; every invitation state; send a new link, cancel, remove access | `/w/<membership>/team`, `src/account/team/`, rules in `src/lib/team.ts`, DB `list_team`, `list_team_invitations`, `invitable_roles`, email via the `send-team-invitation` edge function |
 
 Access is enforced in the database (row level security and the permission functions), never only by hiding
@@ -59,6 +60,8 @@ taking someone else's venue, or publishing its own listing).
    (Vercel project settings) and redeploy. Turn it off the same way to roll back; no data is lost.
 6. Optional: `VITE_APP_STORE_URL` and `VITE_PLAY_STORE_URL` (https only) add app download buttons to the
    homepage once the apps are published. They are not invented; with no value nothing is shown.
+   `VITE_SITE_URL` sets the address booking links and QR codes point at (default `https://www.bottlesupapp.com`).
+   Only a plain https address is accepted; anything else is ignored, so a typo cannot reach a printed QR code.
 
 If the new database functions are not deployed yet, the site still works for everyone: the account snapshot
 treats a missing function as "nothing there" instead of failing.
@@ -91,8 +94,9 @@ Said plainly so nobody assumes otherwise:
   manager's own screens (Floor, More) are placeholders, so only the owner's "My Venues" page exposes the editors today.
 - **Publishing a venue.** An owner cannot publish; the page says what blocks it (verification, setup) and, when
   nothing does, to contact BottlesUp. There is deliberately no self-publish function yet.
-- **Short venue links** such as `bottlesupapp.com/xno` (the brief marks this as a URL design, not a live route).
-  Existing `/venues/:id` links already keep their destination through sign-up and log-in.
+- **Short venue links** such as `bottlesupapp.com/xno` (the brief marks this as a URL design, not a live route), and
+  **counting the bookings that came through a link**. The Booking Link section shows the existing `/venues/<slug>` address;
+  those links already keep their destination through sign-up and log-in. Nothing records where a booking came from yet.
 - **Per-venue time zone.** "Tonight" uses the device's clock with the 06:00 night cutoff already used by bookings.
 - **Forgot-password and legal verification review.** Out of scope per the brief.
 - The older partner pages (`/partners/*`) and the old `partner_accounts` table are untouched. Whether existing
