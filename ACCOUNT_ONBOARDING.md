@@ -20,7 +20,7 @@ entry point, personal and business onboarding, verification states, and where ea
 | Admin review of businesses and ownership requests | `/cms/verifications` |
 | Door scanner for invited door staff: scan tickets by camera or by typing the code, entry codes for non-transferable tickets, find a guest by name and admit them from the list, how many are in. Scoped to the person's own event or club | `/w/<membership>/scan` and `/guests`, `src/account/door/`, rules in `src/lib/doorScan.ts`, DB `door_scan_ticket`, `door_verify_ticket_code`, `door_guests`, `door_events` |
 | Venue setup (owner, and the database allows managers): floor plan pictures, the kinds of table guests book (capacity, minimum spend, deposit, flat or hourly price, photo, badge), the bottle menu (price, size, stock, on the menu / sold out), and the days and arrival times bookings are accepted | `/w/<membership>/venues`, `src/account/setup/`, rules in `src/lib/venueSetupForms.ts`, DB `list_venue_*`, `save_venue_*`, `remove_venue_*`, `add_venue_time_slot` |
-| Tables & Bookings (owner, read only): each venue's reservations night by night with the guest, table, party size, status (confirmed, awaiting payment, cancelled...), contact details, confirmation code and whether they have arrived; a booking after midnight is counted on the night before | `/w/<membership>/tables`, `src/account/workspace/OwnerBookings.tsx`, rules in `src/lib/bookingsView.ts`, DB `list_venue_bookings`, `booking_night` |
+| Tables & Bookings (owner; a manager's Floor shows the same for their club; read only): each venue's reservations night by night with the guest, table, party size, status (confirmed, awaiting payment, cancelled...), contact details, confirmation code and whether they have arrived; a booking after midnight is counted on the night before | `/w/<membership>/tables` (owner) and `/floor` (manager), `src/account/workspace/BookingsSection.tsx`, rules in `src/lib/bookingsView.ts`, DB `list_venue_bookings`, `booking_night` |
 | Booking Link (owner): each venue's booking address, copy, a QR code to download for print, whether it works yet (only a published venue's does), and a preview of what guests see | `/w/<membership>/booking-link`, `src/account/workspace/BookingLinkSection.tsx`, rules in `src/lib/bookingLink.ts` |
 | Team and invitations (owner and manager): invite with a role, a club, ongoing or temporary access and an optional shift; every invitation state; send a new link, cancel, remove access | `/w/<membership>/team`, `src/account/team/`, rules in `src/lib/team.ts`, DB `list_team`, `list_team_invitations`, `invitable_roles`, email via the `send-team-invitation` edge function |
 
@@ -99,7 +99,8 @@ Said plainly so nobody assumes otherwise:
   production but in no committed migration, so they could not be tested here; owners' edits never touch them (an
   existing value survives an owner's edit). Payment configuration and notifications are shown as "Coming soon".
 - **Venue setup for managers.** The database lets a manager of a club run the same setup functions for that club, but the
-  manager's own screens (Floor, More) are placeholders, so only the owner's "My Venues" page exposes the editors today.
+  manager's own screens are placeholders except Floor (the club's bookings), so only the owner's "My Venues" page exposes the
+  editors today.
 - **Publishing a venue.** An owner cannot publish; the page says what blocks it (verification, setup) and, when
   nothing does, to contact BottlesUp. There is deliberately no self-publish function yet.
 - **Short venue links** such as `bottlesupapp.com/xno` (the brief marks this as a URL design, not a live route), and

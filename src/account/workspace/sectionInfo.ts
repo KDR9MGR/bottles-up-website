@@ -24,7 +24,7 @@ const BY_ROLE: Record<string, Record<string, string>> = {
   owner: OWNER,
   manager: {
     tonight: 'Needs-attention items, live operations, and closing the night.',
-    floor: 'Floor plan, reservations and table assignments for your club.',
+    floor: 'Reservations for your club, night by night, with who is coming and whether it is paid.',
     orders: 'Bottle orders and their delivery progress.',
     team: 'Staff, temporary access, shifts and assignments for your club.',
     more: 'Payments, discounts, inventory, reports and settings for your club.',

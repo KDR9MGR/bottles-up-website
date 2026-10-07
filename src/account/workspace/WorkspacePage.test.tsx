@@ -145,6 +145,31 @@ describe('the owner\'s tables and bookings section', () => {
   });
 });
 
+describe('a manager\'s floor section', () => {
+  const manager = (over: Partial<Workspace> = {}) => person([ws({ role: 'manager', venueId: 'v1', venueName: 'Club A', ...over })], [biz({ verificationState: 'under_review' })]);
+
+  it('shows the club\'s bookings, not a "not available" placeholder', () => {
+    const html = render('/w/m1/floor', manager());
+    expect(html).toContain('Loading your venues');
+    expect(html).not.toContain('Not available on the website yet');
+  });
+
+  it('never shows a manager the business verification banner, which only the owner can act on', () => {
+    expect(render('/w/m1/floor', manager())).not.toContain('Under review');
+  });
+
+  it('is not a section of any other role', () => {
+    for (const role of ['organizer', 'server', 'door', 'security', 'verifier'] as const) {
+      const html = render('/w/m1/floor', person([ws({ role, venueId: 'v1', orgKind: role === 'organizer' ? 'organizer' : 'venue_owner' })], [biz()]));
+      expect(html, role).not.toContain('Loading your venues');
+    }
+  });
+
+  it('leaves the manager\'s other placeholders alone (Orders needs bottle orders, which are not shown yet)', () => {
+    expect(render('/w/m1/orders', manager())).toContain('Not available on the website yet');
+  });
+});
+
 describe('the booking link section', () => {
   it('opens for an owner, not as a "not available" placeholder', () => {
     const html = render('/w/m1/booking-link', person([ws()], [biz()]));

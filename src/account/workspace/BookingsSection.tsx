@@ -88,11 +88,12 @@ const BookingItem = ({ b }: { b: BookingRow }) => {
 };
 
 /**
- * Tables & Bookings, read only: the reservations of an owner's venues, night by night. The database decides who may read a
- * venue's bookings and which night each one belongs to (a 1:00 AM table is the night before). Amounts are what was booked, not
+ * Tables & Bookings, read only: the reservations of the venues a person owns or manages, night by night (an owner's Tables &
+ * Bookings, a manager's Floor). The database decides which venues those are, who may read a venue's bookings and which night
+ * each one belongs to (a 1:00 AM table is the night before). Amounts are what was booked, not
  * what was collected; walk-ins, guest allowances, table assignment and check-in are not on the website yet.
  */
-const OwnerBookings = ({ workspace, business }: { workspace: Workspace; business: Business | undefined }) => {
+const BookingsSection = ({ workspace, business }: { workspace: Workspace; business: Business | undefined }) => {
   const [venues, setVenues] = useState<{ venueId: string; name: string }[] | null>(null);
   const [venuesFailed, setVenuesFailed] = useState(false);
   const [venueId, setVenueId] = useState('');
@@ -234,4 +235,4 @@ const OwnerBookings = ({ workspace, business }: { workspace: Workspace; business
   );
 };
 
-export default OwnerBookings;
+export default BookingsSection;
