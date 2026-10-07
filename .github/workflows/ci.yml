@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Types, lint, unit tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Fails on any NEW type error; the ~127 old ones are listed in tsc-baseline.json.
+      - name: Type check (no new errors)
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint:ci
+
+      # Stripe webhook, fulfillment, pricing math, promo and access codes, night/date logic.
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+        env:
+          # The app throws at start-up without these. Dummy values: the build never contacts Supabase.
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: ci-dummy-key
+
+  database:
+    name: Migrations replay and database tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      # Replays supabase/migrations on a plain Postgres, then tests check-in,
+      # one-time codes and row-level security. Includes known-bug markers.
+      - name: Database tests (migrations as committed)
+        run: tests/db/run.sh
+
+      # Applies supabase/proposed/*.sql first and requires every known-bug check to pass
+      # for real, so a proposed fix can never rot.
+      - name: Database tests (with proposed fixes applied)
+        run: tests/db/run.sh --with-fix
