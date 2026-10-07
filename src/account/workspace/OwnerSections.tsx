@@ -7,6 +7,7 @@ import { stateInfo } from '@/lib/verification';
 import { supabase } from '@/lib/supabase';
 import StateBadge from '../components/StateBadge';
 import VenueCard from './VenueCard';
+import VenueSetupEditors from '../setup/VenueSetupEditors';
 import VenueProfileForm, { type VenueProfile } from './VenueProfileForm';
 
 interface Props {
@@ -84,6 +85,8 @@ export const OwnerOverview = ({ workspace, business }: Props) => {
 export const OwnerVenues = ({ workspace, business }: Props) => {
   const { venues, reload } = useOrgVenues(workspace.orgId);
   const [profiles, setProfiles] = useState<Record<string, VenueProfile>>({});
+  // Bumped after anything is saved, so each venue's checklist re-reads what now exists.
+  const [setupTick, setSetupTick] = useState(0);
   const state = business?.verificationState ?? 'not_submitted';
   const venuesPath = workspacePath(workspace.membershipId, 'venues');
 
@@ -107,15 +110,16 @@ export const OwnerVenues = ({ workspace, business }: Props) => {
       {venues?.length === 0 && <p className="text-sm text-gray-400">You have no venues yet. <Link to={onboardingPath(workspace.orgId)} className="text-primary hover:underline">Add or claim one</Link>.</p>}
       <div className="space-y-5">
         {venues?.map((v) => (
-          <VenueCard key={`${v.venueId}-${profiles[v.venueId]?.name ?? ''}`} orgId={workspace.orgId} venueId={v.venueId} name={profiles[v.venueId]?.name ?? v.name} status={v.status} businessState={state} setupPath={venuesPath} detailed>
+          <VenueCard key={v.venueId} orgId={workspace.orgId} venueId={v.venueId} name={profiles[v.venueId]?.name ?? v.name} status={v.status} businessState={state} setupPath={venuesPath} detailed refreshToken={setupTick}>
             {profiles[v.venueId] && (
-              <VenueProfileForm orgId={workspace.orgId} venue={profiles[v.venueId]} onSaved={() => { void reload(); void loadProfiles(); }} />
+              <VenueProfileForm key={profiles[v.venueId].name} orgId={workspace.orgId} venue={profiles[v.venueId]} onSaved={() => { void reload(); void loadProfiles(); setSetupTick((t) => t + 1); }} />
             )}
+            <VenueSetupEditors orgId={workspace.orgId} venueId={v.venueId} onChanged={() => setSetupTick((t) => t + 1)} />
           </VenueCard>
         ))}
       </div>
       <p className="mt-6 text-xs text-gray-500">
-        Floor plans, tables, bottle menus and booking rules are managed with the BottlesUp team for now; editing them here is coming.
+        Where each table sits on the floor plan, and each table's seating, view and amenities, are arranged with the BottlesUp team for now.
       </p>
     </div>
   );

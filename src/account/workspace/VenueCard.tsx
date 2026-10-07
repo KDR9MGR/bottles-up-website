@@ -16,6 +16,8 @@ interface Props {
   setupPath: string;
   /** Show every step with its description (the venue page) rather than just the summary. */
   detailed?: boolean;
+  /** Change this number to make the card re-read its checklist (after something was saved elsewhere on the page). */
+  refreshToken?: number;
   children?: React.ReactNode;
 }
 
@@ -26,19 +28,19 @@ const StepIcon = ({ status }: { status: SetupStep['status'] }) =>
  * One venue's setup progress. Readiness counts only the required steps and is separate from the
  * business's verification: both must be satisfied before publishing, and the card says which one is in the way.
  */
-const VenueCard = ({ orgId, venueId, name, status, businessState, setupPath, detailed = false, children }: Props) => {
+const VenueCard = ({ orgId, venueId, name, status, businessState, setupPath, detailed = false, refreshToken = 0, children }: Props) => {
   const [steps, setSteps] = useState<SetupStep[] | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     venueSetupStatus(venueId)
-      .then((s) => !cancelled && setSteps(orderSteps(s)))
+      .then((s) => !cancelled && (setSteps(orderSteps(s)), setFailed(false)))
       .catch(() => !cancelled && setFailed(true));
     return () => {
       cancelled = true;
     };
-  }, [venueId]);
+  }, [venueId, refreshToken]);
 
   const summary = steps ? summarizeSetup(steps) : null;
   const gate = summary

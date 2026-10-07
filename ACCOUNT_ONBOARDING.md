@@ -19,6 +19,7 @@ entry point, personal and business onboarding, verification states, and where ea
 | 3. Always show venue, event and night; explicit role switching | `src/account/workspace/WorkspacePage.tsx` |
 | Admin review of businesses and ownership requests | `/cms/verifications` |
 | Door scanner for invited door staff: scan tickets by camera or by typing the code, entry codes for non-transferable tickets, find a guest by name and admit them from the list, how many are in. Scoped to the person's own event or club | `/w/<membership>/scan` and `/guests`, `src/account/door/`, rules in `src/lib/doorScan.ts`, DB `door_scan_ticket`, `door_verify_ticket_code`, `door_guests`, `door_events` |
+| Venue setup (owner, and the database allows managers): floor plan pictures, the kinds of table guests book (capacity, minimum spend, deposit, flat or hourly price, photo, badge), the bottle menu (price, size, stock, on the menu / sold out), and the days and arrival times bookings are accepted | `/w/<membership>/venues`, `src/account/setup/`, rules in `src/lib/venueSetupForms.ts`, DB `list_venue_*`, `save_venue_*`, `remove_venue_*`, `add_venue_time_slot` |
 | Team and invitations (owner and manager): invite with a role, a club, ongoing or temporary access and an optional shift; every invitation state; send a new link, cancel, remove access | `/w/<membership>/team`, `src/account/team/`, rules in `src/lib/team.ts`, DB `list_team`, `list_team_invitations`, `invitable_roles`, email via the `send-team-invitation` edge function |
 
 Access is enforced in the database (row level security and the permission functions), never only by hiding
@@ -39,6 +40,7 @@ taking someone else's venue, or publishing its own listing).
    - `supabase/migrations/20261007100000_accounts_onboarding.sql`
    - `supabase/migrations/20261008100000_team_invitations.sql`
    - `supabase/migrations/20261009100000_door_scanner.sql` (also adds `site_events.venue_id` if it is missing: production already has it, because the CMS event form sets it, but no earlier migration here creates it)
+   - `supabase/migrations/20261010100000_venue_setup.sql` (owner venue setup; creates only new functions, no tables or columns, and needs `site_venue_time_slots`, `site_venue_floors`, `site_table_types`, `site_table_bookings`, `site_bottles` and `audit_log`, all of which production has)
 
    Functions use plain `CREATE`, so if the live database already has a function with the same name and
    arguments the migration fails instead of overwriting it.
@@ -80,9 +82,13 @@ Said plainly so nobody assumes otherwise:
   message and every other part of the screen were exercised, and manual entry works when the camera does not, but try
   the camera on a real phone before relying on it at a door.
 - **The dashboards behind the sidebar.** Overview and My Venues are real (verification banner, setup progress,
-  venue profile editing). Every other section shows "Not available on the website yet" with what it will hold.
-- **Editing floor plans, tables, bottles and booking rules as an owner.** They count toward setup progress and
-  are done by the BottlesUp team (CMS) for now. Payment configuration and notifications are shown as "Coming soon".
+  venue profile and setup editing), as is Team. Every other section shows "Not available on the website yet" with what it will hold.
+- **Parts of venue setup that stay with the BottlesUp team (CMS).** Placing a table on the floor plan (position and
+  size), and each table's seating type, view, privacy level, amenities and policy note. The last five columns exist in
+  production but in no committed migration, so they could not be tested here; owners' edits never touch them (an
+  existing value survives an owner's edit). Payment configuration and notifications are shown as "Coming soon".
+- **Venue setup for managers.** The database lets a manager of a club run the same setup functions for that club, but the
+  manager's own screens (Floor, More) are placeholders, so only the owner's "My Venues" page exposes the editors today.
 - **Publishing a venue.** An owner cannot publish; the page says what blocks it (verification, setup) and, when
   nothing does, to contact BottlesUp. There is deliberately no self-publish function yet.
 - **Short venue links** such as `bottlesupapp.com/xno` (the brief marks this as a URL design, not a live route).
@@ -91,6 +97,18 @@ Said plainly so nobody assumes otherwise:
 - **Forgot-password and legal verification review.** Out of scope per the brief.
 - The older partner pages (`/partners/*`) and the old `partner_accounts` table are untouched. Whether existing
   partner applicants migrate to the new business accounts is an open question for the client.
+
+## How venue setup is protected
+
+Owners and managers do **not** get write access to the venue tables. Each editor calls a database function that checks
+the person may edit *that* venue (`can_access_venue`, role owner or manager), then writes only the fields the CMS already
+writes and nothing else (no status, slug, owner or currency; a key it does not know is refused). A row id from another
+venue is never reachable: the function looks the row up inside the venue it was given. Deleting something bookings still
+point at (an arrival time or a table type) is refused with a plain sentence. Removing a bottle is allowed because past
+orders keep their own copy of its name and price. Every change is recorded in `audit_log` with who, what and which venue
+(the writer is not callable from the app, so entries cannot be forged). Per venue limits keep a runaway client from
+filling the tables: 150 arrival times, 10 floors, 50 table types, 300 bottles. Changes to a venue that is already live
+take effect for guests immediately.
 
 ## How the door scanner is scoped
 

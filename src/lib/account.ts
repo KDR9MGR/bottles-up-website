@@ -56,7 +56,7 @@ export class AccountError extends Error {
   }
 }
 
-async function call<T = unknown>(fn: string, args?: Record<string, unknown>): Promise<T> {
+export async function call<T = unknown>(fn: string, args?: Record<string, unknown>): Promise<T> {
   const { data, error } = await db.rpc(fn, args);
   if (error) throw new AccountError(friendlyMessage(error.message), error.details ?? null);
   return data as T;
