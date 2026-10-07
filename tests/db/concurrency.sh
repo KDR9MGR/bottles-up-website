@@ -124,3 +124,63 @@ fail_door() { echo "FAIL - scoped scanner concurrency: $1 (results: $RESULTS, se
 [ "$ATTEMPTS" = "2" ]                         || fail_door "expected 2 scan_attempts rows, got $ATTEMPTS"
 [ "$WINNER" = "$D1" ]                         || fail_door "the first scanner should be recorded as the one who checked in"
 echo "ok - two door staff scanning one ticket at once through the scoped scanner: exactly one admitted, the other waited ${WAITED}s and was told already_checked_in"
+
+# ---------------------------------------------------------------------------------------------------------------
+# Venue setup: two people add the SAME arrival time (a double click, or two managers) at the same moment. There is no
+# unique index on (venue, day, time), so add_venue_time_slot() locks the venue row before it checks for a duplicate.
+# Session A adds and holds its transaction open for 2 seconds; session B starts 0.7s later, must WAIT, and must then be
+# told the time is already added. Without the lock both would pass the check and the venue would list the time twice.
+# ---------------------------------------------------------------------------------------------------------------
+SOWN=00000000-0000-0000-0000-0000000000d6
+SORG=00000000-0000-0000-0000-0000000000d7
+SVEN=00000000-0000-0000-0000-0000000000d8
+
+cleanup_setup() {
+  psql_db -c "delete from public.audit_log where actor_id = '$SOWN'" \
+          -c "delete from public.site_venues where id = '$SVEN'" \
+          -c "delete from public.site_organizations where id = '$SORG'" \
+          -c "delete from auth.users where id = '$SOWN'" >/dev/null 2>&1 || true
+}
+trap 'rm -f "$OUT_A" "$OUT_B" "$OUT_C" "$OUT_D" "$OUT_E" "$OUT_F"; reset; cleanup_door; cleanup_setup' EXIT
+cleanup_setup
+
+psql_db >/dev/null <<SQL
+insert into auth.users (id, email) values ('$SOWN', 'sowner@test.example');
+insert into public.site_organizations (id, name, kind, created_by) values ('$SORG', 'Setup Co', 'venue_owner', '$SOWN');
+insert into public.site_memberships (org_id, user_id, role) values ('$SORG', '$SOWN', 'owner');
+insert into public.site_venues (id, name, org_id) values ('$SVEN', 'Setup Club', '$SORG');
+SQL
+
+OUT_E=$(mktemp); OUT_F=$(mktemp)
+
+psql_db >"$OUT_E" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$SOWN","role":"authenticated","email":"sowner@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:added' from (select public.add_venue_time_slot('$SVEN', 5, '21:00')) s;
+select pg_sleep(2);
+commit;
+SQL
+PID_E=$!
+
+sleep 0.7
+START=$SECONDS
+# Session B is expected to fail, so it must not stop at the error: run it without ON_ERROR_STOP and keep its messages.
+psql -X -q -t -A -d "$DB" >"$OUT_F" 2>&1 <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$SOWN","role":"authenticated","email":"sowner@test.example"}', true) is not null;
+set local role authenticated;
+select 'B:added' from (select public.add_venue_time_slot('$SVEN', 5, '21:00')) s;
+commit;
+SQL
+WAITED=$((SECONDS - START))
+wait "$PID_E"
+
+COPIES=$(psql_db -c "select count(*) from public.site_venue_time_slots where venue_id = '$SVEN' and day_of_week = 5 and start_time = '21:00'")
+fail_setup() { echo "FAIL - venue setup concurrency: $1 (copies: $COPIES, session B waited ${WAITED}s, B said: $(tr '\n' ' ' <"$OUT_F"))"; exit 1; }
+grep -q '^A:added' "$OUT_E"                  || fail_setup "session A should have added the time"
+! grep -q '^B:added' "$OUT_F"                || fail_setup "session B must not also add the same time"
+grep -q 'already added' "$OUT_F"             || fail_setup "session B should be told the time is already added"
+[ "$COPIES" = "1" ]                          || fail_setup "expected exactly one copy of the arrival time"
+[ "$WAITED" -ge 1 ]                          || fail_setup "session B did not wait for the venue lock"
+echo "ok - two people adding the same arrival time at once: exactly one copy, the other waited ${WAITED}s and was told it is already added"

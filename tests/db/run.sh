@@ -55,4 +55,4 @@ done
 echo "--- concurrency.sh"
 bash tests/db/concurrency.sh
 
-echo "==> all database tests passed ($assertions assertions + 1 concurrency test)$([ "$WITH_FIX" = "1" ] && echo " WITH the proposed fix applied")"
+echo "==> all database tests passed ($assertions assertions + the concurrency scenarios)$([ "$WITH_FIX" = "1" ] && echo " WITH the proposed fix applied")"
