@@ -127,6 +127,23 @@ describe('the team section', () => {
   });
 });
 
+describe('the booking link section', () => {
+  it('opens for an owner, not as a "not available" placeholder', () => {
+    const html = render('/w/m1/booking-link', person([ws()], [biz()]));
+    expect(html).toContain('Loading your venues');
+    expect(html).not.toContain('Not available on the website yet');
+  });
+
+  it('shows the owner the verification banner above it', () => {
+    expect(render('/w/m1/booking-link', person([ws()], [biz({ verificationState: 'under_review' })]))).toContain('Under review');
+  });
+
+  it.each(['manager', 'organizer', 'server', 'door', 'security', 'verifier'] as const)('is not a section of the %s role', (role) => {
+    const html = render('/w/m1/booking-link', person([ws({ role, venueId: 'v1', orgKind: role === 'organizer' ? 'organizer' : 'venue_owner' })], [biz()]));
+    expect(html).not.toContain('Loading your venues');
+  });
+});
+
 describe('the door screens', () => {
   const door = (over: Partial<Workspace> = {}) => person([ws({ role: 'door', venueId: 'v1', venueName: 'Club A', ...over })]);
 

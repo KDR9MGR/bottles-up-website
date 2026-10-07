@@ -15,7 +15,7 @@ const OWNER: Record<string, string> = {
   inventory: 'Available and reserved stock, movements, discrepancies and best sellers.',
   team: 'Managers, permanent accounts, temporary access, shifts and assignments.',
   chat: 'Venue and event groups and permitted direct conversations.',
-  'booking-link': 'Short venue address, QR download, preview and attributed bookings.',
+  'booking-link': 'The address guests use to book at each venue, with a QR code to print.',
   reports: 'Nightly PDFs, past performance and settlement information.',
   settings: 'Profile, booking rules, payment configuration, notifications and report recipients.',
 };
