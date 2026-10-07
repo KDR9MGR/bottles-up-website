@@ -71,11 +71,13 @@ jobs:
       - uses: actions/checkout@v4
 
       # Replays supabase/migrations on a plain Postgres, then tests check-in,
-      # one-time codes and row-level security. Includes known-bug markers.
+      # one-time codes and row-level security, and runs the real check-in fix migration against a
+      # database in each state it could meet in production (see tests/db/migration_guard.sh).
       - name: Database tests (migrations as committed)
         run: tests/db/run.sh
 
       # Applies supabase/proposed/*.sql first and requires every known-bug check to pass
-      # for real, so a proposed fix can never rot.
+      # for real, so a proposed fix can never rot. (Nothing is proposed right now, so this
+      # repeats the run above; it exists so the next proposal is checked automatically.)
       - name: Database tests (with proposed fixes applied)
         run: tests/db/run.sh --with-fix

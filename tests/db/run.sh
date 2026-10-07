@@ -3,8 +3,9 @@
 # the SQL tests against check-in, one-time codes and row-level security.
 #
 #   tests/db/run.sh              run the suite against the migrations as committed
-#   tests/db/run.sh --with-fix   also apply supabase/proposed/*.sql first, to prove the
-#                                proposed fixes make the known-bug checks pass for real
+#   tests/db/run.sh --with-fix   also apply supabase/proposed/*.sql first, to prove each proposed
+#                                fix makes its known-bug checks pass for real. (Nothing is
+#                                proposed right now: the checkin_ticket fix is a migration.)
 #
 # Connects with the standard libpq variables (PGHOST, PGPORT, PGUSER, PGPASSWORD).
 # Needs `psql` and a Postgres whose user may create databases and roles (a CI
@@ -15,6 +16,7 @@ cd "$(dirname "$0")/../.."
 export LC_ALL=C
 DB="${TEST_DB_NAME:-bottlesup_test}"
 WITH_FIX=0; [ "${1:-}" = "--with-fix" ] && WITH_FIX=1
+NPROP=0
 
 psql_admin() { psql -X -q -v ON_ERROR_STOP=1 -d postgres "$@"; }
 psql_db()    { psql -X -q -v ON_ERROR_STOP=1 -d "$DB" "$@"; }
@@ -33,7 +35,13 @@ for f in $(ls supabase/migrations/*.sql | LC_ALL=C sort); do
 done
 
 if [ "$WITH_FIX" = "1" ]; then
-  for f in $(ls supabase/proposed/*.sql | LC_ALL=C sort); do
+  # nullglob + the ${var+...} form keep this working when there are no proposals (an empty array is an error in bash 3.2).
+  shopt -s nullglob
+  proposals=(supabase/proposed/*.sql)
+  shopt -u nullglob
+  NPROP=${#proposals[@]}
+  if [ "${#proposals[@]}" = "0" ]; then echo "==> no proposed fixes to apply (supabase/proposed has none)"; fi
+  for f in ${proposals[@]+"${proposals[@]}"}; do
     echo "==> applying PROPOSED fix: $(basename "$f")"
     PGOPTIONS='-c client_min_messages=warning' psql_db -f "$f" >/dev/null || { echo "PROPOSED FIX FAILED: $f"; exit 1; }
   done
@@ -55,4 +63,7 @@ done
 echo "--- concurrency.sh"
 bash tests/db/concurrency.sh
 
-echo "==> all database tests passed ($assertions assertions + the concurrency scenarios)$([ "$WITH_FIX" = "1" ] && echo " WITH the proposed fix applied")"
+echo "--- migration_guard.sh"
+bash tests/db/migration_guard.sh
+
+echo "==> all database tests passed ($assertions assertions + the concurrency and migration-guard scripts)$([ "$WITH_FIX" = "1" ] && echo " with $NPROP proposed fix(es) applied")"

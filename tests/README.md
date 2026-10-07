@@ -34,14 +34,20 @@ Test files: `010` check-in, `020` entry codes, `030` row level security, `040` t
 `050` accounts and onboarding (profiles, business verification, venue claims, venue setup, image storage),
 `060` team and invitations (who sees whom, every invitation state, and the rules that make emailing a link safe),
 `070` the scoped door scanner (what each door person may scan, every outcome, the entry-code step, guest search, and that the older unscoped functions stay out of reach),
-`090` the owner's read-only bookings (who may read a venue's bookings, that one venue never shows another's, the business night including the 05:59 / 06:00 boundary and year ends, ordering, the row and date limits),
-`080` owner venue setup (who may edit which venue, that a row id from another venue is unreachable, the field whitelist and every validation, the limits, deletes that bookings block, what the public site sees, and the audit trail).
+`080` owner venue setup (who may edit which venue, that a row id from another venue is unreachable, the field whitelist and every validation, the limits, deletes that bookings block, what the public site sees, and the audit trail),
+`090` the owner's read-only bookings (who may read a venue's bookings, that one venue never shows another's, the business night including the 05:59 / 06:00 boundary and year ends, ordering, the row and date limits).
 
-It creates a database called `bottlesup_test` (never point it at a real project), replays `supabase/migrations` on plain Postgres through a small Supabase stand-in (`00_supabase_shim.sql`), then runs `tests/db/tests/*.sql` and `concurrency.sh`: who may scan, every `checkin_ticket` outcome, the entry-code lockout, RLS on orders, two staff scanning one ticket at the same time (through the old scanner and the scoped one), and two people adding the same arrival time at the same moment.
+It creates a database called `bottlesup_test` (never point it at a real project), replays `supabase/migrations` on plain Postgres through a small Supabase stand-in (`00_supabase_shim.sql`), then runs `tests/db/tests/*.sql`, `concurrency.sh` and `migration_guard.sh`: who may scan, every `checkin_ticket` outcome, the entry-code lockout, RLS on orders, two staff scanning one ticket at the same time (through the old scanner and the scoped one), two people adding the same arrival time at the same moment, and the safe application of the check-in fix.
 
-### Known bug, and the proposed fix
+### The check-in expiry fix, and how it is applied safely
 
-Checks marked **KNOWN BUG** document a real defect: `checkin_ticket()` does not `return` after answering `expired` or `code_required`, so it also admits the ticket. They pass while the bug exists and fail the moment it is fixed, so the marker gets removed. The fix is `supabase/proposed/20260830_fix_checkin_ticket_early_returns.sql` (kept outside `migrations/` so `supabase db push` cannot ship it by accident). `run.sh --with-fix` applies it and requires every check to pass for real. CI runs both modes.
+`checkin_ticket()` used to answer `expired` and `code_required` without returning, so it also admitted the ticket (an expired ticket showed as checked in, and a non-transferable ticket was admitted before its entry code was checked). It is fixed by `supabase/migrations/20260830120000_fix_checkin_ticket_early_returns.sql`.
+
+That migration replaces a **live** function that may differ from this repository (not every change to the live database is in a migration), so it is a compare-and-swap: it replaces `checkin_ticket()` only if the live one is exactly the version it was written against, does nothing if it already has the fix, and **stops without changing anything** if the live one is anything else. `tests/db/migration_guard.sh` runs the real migration against a database in each of those situations (and with Windows line endings, which must not count as a difference), and also checks that the fingerprints the migration declares are the ones the functions really have. `tests/db/fixtures/checkin_ticket_before_fix.sql` is the old function, used to recreate the "before" state.
+
+To see what the bug already did to real guests, run `supabase/audit/checkin_fallthrough.sql` (read-only) in production. The test suite runs it against a database where the bug has just happened.
+
+`supabase/proposed/` is where a written-but-unshipped fix would live (see its README). `run.sh --with-fix` applies whatever is there and requires its `assert_known_bug` checks to pass for real; there is nothing proposed right now.
 
 ### The migrations do not describe production
 
