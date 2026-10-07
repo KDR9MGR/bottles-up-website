@@ -127,6 +127,50 @@ describe('the team section', () => {
   });
 });
 
+describe('the door screens', () => {
+  const door = (over: Partial<Workspace> = {}) => person([ws({ role: 'door', venueId: 'v1', venueName: 'Club A', ...over })]);
+
+  it('Scan opens the scanner for a door person', () => {
+    const html = render('/w/m1/scan', door());
+    expect(html).toContain('Loading your events');
+    expect(html).not.toContain('Not available on the website yet');
+  });
+
+  it('Guests opens the guest search', () => {
+    expect(render('/w/m1/guests', door())).toContain('Loading your events');
+  });
+
+  it('Door Sale is not built and says so, rather than showing something that looks like a till', () => {
+    const html = render('/w/m1/door-sale', door());
+    expect(html).toContain('Not available on the website yet');
+    expect(html).not.toContain('Loading your events');
+  });
+
+  it('a server also has a Scan section, but it is NOT the ticket scanner (it is for tables, not built here)', () => {
+    const html = render('/w/m1/scan', person([ws({ role: 'server', venueId: 'v1' })]));
+    expect(html).toContain('Not available on the website yet');
+    expect(html).not.toContain('Loading your events');
+  });
+
+  it.each(['owner', 'manager', 'organizer', 'security', 'verifier'] as const)('the %s role has no door scanner', (role) => {
+    const first = sectionsFor(role)[0].id;
+    const html = render(`/w/m1/${first}`, person([ws({ role, venueId: 'v1', orgKind: role === 'organizer' ? 'organizer' : 'venue_owner' })], [biz()]));
+    expect(html).not.toContain('Loading your events');
+  });
+
+  it('the organizer also has a Guests section, which is NOT the door guest list', () => {
+    const html = render('/w/m1/guests', person([ws({ role: 'organizer', orgKind: 'organizer' })], [biz({ kind: 'organizer' })]));
+    expect(html).toContain('Not available on the website yet');
+    expect(html).not.toContain('Loading your events');
+  });
+
+  it('shows no scanner at all once the assignment is gone', () => {
+    const html = render('/w/m-ended/scan', person([ws({ membershipId: 'other', role: 'door' })]));
+    expect(html).toContain('You no longer have access to this workspace');
+    expect(html).not.toContain('Loading your events');
+  });
+});
+
 describe('the workspace selector', () => {
   it('lists personal and every workspace with its role and state', () => {
     const snapshot = person(

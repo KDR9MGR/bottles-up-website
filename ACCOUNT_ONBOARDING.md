@@ -18,6 +18,7 @@ entry point, personal and business onboarding, verification states, and where ea
 | 3. Staff join by invitation; revoked or expired access opens nothing | `/accept-invite`, `src/lib/workspaceAccess.ts`, tenancy migration |
 | 3. Always show venue, event and night; explicit role switching | `src/account/workspace/WorkspacePage.tsx` |
 | Admin review of businesses and ownership requests | `/cms/verifications` |
+| Door scanner for invited door staff: scan tickets by camera or by typing the code, entry codes for non-transferable tickets, find a guest by name and admit them from the list, how many are in. Scoped to the person's own event or club | `/w/<membership>/scan` and `/guests`, `src/account/door/`, rules in `src/lib/doorScan.ts`, DB `door_scan_ticket`, `door_verify_ticket_code`, `door_guests`, `door_events` |
 | Team and invitations (owner and manager): invite with a role, a club, ongoing or temporary access and an optional shift; every invitation state; send a new link, cancel, remove access | `/w/<membership>/team`, `src/account/team/`, rules in `src/lib/team.ts`, DB `list_team`, `list_team_invitations`, `invitable_roles`, email via the `send-team-invitation` edge function |
 
 Access is enforced in the database (row level security and the permission functions), never only by hiding
@@ -37,6 +38,7 @@ taking someone else's venue, or publishing its own listing).
    - `supabase/migrations/20261006120000_tenancy_foundation.sql`
    - `supabase/migrations/20261007100000_accounts_onboarding.sql`
    - `supabase/migrations/20261008100000_team_invitations.sql`
+   - `supabase/migrations/20261009100000_door_scanner.sql` (also adds `site_events.venue_id` if it is missing: production already has it, because the CMS event form sets it, but no earlier migration here creates it)
 
    Functions use plain `CREATE`, so if the live database already has a function with the same name and
    arguments the migration fails instead of overwriting it.
@@ -65,12 +67,18 @@ Said plainly so nobody assumes otherwise:
 
 - **Inviting for events.** The Team screen invites people to a club. Door staff for an organizer's events need
   the organizer's Events screens, which are not built.
-- **Scoped screens for invited staff (server, door, security, verifier).** They land in `/w/<membership>/...`
-  placeholders, not in the existing `/staff` and `/door` pages, on purpose. Those pages and their policies rely on
-  `is_door_staff()`, which is global: any row in `door_staff` grants check-in access across the whole platform, with no
-  venue or event scoping. Widening it to cover invited staff would give every invited server platform-wide access,
-  which the brief forbids ("invited staff access only their assignments"). The scoped replacements are the next
-  slice; existing `door_staff` people keep their current pages and landing unchanged.
+- **Scoped screens for invited server, security and verifier staff.** They land in `/w/<membership>/...` placeholders,
+  not in the existing `/staff` and `/door` pages, on purpose. Those pages and their policies rely on `is_door_staff()`,
+  which is global: any row in `door_staff` grants check-in access across the whole platform, with no venue or event
+  scoping. Widening it to cover invited staff would give every invited server platform-wide access, which the brief
+  forbids ("invited staff access only their assignments"). Door staff now have scoped screens (below); the rest do not.
+  Existing `door_staff` people keep their current pages and landing unchanged.
+- **Door Sale, and table check-in at the door.** Door Sale (selling a ticket at the door) is not built. Checking in a
+  table booking uses functions (`lookup_table_booking_for_checkin` and friends) that exist only in production, so they
+  could not be reviewed or tested from this repository; a door person can scan event tickets only.
+- **QR decoding was not tested in a browser.** The pane used for checking blocks the camera. The camera, its failure
+  message and every other part of the screen were exercised, and manual entry works when the camera does not, but try
+  the camera on a real phone before relying on it at a door.
 - **The dashboards behind the sidebar.** Overview and My Venues are real (verification banner, setup progress,
   venue profile editing). Every other section shows "Not available on the website yet" with what it will hold.
 - **Editing floor plans, tables, bottles and booking rules as an owner.** They count toward setup progress and
@@ -83,6 +91,16 @@ Said plainly so nobody assumes otherwise:
 - **Forgot-password and legal verification review.** Out of scope per the brief.
 - The older partner pages (`/partners/*`) and the old `partner_accounts` table are untouched. Whether existing
   partner applicants migrate to the new business accounts is an open question for the client.
+
+## How the door scanner is scoped
+
+A door person holds a `door` membership for one **event** or for one **club**. A club covers every event linked to it
+(`site_events.venue_id`, set when an admin picks a venue in the CMS event form). The screen shows events that are running,
+start within 24 hours, or ended in the last 3 hours, with how many guests are in. A ticket for any other event, at another
+club or business, comes back as "Not for this event" without the guest's name, tier or event, and is logged against the
+person who scanned it. The older `checkin_ticket()` and `verify_ticket_otp()` are untouched and stay unreachable to invited
+staff. The new functions also fix a flaw in the old scanner: it admits a ticket it has just refused as expired or
+code-protected (a missing `RETURN`; see `supabase/proposed/20260830_fix_checkin_ticket_early_returns.sql`).
 
 ## Developing and testing
 
