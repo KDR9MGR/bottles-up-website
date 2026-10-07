@@ -17,6 +17,7 @@ import TeamSection from '../team/TeamSection';
 import DoorGuests from '../door/DoorGuests';
 import DoorScanner from '../door/DoorScanner';
 import BookingLinkSection from './BookingLinkSection';
+import OwnerBookings from './OwnerBookings';
 import { OwnerOverview, OwnerVenues, VerificationBanner } from './OwnerSections';
 import { sectionDescription } from './sectionInfo';
 
@@ -117,6 +118,7 @@ const WorkspacePage = () => {
   let content: React.ReactNode;
   if (current.role === 'owner' && activeSection === 'overview') content = <OwnerOverview workspace={current} business={business} />;
   else if (current.role === 'owner' && activeSection === 'venues') content = <OwnerVenues workspace={current} business={business} />;
+  else if (current.role === 'owner' && activeSection === 'tables') content = <OwnerBookings workspace={current} business={business} />;
   else if (current.role === 'owner' && activeSection === 'booking-link') content = <BookingLinkSection workspace={current} business={business} />;
   else if (current.role === 'door' && activeSection === 'scan') content = <DoorScanner workspace={current} />;
   else if (current.role === 'door' && activeSection === 'guests') content = <DoorGuests workspace={current} />;

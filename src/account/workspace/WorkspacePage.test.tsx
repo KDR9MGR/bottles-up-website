@@ -127,6 +127,24 @@ describe('the team section', () => {
   });
 });
 
+describe('the owner\'s tables and bookings section', () => {
+  it('opens for an owner, not as a "not available" placeholder', () => {
+    const html = render('/w/m1/tables', person([ws()], [biz()]));
+    expect(html).toContain('Loading your venues');
+    expect(html).not.toContain('Not available on the website yet');
+  });
+
+  it('shows the owner the verification banner above it', () => {
+    expect(render('/w/m1/tables', person([ws()], [biz({ verificationState: 'under_review' })]))).toContain('Under review');
+  });
+
+  it('is the owner\'s section only: a server\'s "My Tables" is a different screen and stays a placeholder', () => {
+    const html = render('/w/m1/tables', person([ws({ role: 'server', venueId: 'v1' })]));
+    expect(html).toContain('Not available on the website yet');
+    expect(html).not.toContain('Loading your venues');
+  });
+});
+
 describe('the booking link section', () => {
   it('opens for an owner, not as a "not available" placeholder', () => {
     const html = render('/w/m1/booking-link', person([ws()], [biz()]));

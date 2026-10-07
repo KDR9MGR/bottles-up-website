@@ -6,7 +6,7 @@ const OWNER: Record<string, string> = {
   venues: 'Add, select and manage clubs, each with its own operational records.',
   tonight: 'Preparation checklist, live operations, alerts and closing tasks.',
   events: 'Venue requests, approved partnerships, agreements and event-specific sharing.',
-  tables: 'Floor plan, reservations, guest allowances, walk-ins and table assignments.',
+  tables: 'Reservations for your venues, night by night, with who is coming and whether it is paid.',
   'bottle-orders': 'Pre-orders, additions, signs, service estimates and delivery progress.',
   payments: 'Collections, balances, receipt evidence, cash handovers and reconciliation.',
   discounts: 'Internal codes, limits, permitted staff and usage history.',

@@ -20,6 +20,7 @@ entry point, personal and business onboarding, verification states, and where ea
 | Admin review of businesses and ownership requests | `/cms/verifications` |
 | Door scanner for invited door staff: scan tickets by camera or by typing the code, entry codes for non-transferable tickets, find a guest by name and admit them from the list, how many are in. Scoped to the person's own event or club | `/w/<membership>/scan` and `/guests`, `src/account/door/`, rules in `src/lib/doorScan.ts`, DB `door_scan_ticket`, `door_verify_ticket_code`, `door_guests`, `door_events` |
 | Venue setup (owner, and the database allows managers): floor plan pictures, the kinds of table guests book (capacity, minimum spend, deposit, flat or hourly price, photo, badge), the bottle menu (price, size, stock, on the menu / sold out), and the days and arrival times bookings are accepted | `/w/<membership>/venues`, `src/account/setup/`, rules in `src/lib/venueSetupForms.ts`, DB `list_venue_*`, `save_venue_*`, `remove_venue_*`, `add_venue_time_slot` |
+| Tables & Bookings (owner, read only): each venue's reservations night by night with the guest, table, party size, status (confirmed, awaiting payment, cancelled...), contact details, confirmation code and whether they have arrived; a booking after midnight is counted on the night before | `/w/<membership>/tables`, `src/account/workspace/OwnerBookings.tsx`, rules in `src/lib/bookingsView.ts`, DB `list_venue_bookings`, `booking_night` |
 | Booking Link (owner): each venue's booking address, copy, a QR code to download for print, whether it works yet (only a published venue's does), and a preview of what guests see | `/w/<membership>/booking-link`, `src/account/workspace/BookingLinkSection.tsx`, rules in `src/lib/bookingLink.ts` |
 | Team and invitations (owner and manager): invite with a role, a club, ongoing or temporary access and an optional shift; every invitation state; send a new link, cancel, remove access | `/w/<membership>/team`, `src/account/team/`, rules in `src/lib/team.ts`, DB `list_team`, `list_team_invitations`, `invitable_roles`, email via the `send-team-invitation` edge function |
 
@@ -42,6 +43,7 @@ taking someone else's venue, or publishing its own listing).
    - `supabase/migrations/20261008100000_team_invitations.sql`
    - `supabase/migrations/20261009100000_door_scanner.sql` (also adds `site_events.venue_id` if it is missing: production already has it, because the CMS event form sets it, but no earlier migration here creates it)
    - `supabase/migrations/20261010100000_venue_setup.sql` (owner venue setup; creates only new functions, no tables or columns, and needs `site_venue_time_slots`, `site_venue_floors`, `site_table_types`, `site_table_bookings`, `site_bottles` and `audit_log`, all of which production has)
+   - `supabase/migrations/20261011100000_venue_bookings.sql` (owner view of bookings; read only, new functions only. It calls `require_venue_editor` from the venue setup migration, so apply that one first)
 
    Functions use plain `CREATE`, so if the live database already has a function with the same name and
    arguments the migration fails instead of overwriting it.
@@ -85,7 +87,13 @@ Said plainly so nobody assumes otherwise:
   message and every other part of the screen were exercised, and manual entry works when the camera does not, but try
   the camera on a real phone before relying on it at a door.
 - **The dashboards behind the sidebar.** Overview and My Venues are real (verification banner, setup progress,
-  venue profile and setup editing), as is Team. Every other section shows "Not available on the website yet" with what it will hold.
+  venue profile and setup editing), Tables & Bookings (read only), Booking Link and Team. Every other section shows "Not available on the website yet" with what it will hold.
+- **Bottle Orders, and money actually collected.** Production has columns on bookings and bottle lines that no committed migration
+  defines (what was paid, cancellation reason and time, reconciliation, each bottle line's service and payment state and whether it was
+  cancelled). Showing bottle orders without them would count cancelled lines as live, and showing "paid" without them would guess. So
+  Tables & Bookings shows what was booked (total and deposit), not what was collected, and bottle orders are not shown at all, until
+  `supabase db pull` brings those definitions into the repository and they can be tested.
+- **Walk-ins, guest allowances, table assignment and check-in for table bookings** (also production-only functions) are not in the owner's view.
 - **Parts of venue setup that stay with the BottlesUp team (CMS).** Placing a table on the floor plan (position and
   size), and each table's seating type, view, privacy level, amenities and policy note. The last five columns exist in
   production but in no committed migration, so they could not be tested here; owners' edits never touch them (an
