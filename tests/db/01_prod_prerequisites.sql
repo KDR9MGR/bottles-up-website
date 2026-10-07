@@ -14,3 +14,16 @@ begin
   new.updated_at = now();
   return new;
 end $$;
+
+-- needed by 20261007100000_accounts_onboarding.sql, which extends the shared profiles table
+-- (written by both the website and the customer app). Only the columns those apps are
+-- known to use; production has more, and its real definition is not in this repo.
+create table if not exists public.profiles (
+  id uuid primary key references auth.users (id) on delete cascade,
+  name text,
+  email text,
+  phone_number text,
+  age int,
+  avatar_url text,
+  verified boolean
+);

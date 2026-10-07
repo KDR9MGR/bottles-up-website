@@ -12,6 +12,9 @@ Two kinds, both run in CI (`.github/workflows/ci.yml`).
 | Promo and access codes | `tests/edge/promoCode.test.ts`, `tierAccessCode.test.ts` | Every rejection reason, limits, venue scoping, rounding; real bcrypt |
 | After-midnight logic | `tests/edge/bookingNight.test.ts` | Browser and edge copies of `bookingNight` agree, round-trip, year and leap-day rollover |
 | Small helpers | `src/lib/*.test.ts` | `formatMoney`, `derivePaymentStatus`, disposable emails, delete-blocked errors |
+| Account routing | `src/lib/accountRouting.test.ts`, `workspaceAccess.test.ts`, `safeNext.test.ts` | Where each role lands after login, remembered workspaces, revoked access, hostile `?next=` values (open redirects) |
+| Verification and setup | `src/lib/verification.test.ts`, `venueSetup.test.ts`, `roleNavigation.test.ts` | The four states, what each allows, "why is this blocked and what do I do", setup readiness, each role's own navigation |
+| Account pages | `src/account/**/*.test.tsx` | The real workspace page server-rendered with a simulated account: what each role sees, the no-access page, banners |
 
 The edge functions are written for Deno (`npm:` imports). `vitest.config.ts` aliases those imports to real packages or the stubs in `tests/edge/stubs/`, so the function source runs unmodified. `tests/edge/stubs/fakeDb.ts` is a small in-memory Supabase client; embedded relations are not resolved, so seed rows with nested objects already attached.
 
@@ -21,6 +24,9 @@ The edge functions are written for Deno (`npm:` imports). `vitest.config.ts` ali
 PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres tests/db/run.sh
 PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres tests/db/run.sh --with-fix
 ```
+
+Test files: `010` check-in, `020` entry codes, `030` row level security, `040` tenancy (organizations, roles, invitations),
+`050` accounts and onboarding (profiles, business verification, venue claims, venue setup, image storage).
 
 It creates a database called `bottlesup_test` (never point it at a real project), replays `supabase/migrations` on plain Postgres through a small Supabase stand-in (`00_supabase_shim.sql`), then runs `tests/db/tests/*.sql` and `concurrency.sh`: who may scan, every `checkin_ticket` outcome, the entry-code lockout, RLS on orders, and two staff scanning one ticket at the same time.
 

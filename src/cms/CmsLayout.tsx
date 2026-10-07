@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, Ticket, Users, Settings, LogOut, ScanLine, CheckCircle2, ScrollText, Building2, Wine, HelpCircle, Crown, Tag, ClipboardCheck } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Ticket, Users, Settings, LogOut, ScanLine, CheckCircle2, ScrollText, Building2, Wine, HelpCircle, Crown, Tag, ClipboardCheck, BadgeCheck } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -15,6 +15,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { cmsSignOut } from './useCmsAuth';
+import { ACCOUNT_ONBOARDING_ENABLED } from '@/lib/features';
 
 const navItems = [
   { to: '/cms', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -24,6 +25,7 @@ const navItems = [
   { to: '/cms/table-bookings', label: 'Table Bookings', icon: Wine },
   { to: '/cms/reconciliation', label: 'Reconciliation', icon: ClipboardCheck },
   { to: '/cms/promo-codes', label: 'Promo Codes', icon: Tag },
+  ...(ACCOUNT_ONBOARDING_ENABLED ? [{ to: '/cms/verifications', label: 'Verification', icon: BadgeCheck }] : []),
   { to: '/cms/vip-list', label: 'VIP List', icon: Users },
   { to: '/cms/vip-guest-list', label: 'VIP Guest List', icon: Crown },
   { to: '/cms/door-staff', label: 'Team & Staff', icon: ScanLine },

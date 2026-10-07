@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Suspense, lazy, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Spotlight from "@/components/motion/Spotlight";
 import Index from "./pages/Index";
@@ -54,6 +55,30 @@ import StaffTableDetail from "./staff/pages/StaffTableDetail";
 import PartnerApply from "./partners/pages/PartnerApply";
 import PartnerLogin from "./partners/pages/PartnerLogin";
 import PartnerOnboarding from "./partners/pages/PartnerOnboarding";
+import { AccountProvider } from "./hooks/AccountProvider";
+import { ACCOUNT_ONBOARDING_ENABLED } from "./lib/features";
+
+// New account, onboarding and workspace pages. Loaded on demand, and only routed when the feature is on
+// (see lib/features.ts), so the live site does not even download them until it is switched on.
+const Login = lazy(() => import("./account/pages/Login"));
+const Signup = lazy(() => import("./account/pages/Signup"));
+const SignupPersonal = lazy(() => import("./account/pages/SignupPersonal"));
+const SignupBusiness = lazy(() => import("./account/pages/SignupBusiness"));
+const AccountHome = lazy(() => import("./account/pages/Home"));
+const WorkspacesPage = lazy(() => import("./account/pages/WorkspacesPage"));
+const ProfileOnboarding = lazy(() => import("./account/pages/ProfileOnboarding"));
+const BusinessNew = lazy(() => import("./account/pages/BusinessNew"));
+const BusinessOnboarding = lazy(() => import("./account/pages/BusinessOnboarding"));
+const AcceptInvite = lazy(() => import("./account/pages/AcceptInvite"));
+const WorkspacePage = lazy(() => import("./account/workspace/WorkspacePage"));
+const CmsVerifications = lazy(() => import("./cms/pages/Verifications"));
+
+const AccountScope = ({ children }: { children: ReactNode }) =>
+  ACCOUNT_ONBOARDING_ENABLED ? <AccountProvider>{children}</AccountProvider> : <>{children}</>;
+
+const Fallback = () => (
+  <div className="flex min-h-screen items-center justify-center bg-black text-gray-400">Loading...</div>
+);
 
 const queryClient = new QueryClient();
 
@@ -65,7 +90,9 @@ const App = () => {
         <Sonner />
         <Spotlight />
         <BrowserRouter>
+          <AccountScope>
           <ScrollToTop />
+          <Suspense fallback={<Fallback />}>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
@@ -136,6 +163,7 @@ const App = () => {
               <Route path="table-bookings" element={<CmsTableBookings />} />
               <Route path="reconciliation" element={<CmsReconciliation />} />
               <Route path="promo-codes" element={<CmsPromoCodes />} />
+              {ACCOUNT_ONBOARDING_ENABLED && <Route path="verifications" element={<CmsVerifications />} />}
               <Route path="vip-list" element={<CmsVipList />} />
               <Route path="vip-guest-list" element={<CmsVipGuestList />} />
               <Route path="door-staff" element={<CmsDoorStaff />} />
@@ -144,9 +172,27 @@ const App = () => {
               <Route path="content" element={<CmsContent />} />
               <Route path="help" element={<CmsHelp />} />
             </Route>
+            {ACCOUNT_ONBOARDING_ENABLED && (
+              <>
+                <Route path="/login" element={<Login />} />
+                <Route path="/signup" element={<Signup />} />
+                <Route path="/signup/personal" element={<SignupPersonal />} />
+                <Route path="/signup/business" element={<SignupBusiness />} />
+                <Route path="/home" element={<AccountHome />} />
+                <Route path="/workspaces" element={<WorkspacesPage />} />
+                <Route path="/onboarding/profile" element={<ProfileOnboarding />} />
+                <Route path="/business/new" element={<BusinessNew />} />
+                <Route path="/business/:orgId/onboarding" element={<BusinessOnboarding />} />
+                <Route path="/accept-invite" element={<AcceptInvite />} />
+                <Route path="/w/:membershipId" element={<WorkspacePage />} />
+                <Route path="/w/:membershipId/:section" element={<WorkspacePage />} />
+              </>
+            )}
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </Suspense>
+          </AccountScope>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

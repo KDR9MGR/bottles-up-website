@@ -9,6 +9,9 @@ import PopularVipTables from '@/components/PopularVipTables';
 import TrustedByVenues from '@/components/TrustedByVenues';
 import EmailCollection from '@/components/EmailCollection';
 import Footer from '@/components/Footer';
+import AccountPrompt from '@/account/components/AccountPrompt';
+import GetStarted from '@/account/components/GetStarted';
+import { ACCOUNT_ONBOARDING_ENABLED } from '@/lib/features';
 
 const Index = () => {
   const { hash } = useLocation();
@@ -39,7 +42,9 @@ const Index = () => {
       <PopularVipTables />
       <TrustedByVenues />
       <EmailCollection />
+      {ACCOUNT_ONBOARDING_ENABLED && <GetStarted />}
       <Footer />
+      {ACCOUNT_ONBOARDING_ENABLED && <AccountPrompt />}
     </div>
   );
 };
