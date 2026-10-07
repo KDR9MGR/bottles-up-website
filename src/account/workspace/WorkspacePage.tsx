@@ -13,6 +13,7 @@ import { contextFor, nightLabel } from '@/lib/workspaceContext';
 import AccountShell from '../components/AccountShell';
 import { FullPageSpinner } from '../pages/Home';
 import ComingSoon from './ComingSoon';
+import TeamSection from '../team/TeamSection';
 import { OwnerOverview, OwnerVenues, VerificationBanner } from './OwnerSections';
 import { sectionDescription } from './sectionInfo';
 
@@ -113,6 +114,14 @@ const WorkspacePage = () => {
   let content: React.ReactNode;
   if (current.role === 'owner' && activeSection === 'overview') content = <OwnerOverview workspace={current} business={business} />;
   else if (current.role === 'owner' && activeSection === 'venues') content = <OwnerVenues workspace={current} business={business} />;
+  else if ((current.role === 'owner' || current.role === 'manager') && activeSection === 'team') {
+    content = (
+      <>
+        {current.role === 'owner' && <VerificationBanner workspace={current} business={business} />}
+        <TeamSection workspace={current} />
+      </>
+    );
+  }
   else if (current.role === 'organizer' && activeSection === 'home') {
     content = (
       <>

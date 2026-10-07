@@ -104,6 +104,29 @@ describe('the owner overview and verification', () => {
   });
 });
 
+describe('the team section', () => {
+  it('opens for an owner, not as a "not available" placeholder', () => {
+    const html = render('/w/m1/team', person([ws()], [biz()]));
+    expect(html).toContain('Loading your team');
+    expect(html).not.toContain('Not available on the website yet');
+  });
+
+  it('opens for a manager, who gets the same screen scoped by the database to their club', () => {
+    const html = render('/w/m1/team', person([ws({ role: 'manager', venueId: 'v1', venueName: 'Club A' })]));
+    expect(html).toContain('Loading your team');
+  });
+
+  it('shows the owner the verification banner above it, but not a manager', () => {
+    expect(render('/w/m1/team', person([ws()], [biz({ verificationState: 'under_review' })]))).toContain('Under review');
+    expect(render('/w/m1/team', person([ws({ role: 'manager', venueId: 'v1' })], [biz({ verificationState: 'under_review' })]))).not.toContain('Under review');
+  });
+
+  it.each(['server', 'door', 'security', 'verifier'] as const)('is not a section of the %s role at all', (role) => {
+    const html = render('/w/m1/team', person([ws({ role, venueId: 'v1' })]));
+    expect(html).not.toContain('Loading your team');
+  });
+});
+
 describe('the workspace selector', () => {
   it('lists personal and every workspace with its role and state', () => {
     const snapshot = person(

@@ -18,6 +18,7 @@ entry point, personal and business onboarding, verification states, and where ea
 | 3. Staff join by invitation; revoked or expired access opens nothing | `/accept-invite`, `src/lib/workspaceAccess.ts`, tenancy migration |
 | 3. Always show venue, event and night; explicit role switching | `src/account/workspace/WorkspacePage.tsx` |
 | Admin review of businesses and ownership requests | `/cms/verifications` |
+| Team and invitations (owner and manager): invite with a role, a club, ongoing or temporary access and an optional shift; every invitation state; send a new link, cancel, remove access | `/w/<membership>/team`, `src/account/team/`, rules in `src/lib/team.ts`, DB `list_team`, `list_team_invitations`, `invitable_roles`, email via the `send-team-invitation` edge function |
 
 Access is enforced in the database (row level security and the permission functions), never only by hiding
 screens. The unit tests cover the rules; the database tests (`tests/db/tests/040_tenancy.sql`,
@@ -35,17 +36,24 @@ taking someone else's venue, or publishing its own listing).
 2. **Apply to staging first**, then production, in order:
    - `supabase/migrations/20261006120000_tenancy_foundation.sql`
    - `supabase/migrations/20261007100000_accounts_onboarding.sql`
+   - `supabase/migrations/20261008100000_team_invitations.sql`
 
    Functions use plain `CREATE`, so if the live database already has a function with the same name and
    arguments the migration fails instead of overwriting it.
-3. **Supabase Auth settings** (dashboard, Authentication > URL Configuration):
+3. **Deploy the invitation email function** (needed for the Team screen to email links; without it the screen still
+   works and shows the link to copy):
+   `supabase functions deploy send-team-invitation`
+   It reuses the secrets the other emails already use: `RESEND_API_KEY` and `TICKETS_FROM_EMAIL`, and optionally
+   `SITE_URL` (the address links should point at; defaults to `https://www.bottlesupapp.com`). It runs as the signed-in
+   person, never with the service key, and can only email the address stored on the invitation.
+4. **Supabase Auth settings** (dashboard, Authentication > URL Configuration):
    - Redirect URLs must allow `https://www.bottlesupapp.com/home` (sign-up and log-in links return there), and
      `http://localhost:*` for development.
    - Decide whether email confirmation is required. The code handles both: with confirmation on, the person is
      told to check their email and the link resumes onboarding on any device; with it off they continue at once.
-4. **Turn it on:** set `VITE_ENABLE_ACCOUNT_ONBOARDING=true` in the environment the site is built with
+5. **Turn it on:** set `VITE_ENABLE_ACCOUNT_ONBOARDING=true` in the environment the site is built with
    (Vercel project settings) and redeploy. Turn it off the same way to roll back; no data is lost.
-5. Optional: `VITE_APP_STORE_URL` and `VITE_PLAY_STORE_URL` (https only) add app download buttons to the
+6. Optional: `VITE_APP_STORE_URL` and `VITE_PLAY_STORE_URL` (https only) add app download buttons to the
    homepage once the apps are published. They are not invented; with no value nothing is shown.
 
 If the new database functions are not deployed yet, the site still works for everyone: the account snapshot
@@ -55,8 +63,8 @@ treats a missing function as "nothing there" instead of failing.
 
 Said plainly so nobody assumes otherwise:
 
-- **Inviting staff from the website.** The database functions exist (`invite_member` and friends) and
-  `/accept-invite` works, but there is no Team screen to create an invitation or email the link.
+- **Inviting for events.** The Team screen invites people to a club. Door staff for an organizer's events need
+  the organizer's Events screens, which are not built.
 - **Scoped screens for invited staff (server, door, security, verifier).** They land in `/w/<membership>/...`
   placeholders, not in the existing `/staff` and `/door` pages, on purpose. Those pages and their policies rely on
   `is_door_staff()`, which is global: any row in `door_staff` grants check-in access across the whole platform, with no
