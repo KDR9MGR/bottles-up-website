@@ -5,7 +5,8 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist"] },
+  // .claude/worktrees holds full copies of this repo made by Claude Code sessions.
+  { ignores: ["dist", ".claude/**"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
@@ -25,5 +26,19 @@ export default tseslint.config(
       ],
       "@typescript-eslint/no-unused-vars": "off",
     },
+  },
+  // shadcn/ui generates empty prop interfaces; tailwind.config.ts uses require() for plugins.
+  {
+    files: ["src/components/ui/**/*.{ts,tsx}"],
+    rules: { "@typescript-eslint/no-empty-object-type": "off" },
+  },
+  {
+    files: ["tailwind.config.ts"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
+  // Tests use `any` for in-memory fakes and a fake global `Deno`.
+  {
+    files: ["tests/**/*.ts", "**/*.test.ts"],
+    rules: { "@typescript-eslint/no-explicit-any": "off" },
   }
 );
