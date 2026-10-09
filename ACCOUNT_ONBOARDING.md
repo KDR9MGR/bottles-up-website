@@ -44,6 +44,7 @@ taking someone else's venue, or publishing its own listing).
    - `supabase/migrations/20261009100000_door_scanner.sql` (also adds `site_events.venue_id` if it is missing: production already has it, because the CMS event form sets it, but no earlier migration here creates it)
    - `supabase/migrations/20261010100000_venue_setup.sql` (owner venue setup; creates only new functions, no tables or columns, and needs `site_venue_time_slots`, `site_venue_floors`, `site_table_types`, `site_table_bookings`, `site_bottles` and `audit_log`, all of which production has)
    - `supabase/migrations/20261011100000_venue_bookings.sql` (owner view of bookings; read only, new functions only. It calls `require_venue_editor` from the venue setup migration, so apply that one first)
+   - `supabase/migrations/20261012100000_cancel_business.sql` (lets a person cancel a business they added by mistake; one new function, needs only the tenancy and onboarding migrations above)
    - `supabase/migrations/20261013100000_organizer_events.sql` (the organizer's own draft events; new functions only. Needs the tenancy migration, `site_events` with its `organizer_name` column, and `audit_log`; it does not use the venue setup helpers)
 
    Functions use plain `CREATE`, so if the live database already has a function with the same name and
@@ -123,6 +124,27 @@ orders keep their own copy of its name and price. Every change is recorded in `a
 (the writer is not callable from the app, so entries cannot be forged). Per venue limits keep a runaway client from
 filling the tables: 150 arrival times, 10 floors, 50 table types, 300 bottles. Changes to a venue that is already live
 take effect for guests immediately.
+
+## Leaving onboarding, and cancelling a business added by mistake
+
+"Back" on a business's onboarding page goes to the workspace list (`/workspaces`), **not** to `/home`: Home sends a person who
+holds exactly one unfinished business straight back to its onboarding page, which made the page impossible to leave. The
+workspace list always shows the personal account first. "Add your business" goes back to the workspace list, or to the
+personal account when the person has no workspace yet (Home would send them straight back to adding one).
+
+A business that has not been verified (not submitted, or sent back for more information) shows **Cancel this business** at the
+bottom of its onboarding page, behind a confirmation. It calls `cancel_business(p_org)`, which checks in the database that the
+caller is the owner or organizer of that business and then deletes the business with its details, draft venues, draft events,
+pending venue requests and unaccepted invitations. It is recorded in `audit_log` (`business.cancelled`, with the name, kind and
+state), because the verification history goes with the business. It refuses, with a plain sentence each:
+
+- a business under review or verified (only the BottlesUp team handles those, and the page says to contact them),
+- a business that still has another active team member (their access would vanish without notice),
+- a business with a live venue or a published event,
+- a draft venue or event that already has bookings or orders pointing at it (the delete would fail on a foreign key).
+
+After cancelling, the person's sign-up intent in their account metadata is set back to personal, so signing in does not push
+them to create another business. Files already uploaded to the business's storage folder are not deleted.
 
 ## How organizer events are protected
 

@@ -9,7 +9,7 @@ declare
   org2_u constant uuid := '00000000-0000-0000-0000-0000000000f2';  -- organizer of Other Events
   owner_u constant uuid := '00000000-0000-0000-0000-0000000000f3'; -- a venue owner
   stranger constant uuid := '00000000-0000-0000-0000-0000000000f4';
-  orgA uuid; orgB uuid; ownerOrg uuid; ev uuid; ev2 uuid; evb uuid; ev_pub uuid; ev_order uuid; platform_ev uuid; tier uuid;
+  orgA uuid; orgB uuid; orgC uuid; evc uuid; ownerOrg uuid; ev uuid; ev2 uuid; evb uuid; ev_pub uuid; ev_order uuid; platform_ev uuid; tier uuid;
   r record; n int; txt text; ts timestamptz;
   long_title text := repeat('x', 121);
 begin
@@ -214,7 +214,24 @@ begin
   perform public.remove_org_event(orgB, evb);
   perform tests.assert_true('...and removing one makes room', public.save_org_event(orgB, null, '{"title":"Fits now","description":"d","venue_name":"v","start_date":"2033-02-01T20:00:00Z"}') is not null);
 
+  ---------------------------------------------------------------- cancelling a business added by mistake (cancel_business)
+  perform tests.login(stranger, 'stranger@example.com');
+  orgC := public.create_organization('Mistake Events', 'organizer');
+  evc := public.save_org_event(orgC, null, '{"title":"Draft made by mistake","description":"d","venue_name":"v","start_date":"2033-05-01T20:00:00Z"}');
+  perform public.save_org_event(orgC, null, '{"title":"Second draft","description":"d","venue_name":"v","start_date":"2033-06-01T20:00:00Z"}');
+  perform tests.logout();
+  update public.site_events set status = 'published' where id = evc;
+  perform tests.login(stranger, 'stranger@example.com');
+  perform tests.assert_raises('an organizer whose event was published cannot cancel the business', format($q$select public.cancel_business(%L)$q$, orgC), 'published event');
+  perform tests.logout();
+  update public.site_events set status = 'draft' where id = evc;
+  perform tests.login(stranger, 'stranger@example.com');
+  perform public.cancel_business(orgC);
+  perform tests.logout();
+  perform tests.assert_eq('with only drafts, cancelling removes the business and the drafts made through save_org_event', (select count(*) from public.site_organizations where id = orgC)::int + (select count(*) from public.site_events where org_id = orgC or id = evc)::int, 0);
+
   ---------------------------------------------------------------- the audit trail cannot be forged and has no anonymous entries
+  perform tests.login(org2_u, 'organizer@other.example');
   perform tests.assert_raises('the app cannot write an audit entry itself', format($q$select public.org_event_log('org_event.forged', %L, %L)$q$, platform_ev, orgB), 'permission denied');
   perform tests.assert_raises('...nor use the internal validators', $q$select public.org_event_text('{}', 'title', 'title', 5, false)$q$, 'permission denied');
   perform tests.logout();

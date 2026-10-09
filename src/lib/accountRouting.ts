@@ -117,6 +117,23 @@ export const PERSONAL_KEY = 'personal';
 export const CMS_KEY = 'cms';
 export const LEGACY_STAFF_KEY = 'legacy-staff';
 
+/**
+ * Where "back" goes from a business's onboarding page. NOT /home: Home sends a person who holds exactly one business that is
+ * not finished straight back to its onboarding page, so a person who added a business by mistake could never leave. The
+ * workspace list shows everything they hold (the personal account included) and never redirects.
+ */
+export const LEAVE_ONBOARDING_TO = '/workspaces';
+export const LEAVE_ONBOARDING_LABEL = 'All workspaces';
+
+/**
+ * Where "back" goes from "Add your business". A person who already has somewhere to go returns to their workspace list; a
+ * person who has none (they chose a business sign-up and have not created it yet) returns to their personal account, because
+ * Home would send them straight back to this page.
+ */
+export function leaveAddBusinessTo(snapshot: Pick<AccountSnapshot, 'workspaces'>): string {
+  return snapshot.workspaces.length > 0 ? '/workspaces' : '/dashboard';
+}
+
 export function onboardingPath(orgId: string): string {
   return `/business/${orgId}/onboarding`;
 }
