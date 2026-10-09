@@ -5,6 +5,9 @@ import {
   decideLanding,
   EMPTY_SNAPSHOT,
   isDestinationPermitted,
+  LEAVE_ONBOARDING_LABEL,
+  LEAVE_ONBOARDING_TO,
+  leaveAddBusinessTo,
   parseBusinessRow,
   parseSignupIntent,
   parseWorkspaceRow,
@@ -355,5 +358,41 @@ describe('parsing what the database and the account return', () => {
   it('tolerates a missing list or counts', () => {
     const b = parseBusinessRow({ org_id: 'o1', org_name: 'C', org_kind: 'organizer', verification_state: 'verified' });
     expect(b).toMatchObject({ missing: [], venueCount: 0, pendingClaims: 0 });
+  });
+});
+
+describe('leaving onboarding (client report: a business added by mistake could not be left or cancelled)', () => {
+  const unfinished = () => person({ workspaces: [ws()], businesses: [biz({ verificationState: 'not_submitted' })] });
+
+  it('why "back to /home" was a trap: Home sends a person with one unfinished business straight back to its onboarding page', () => {
+    expect(to(unfinished())).toBe('/business/o1/onboarding');
+    expect(to(person({ workspaces: [ws()], businesses: [biz({ verificationState: 'more_information_needed' })] }))).toBe('/business/o1/onboarding');
+  });
+
+  it('so "back" from onboarding goes to the workspace list, which is not Home and never redirects', () => {
+    expect(LEAVE_ONBOARDING_TO).toBe('/workspaces');
+    expect(LEAVE_ONBOARDING_TO).not.toBe('/home');
+    expect(LEAVE_ONBOARDING_LABEL.length).toBeGreaterThan(0);
+  });
+
+  it('the workspace list offers the personal account first, and the unfinished business as "Finish setup"', () => {
+    const d = buildDestinations(unfinished());
+    expect(d[0]).toMatchObject({ kind: 'personal', path: '/dashboard', attention: null });
+    expect(d[1]).toMatchObject({ key: 'm1', path: '/business/o1/onboarding', attention: 'finish_setup' });
+  });
+
+  it('"back" from "Add your business" goes to the workspace list when there is one, otherwise to the personal account', () => {
+    expect(leaveAddBusinessTo(person({ workspaces: [ws()] }))).toBe('/workspaces');
+    expect(leaveAddBusinessTo(person({ workspaces: [] }))).toBe('/dashboard');
+    // Home would return a person with a business sign-up and no business to Add your business again.
+    const stuck = person({ workspaces: [], signupIntent: { kind: 'business', businessKind: 'venue_owner' } });
+    expect(to(stuck)).toBe('/business/new?type=venue_owner');
+    expect(leaveAddBusinessTo(stuck)).not.toBe('/home');
+  });
+
+  it('after the only business is cancelled, a cleared sign-up intent lands on the personal account; an uncleared one pushes them to create another', () => {
+    const cancelled = { workspaces: [], businesses: [] };
+    expect(to(person({ ...cancelled, signupIntent: { kind: 'business', businessKind: 'venue_owner' } }))).toBe('/business/new?type=venue_owner');
+    expect(to(person({ ...cancelled, signupIntent: { kind: 'personal' } }))).toBe('/dashboard');
   });
 });

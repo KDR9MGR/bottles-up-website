@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canCancelBusiness,
   describeMissing,
   isVerificationState,
   publishVenueGate,
@@ -118,6 +119,24 @@ describe('publishVenueGate: say why and give a direct action', () => {
   it('finished setup does not make up for missing verification', () => {
     for (const s of ['not_submitted', 'under_review', 'more_information_needed'] as const) {
       expect(publishVenueGate(ctx(s, 0)).allowed).toBe(false);
+    }
+  });
+});
+
+describe('cancelling a business added by mistake', () => {
+  it.each([
+    ['not_submitted', true],
+    ['more_information_needed', true],
+    ['under_review', false],
+    ['verified', false],
+  ] as const)('%s: offered = %s', (state, offered) => {
+    expect(canCancelBusiness(state)).toBe(offered);
+  });
+
+  it('is offered only to a business that has never been verified', () => {
+    // Anything the reviewer has accepted or is looking at may have been relied on.
+    for (const s of VERIFICATION_STATES) {
+      expect(canCancelBusiness(s)).toBe(s === 'not_submitted' || s === 'more_information_needed');
     }
   });
 });
