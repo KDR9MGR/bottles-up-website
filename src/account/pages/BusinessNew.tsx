@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useAccount } from '@/hooks/useAccount';
 import { AccountError, createOrganization } from '@/lib/account';
-import type { BusinessKind } from '@/lib/accountRouting';
+import { leaveAddBusinessTo, type BusinessKind } from '@/lib/accountRouting';
 import AccountShell from '../components/AccountShell';
 import { FullPageSpinner } from './Home';
 
@@ -23,7 +23,7 @@ const asKind = (v: string | null): BusinessKind | null => (v === 'venue_owner' |
  * bookings, never a second account. The database function creates the business and makes them its owner.
  */
 const BusinessNew = () => {
-  const { loading, session, refresh } = useAccount();
+  const { loading, session, snapshot, refresh } = useAccount();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -56,7 +56,7 @@ const BusinessNew = () => {
     <AccountShell
       title="Add your business"
       subtitle={<>Signed in as <span className="text-white">{session.user.email}</span>. Your business will be added to this account.</>}
-      backTo="/home"
+      backTo={leaveAddBusinessTo(snapshot)}
       backLabel="Back"
     >
       <form onSubmit={submit} className="space-y-5" noValidate>
