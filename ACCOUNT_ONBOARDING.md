@@ -45,6 +45,7 @@ taking someone else's venue, or publishing its own listing).
    - `supabase/migrations/20261010100000_venue_setup.sql` (owner venue setup; creates only new functions, no tables or columns, and needs `site_venue_time_slots`, `site_venue_floors`, `site_table_types`, `site_table_bookings`, `site_bottles` and `audit_log`, all of which production has)
    - `supabase/migrations/20261011100000_venue_bookings.sql` (owner view of bookings; read only, new functions only. It calls `require_venue_editor` from the venue setup migration, so apply that one first)
    - `supabase/migrations/20261012100000_cancel_business.sql` (lets a person cancel a business they added by mistake; one new function, needs only the tenancy and onboarding migrations above)
+   - `supabase/migrations/20261013100000_organizer_events.sql` (the organizer's own draft events; new functions only. Needs the tenancy migration, `site_events` with its `organizer_name` column, and `audit_log`; it does not use the venue setup helpers)
 
    Functions use plain `CREATE`, so if the live database already has a function with the same name and
    arguments the migration fails instead of overwriting it.
@@ -74,7 +75,7 @@ treats a missing function as "nothing there" instead of failing.
 Said plainly so nobody assumes otherwise:
 
 - **Inviting for events.** The Team screen invites people to a club. Door staff for an organizer's events need
-  the organizer's Events screens, which are not built.
+  an event to be invited to; organizers can now create draft events (below), but inviting door staff to one is not built.
 - **Scoped screens for invited server, security and verifier staff.** They land in `/w/<membership>/...` placeholders,
   not in the existing `/staff` and `/door` pages, on purpose. Those pages and their policies rely on `is_door_staff()`,
   which is global: any row in `door_staff` grants check-in access across the whole platform, with no venue or event
@@ -144,6 +145,25 @@ state), because the verification history goes with the business. It refuses, wit
 
 After cancelling, the person's sign-up intent in their account metadata is set back to personal, so signing in does not push
 them to create another business. Files already uploaded to the business's storage folder are not deleted.
+
+## How organizer events are protected
+
+An event organizer's Home and Events sections list the business's events and let it **create** one, **change** a draft and **remove**
+a draft. The organizer gets three database functions (`list_org_events`, `save_org_event`, `remove_org_event`) instead of write access to
+`site_events`. Each checks the person holds the organizer role in THAT business (an organization of kind `organizer`), and looks the event
+up inside that business, so another business's event, or one made in the CMS, is never reachable.
+
+- **An organizer cannot publish.** Events are always created as drafts, the field list has no `status`, `org_id`, `slug` or
+  organizer block, and an unknown field is refused. The public site only shows published events (RLS), so a draft is private until the
+  BottlesUp team publishes it in the CMS, which also sets up its ticket tiers.
+- **A published event is out of reach.** It cannot be changed or removed here, because tickets may have been sold. The screen says to
+  contact BottlesUp.
+- Fields: title, description, venue or place name, address, start, end, category, capacity and a cover photo. Times are sent with their
+  time zone (the database refuses a time without one, because it would guess), and shown back in the device's zone. A draft event that
+  already has an order cannot be removed. A business can hold 200 events.
+- Every change is recorded in `audit_log` (`org_event.created`, `.updated`, `.removed`) with who and which business.
+- **Not built, and not guessed at:** ticket tiers, linking an event to a venue and the agreement with it, publishing by the organizer,
+  and the other event states from the brief (section 7). Whether a verified organizer may publish its own events is a client decision.
 
 ## How the door scanner is scoped
 

@@ -57,6 +57,35 @@ describe('what each role sees in its workspace', () => {
   });
 });
 
+describe('the organizer\'s events (client feedback: "Event organizer page needs a create event")', () => {
+  const organizer = () => person([ws({ role: 'organizer', orgKind: 'organizer' })], [biz({ kind: 'organizer', verificationState: 'not_submitted' })]);
+
+  it.each(['home', 'events'])('the organizer\'s %s section lets them create an event instead of saying "coming soon"', (section) => {
+    const html = render(`/w/m1/${section}`, organizer());
+    expect(html).toContain('Create event');
+    expect(html).toContain('stay private drafts');
+    expect(html).not.toContain('Not available on the website yet');
+  });
+
+  it('the business\'s verification banner is still shown above it', () => {
+    expect(render('/w/m1/home', organizer())).toContain('Not submitted');
+  });
+
+  it('the organizer\'s other sections are still honest about not being built', () => {
+    expect(render('/w/m1/guests', organizer())).toContain('Not available on the website yet');
+  });
+
+  it('a venue owner\'s Events section is a different thing and does not get the organizer\'s create button', () => {
+    const html = render('/w/m1/events', person([ws({ role: 'owner' })], [biz()]));
+    expect(html).not.toContain('Create event');
+  });
+
+  it('a manager has no Events section at all', () => {
+    const html = render('/w/m1/events', person([ws({ role: 'manager', venueId: 'v1', venueName: 'Club A' })], [biz()]));
+    expect(html).not.toContain('Create event');
+  });
+});
+
 describe('the context bar (always show the current business, venue, event and night)', () => {
   it('names the business, venue, event and shift, and the night', () => {
     const html = render('/w/m1/scan', person([ws({ role: 'door', venueName: 'Club A', eventTitle: 'Friday Night', shiftName: 'Doors 9pm' })]));
