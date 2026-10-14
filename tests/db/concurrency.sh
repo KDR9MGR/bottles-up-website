@@ -258,3 +258,193 @@ grep -q 'someone else has already taken this request' "$OUT_H" || fail_req "the 
 [ "$ACKS" = "1" ]                                          || fail_req "exactly one acknowledgement should be recorded"
 [ "$WAITED" -ge 1 ]                                        || fail_req "session B did not wait for the row lock"
 echo "ok - two servers acknowledging one request at once: exactly one took it, the other waited ${WAITED}s and was told someone else has it"
+
+# ---------------------------------------------------------------------------------------------------------------
+# Table service money, three races on committed data (a server with a booking, two verifiers):
+#   1. one server taps "record payment" twice at once (two devices, the same receipt): exactly one payment, the second waits for
+#      the booking lock and is told it is a repeat;
+#   2. two verifiers press Verify on the same payment at once: exactly one verifies, the other waits and is told it was already
+#      verified (without the row lock both would succeed and the later one would overwrite the first one's name);
+#   3. one server taps "Preparing" twice at once: the order changes once, the second tap is told nothing changed, one log entry;
+#   4. a server records the payment that settles the table while a colleague marks an item that is to be paid at the venue as
+#      delivered: the delivery waits for the payment and then sees the table paid (without the booking lock it would read the old
+#      balance and be refused).
+# ---------------------------------------------------------------------------------------------------------------
+PU=00000000-0000-0000-0000-0000000000f1
+PV1=00000000-0000-0000-0000-0000000000f2
+PV2=00000000-0000-0000-0000-0000000000f3
+POWN=00000000-0000-0000-0000-0000000000f4
+PORG=00000000-0000-0000-0000-0000000000f5
+PVEN=00000000-0000-0000-0000-0000000000f6
+PTYPE=00000000-0000-0000-0000-0000000000f7
+PSLOT=00000000-0000-0000-0000-0000000000f8
+PBOOK=00000000-0000-0000-0000-0000000000f9
+PLINE=00000000-0000-0000-0000-0000000000fa
+PPAY=00000000-0000-0000-0000-0000000000fb
+PM1=00000000-0000-0000-0000-0000000000fc
+PM2=00000000-0000-0000-0000-0000000000fd
+PM3=00000000-0000-0000-0000-0000000000fe
+PLINE2=00000000-0000-0000-0000-0000000000ff
+
+cleanup_pay() {
+  psql_db -c "delete from public.audit_log where entity_id in ('$PBOOK', '$PLINE', '$PLINE2', '$PPAY')" \
+          -c "delete from public.site_table_booking_club_payments where booking_id = '$PBOOK'" \
+          -c "delete from public.site_table_bookings where id = '$PBOOK'" \
+          -c "delete from public.site_venues where id = '$PVEN'" \
+          -c "delete from public.site_organizations where id = '$PORG'" \
+          -c "delete from auth.users where id in ('$PU', '$PV1', '$PV2', '$POWN')" >/dev/null 2>&1 || true
+}
+trap 'rm -f "$OUT_A" "$OUT_B" "$OUT_C" "$OUT_D" "$OUT_E" "$OUT_F" "$OUT_G" "$OUT_H" "$OUT_I" "$OUT_J" "$OUT_K" "$OUT_L" "$OUT_M" "$OUT_N" "$OUT_O" "$OUT_P"; reset; cleanup_door; cleanup_setup; cleanup_requests; cleanup_pay' EXIT
+cleanup_pay
+
+psql_db >/dev/null <<SQL
+insert into auth.users (id, email) values ('$PU', 'pserver@test.example'), ('$PV1', 'pver1@test.example'), ('$PV2', 'pver2@test.example'), ('$POWN', 'powner@test.example');
+insert into public.site_organizations (id, name, kind, created_by) values ('$PORG', 'Pay Co', 'venue_owner', '$POWN');
+insert into public.site_venues (id, name, org_id) values ('$PVEN', 'Pay Club', '$PORG');
+insert into public.site_memberships (id, org_id, user_id, role, venue_id)
+  values ('$PM1', '$PORG', '$PU', 'server', '$PVEN'), ('$PM2', '$PORG', '$PV1', 'verifier', '$PVEN'), ('$PM3', '$PORG', '$PV2', 'verifier', '$PVEN');
+insert into public.site_table_types (id, venue_id, name, max_guests, min_spend_cents, deposit_cents, inventory_count) values ('$PTYPE', '$PVEN', 'Booth', 6, 0, 0, 3);
+insert into public.site_venue_time_slots (id, venue_id, day_of_week, start_time, label) values ('$PSLOT', '$PVEN', 6, '21:00', 'Evening');
+insert into public.site_table_bookings (id, venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status)
+  values ('$PBOOK', '$PVEN', '$PTYPE', '$PSLOT', current_date + 3, 'Pay Guest', 'payguest@test.example', 2, 10000, 'paid');
+insert into public.site_booking_servers (booking_id, membership_id, assigned_by) values ('$PBOOK', '$PM1', '$PU');
+insert into public.site_table_booking_bottles (id, booking_id, bottle_name, unit_price_cents, quantity, line_total_cents, payment_status, service_status)
+  values ('$PLINE', '$PBOOK', 'Race Bottle', 5000, 1, 5000, 'paid', 'awaiting_prep');
+SQL
+
+# --- 1. the same receipt twice at once
+OUT_I=$(mktemp); OUT_J=$(mktemp)
+psql_db >"$OUT_I" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:duplicate=' || (public.desk_record_payment('$PBOOK', 4000, 4000, 'cash', null, null, '$PBOOK/race.jpg') ->> 'duplicate');
+select pg_sleep(2);
+commit;
+SQL
+PID_I=$!
+sleep 0.7
+START=$SECONDS
+psql_db >"$OUT_J" <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+select 'B:duplicate=' || (public.desk_record_payment('$PBOOK', 4000, 4000, 'cash', null, null, '$PBOOK/race.jpg') ->> 'duplicate');
+commit;
+SQL
+WAITED=$((SECONDS - START))
+wait "$PID_I"
+PAYMENTS=$(psql_db -c "select count(*) from public.site_table_booking_club_payments where booking_id = '$PBOOK'")
+PAID=$(psql_db -c "select amount_paid_cents from public.site_table_bookings where id = '$PBOOK'")
+LOGGED=$(psql_db -c "select count(*) from public.audit_log where action = 'table_booking.club_payment_recorded' and entity_id = '$PBOOK'")
+fail_pay() { echo "FAIL - payment concurrency: $1 (payments: $PAYMENTS, paid: $PAID, logged: $LOGGED, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_I"), B said: $(tr '\n' ' ' <"$OUT_J"))"; exit 1; }
+grep -q '^A:duplicate=false' "$OUT_I"  || fail_pay "the first tap should have recorded the payment"
+grep -q '^B:duplicate=true' "$OUT_J"   || fail_pay "the second tap should have been told it is a repeat"
+[ "$PAYMENTS" = "1" ]                  || fail_pay "expected exactly one payment"
+[ "$PAID" = "4000" ]                   || fail_pay "the booking should have been credited once"
+[ "$LOGGED" = "1" ]                    || fail_pay "expected exactly one log entry"
+[ "$WAITED" -ge 1 ]                    || fail_pay "session B did not wait for the booking lock"
+echo "ok - one receipt sent twice at once: exactly one payment recorded, the other waited ${WAITED}s and was told it is a repeat"
+
+# --- 2. two verifiers on one payment
+psql_db >/dev/null <<SQL
+insert into public.site_table_booking_club_payments (id, booking_id, billed_amount_cents, amount_paid_cents, payment_method, recorded_by, missing_receipt_reason)
+  values ('$PPAY', '$PBOOK', 100, 100, 'cash', '$PU', 'seeded');
+SQL
+OUT_K=$(mktemp); OUT_L=$(mktemp)
+psql_db >"$OUT_K" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV1","role":"authenticated","email":"pver1@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:verified' from (select public.desk_verify_payment('$PPAY', 'first')) s;
+select pg_sleep(2);
+commit;
+SQL
+PID_K=$!
+sleep 0.7
+START=$SECONDS
+psql -X -q -t -A -d "$DB" >"$OUT_L" 2>&1 <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV2","role":"authenticated","email":"pver2@test.example"}', true) is not null;
+set local role authenticated;
+select 'B:verified' from (select public.desk_verify_payment('$PPAY', 'second')) s;
+commit;
+SQL
+WAITED=$((SECONDS - START))
+wait "$PID_K"
+VERIFIER=$(psql_db -c "select manager_verified_by || '|' || manager_verified_note from public.site_table_booking_club_payments where id = '$PPAY'")
+VERIFIED_LOGGED=$(psql_db -c "select count(*) from public.audit_log where action = 'table_booking.club_payment_manager_verified' and entity_id = '$PPAY'")
+fail_ver() { echo "FAIL - verification concurrency: $1 (kept: $VERIFIER, logged: $VERIFIED_LOGGED, session B waited ${WAITED}s, B said: $(tr '\n' ' ' <"$OUT_L"))"; exit 1; }
+grep -q '^A:verified' "$OUT_K"                     || fail_ver "the first verifier should have verified it"
+! grep -q '^B:verified' "$OUT_L"                   || fail_ver "the second verifier must not also verify it"
+grep -q 'this payment was already verified' "$OUT_L" || fail_ver "the second verifier should be told it was already verified"
+[ "$VERIFIER" = "$PV1|first" ]                     || fail_ver "the first verifier's name and note should stand"
+[ "$VERIFIED_LOGGED" = "1" ]                       || fail_ver "exactly one verification should be logged"
+[ "$WAITED" -ge 1 ]                                || fail_ver "session B did not wait for the row lock"
+echo "ok - two verifiers pressing Verify at once: exactly one verified it, the other waited ${WAITED}s and was told it was already verified"
+
+# --- 3. the same order tapped twice
+OUT_M=$(mktemp); OUT_N=$(mktemp)
+psql_db >"$OUT_M" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:changed=' || public.desk_set_service_status('$PLINE', 'preparing');
+select pg_sleep(2);
+commit;
+SQL
+PID_M=$!
+sleep 0.7
+START=$SECONDS
+psql_db >"$OUT_N" <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+select 'B:changed=' || public.desk_set_service_status('$PLINE', 'preparing');
+commit;
+SQL
+WAITED=$((SECONDS - START))
+wait "$PID_M"
+MOVES=$(psql_db -c "select count(*) from public.audit_log where action = 'table_booking.bottle_service_status_updated' and entity_id = '$PLINE'")
+fail_svc() { echo "FAIL - order concurrency: $1 (moves logged: $MOVES, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_M"), B said: $(tr '\n' ' ' <"$OUT_N"))"; exit 1; }
+grep -q '^A:changed=true' "$OUT_M"   || fail_svc "the first tap should have moved the order"
+grep -q '^B:changed=false' "$OUT_N"  || fail_svc "the second tap should be told nothing changed"
+[ "$MOVES" = "1" ]                   || fail_svc "exactly one move should be logged"
+[ "$WAITED" -ge 1 ]                  || fail_svc "session B did not wait for the booking lock"
+echo "ok - one order tapped twice at once: it moved once, the other waited ${WAITED}s and was told nothing changed"
+
+# --- 4. a payment settling the table, and the delivery that waits for it
+psql_db >/dev/null <<SQL
+insert into public.site_table_booking_bottles (id, booking_id, bottle_name, unit_price_cents, quantity, line_total_cents, payment_status, service_status)
+  values ('$PLINE2', '$PBOOK', 'Pay At Venue Bottle', 6000, 1, 6000, 'due_at_venue', 'ready');
+SQL
+BALANCE_BEFORE=$(psql_db -c "select greatest(amount_total_cents - amount_paid_cents, 0) from public.site_table_bookings where id = '$PBOOK'")
+OUT_O=$(mktemp); OUT_P=$(mktemp)
+psql_db >"$OUT_O" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:balance_after=' || (public.desk_record_payment('$PBOOK', 6000, 6000, 'cash', null, null, '$PBOOK/settle.jpg') ->> 'balance_due_cents');
+select pg_sleep(2);
+commit;
+SQL
+PID_O=$!
+sleep 0.7
+START=$SECONDS
+psql -X -q -t -A -d "$DB" >"$OUT_P" 2>&1 <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+select 'B:delivered=' || public.desk_set_service_status('$PLINE2', 'served');
+commit;
+SQL
+WAITED=$((SECONDS - START))
+wait "$PID_O"
+STATE=$(psql_db -c "select service_status from public.site_table_booking_bottles where id = '$PLINE2'")
+fail_pd() { echo "FAIL - payment-then-delivery concurrency: $1 (balance before: $BALANCE_BEFORE, item: $STATE, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_O"), B said: $(tr '\n' ' ' <"$OUT_P"))"; exit 1; }
+[ "$BALANCE_BEFORE" -gt 0 ]              || fail_pd "the table should owe something before the payment"
+grep -q '^A:balance_after=0' "$OUT_O"    || fail_pd "the payment should have settled the table"
+grep -q '^B:delivered=true' "$OUT_P"     || fail_pd "the delivery should have gone through once the payment was in"
+[ "$STATE" = "served" ]                  || fail_pd "the item should be delivered"
+[ "$WAITED" -ge 1 ]                      || fail_pd "session B did not wait for the booking lock"
+echo "ok - a payment settling the table and a delivery at the same moment: the delivery waited ${WAITED}s and saw the table paid"

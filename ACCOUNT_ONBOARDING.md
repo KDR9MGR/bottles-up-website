@@ -48,6 +48,7 @@ taking someone else's venue, or publishing its own listing).
    - `supabase/migrations/20261013100000_organizer_events.sql` (the organizer's own draft events; new functions only. Needs the tenancy migration, `site_events` with its `organizer_name` column, and `audit_log`; it does not use the venue setup helpers)
    - `supabase/migrations/20261014100000_table_servers.sql` (giving a booking to a server; one new table and new functions. Needs the tenancy migration, the venue bookings migration for `booking_night`, the venue setup migration for `require_venue_editor`, and `site_table_bookings`, `site_venue_time_slots`, `site_table_types` and `audit_log`)
    - `supabase/migrations/20261014110000_service_requests.sql` (service requests from a table; one new table and new functions. Needs the previous one, for `desk_log`, `booking_venue` and the server link)
+   - `supabase/migrations/20261014120000_desk_orders.sql` and `supabase/migrations/20261014130000_desk_payments.sql` (bottle orders, payments and the manager's Tonight numbers for the membership roles; new functions and two storage policies, no new tables. **These need tables and columns that exist only in production** (the money columns of a booking and of a bottle line, the club payments table, the `club-payment-receipts` bucket): on a database that lacks them they stop with a message naming what is missing, and the fix is `supabase db pull` first. Read from production on 14 Oct 2026 with `supabase/audit/06_server_desk_definitions.sql`.)
 
    Functions use plain `CREATE`, so if the live database already has a function with the same name and
    arguments the migration fails instead of overwriting it.
@@ -194,6 +195,47 @@ a table (water, ice, the bill). Two migrations add it; the staff area of the old
 - **Not built, and not guessed at:** requests made by the guest from the customer app (the column `source` allows `guest`; nothing creates one),
   billing for a charged item (that goes through an order), and anything that needs production-only columns: what was paid, a table's bottle orders
   and their service state. Those wait for `supabase db pull` (or `supabase/audit/06_server_desk_definitions.sql`).
+
+## How table orders, payments and Tonight work (for servers, verifiers, managers and owners)
+
+Brief sections 13 to 15 and 6. Two migrations (`20261014120000_desk_orders.sql`, `20261014130000_desk_payments.sql`) add functions that do what the website's
+own staff functions do (`list_my_bottle_orders`, `update_bottle_service_status`, `record_club_payment`, `manager_verify_club_payment`, ...) **for the membership
+roles**. The old ones are left exactly as they are: they authorize through the global `door_staff` and `cms_admins` tables, so an invited server, verifier or
+club manager is refused by them. Read in production on 14 Oct 2026, the old ones also let *any* `door_staff` row record a payment for *any* booking at *any* club
+(`door_staff.can_record_payments` is never checked), let the person who recorded a payment verify it, overwrite an earlier verification, and file a receipt under
+any path. These do not.
+
+- **Who stands where.** `desk_booking_level(booking)` answers only for the caller: `manager` (owns the business or manages that club), `server` (a current
+  server role at that club **and** the booking was given to them), `verifier` (a current verifier role at that club), or nothing (also for a booking that
+  does not exist, so ids cannot be probed). A person whose access ended, or whose shift is over, is nothing.
+- **Orders.** `desk_orders(club, night)`: the night's bottle lines, oldest unfinished first, delivered last (a manager or owner sees the whole club, a server only
+  their own tables; cancelled lines, ones still being paid online and closed-out tables are left out; at most 1000). `desk_booking_orders(booking)` is one table's
+  sheet, cancelled lines included with their reason. `desk_set_service_status(line, status)` moves one line among the five states the database allows
+  (`awaiting_prep`, `preparing`, `ready`, `picked_up`, `served`; the app says New / Preparing / Ready / On the way / Delivered). It answers true when it changed
+  and false when it already was so (a repeated tap writes and records nothing). A server cannot take a delivered item back; an item to be paid at the venue
+  cannot be delivered until the table's balance is zero **and** a payment was recorded for it; a cancelled line, a closed-out table and a line still being
+  paid online cannot be moved.
+- **Payments.** `desk_record_payment(...)`: the owner, the manager, or the server the booking was given to. A **server must attach a receipt photo**; a manager
+  may instead write why there is none (cash without a printed receipt). The photo's path must start with the booking's id (`<booking id>/<file>`), which is
+  what ties it to the booking and decides who may open it. The booking's paid total goes up by what was collected, never past its total (as the old function
+  does); the payment keeps the real figure. The same receipt sent again, or the same no-receipt entry within a minute, answers `duplicate: true` and writes
+  nothing; a till receipt number or photo already used at that club is refused. Only a confirmed booking that has not been closed out takes a payment.
+  The guest's email is stored if given and never returned by these functions or written to the audit log.
+- **Checking.** `desk_pending_verifications(club)` is the owner's, manager's and verifier's queue: unchecked payments and disputed ones (those first, even if
+  they were checked earlier), oldest first, at most 300. `desk_verify_payment(payment, note)`: **never the person who recorded it, never twice, and not once the
+  customer has answered**. A photo alone does not verify anything: a payment reads "Recorded - verification pending" until someone else checks it.
+  Not built: flagging a payment, settling a dispute, cash handover from server to cashier, corrections and refunds (these wait for client decisions).
+- **Receipts in storage.** Two policies on the private `club-payment-receipts` bucket: a manager or the table's server may add a photo under their booking's
+  id, and the manager, owner, that table's server and a verifier may read it. The old policies (any `door_staff` or CMS admin, any club) are untouched.
+- **Tonight.** `desk_tonight(club, night)` (owner/manager only): tables, guests, arrived, tables without a server, tables with a balance and how much, items
+  new / in progress / delivered, then club-wide payments to check, disputed payments, closings asked for, open service requests. `desk_table_status(club, night)`
+  is one line per confirmed booking (what is due, items still to deliver, payments recorded and unchecked, closed out, closing asked for) to lay over the lists
+  the app already has; a server gets only their tables.
+- **Tests.** `140` (orders) and `150` (payments, checking, Tonight, receipts) in `tests/db`, plus four races in `concurrency.sh` (a receipt sent twice at once, two
+  verifiers on one payment, one order tapped twice, a payment and a delivery at the same moment). The production-only columns come from
+  `tests/db/prod_shapes/` (see its README). A mutation check of these two migrations (`tests/db/tools/mutate_migrations.py`) killed 137 of 140 changes; the
+  three left are equivalent or defensive: an extra role filter, `<> 'paid'` where `= 'due_at_venue'` is the same once unpaid lines are refused, and the lock on
+  the bottle line itself (the booking lock already serializes every writer in this file; it only matters against the old production function).
 
 ## How the door scanner is scoped
 
