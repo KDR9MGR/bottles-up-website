@@ -46,6 +46,8 @@ taking someone else's venue, or publishing its own listing).
    - `supabase/migrations/20261011100000_venue_bookings.sql` (owner view of bookings; read only, new functions only. It calls `require_venue_editor` from the venue setup migration, so apply that one first)
    - `supabase/migrations/20261012100000_cancel_business.sql` (lets a person cancel a business they added by mistake; one new function, needs only the tenancy and onboarding migrations above)
    - `supabase/migrations/20261013100000_organizer_events.sql` (the organizer's own draft events; new functions only. Needs the tenancy migration, `site_events` with its `organizer_name` column, and `audit_log`; it does not use the venue setup helpers)
+   - `supabase/migrations/20261014100000_table_servers.sql` (giving a booking to a server; one new table and new functions. Needs the tenancy migration, the venue bookings migration for `booking_night`, the venue setup migration for `require_venue_editor`, and `site_table_bookings`, `site_venue_time_slots`, `site_table_types` and `audit_log`)
+   - `supabase/migrations/20261014110000_service_requests.sql` (service requests from a table; one new table and new functions. Needs the previous one, for `desk_log`, `booking_venue` and the server link)
 
    Functions use plain `CREATE`, so if the live database already has a function with the same name and
    arguments the migration fails instead of overwriting it.
@@ -164,6 +166,34 @@ up inside that business, so another business's event, or one made in the CMS, is
 - Every change is recorded in `audit_log` (`org_event.created`, `.updated`, `.removed`) with who and which business.
 - **Not built, and not guessed at:** ticket tiers, linking an event to a venue and the agreement with it, publishing by the organizer,
   and the other event states from the brief (section 7). Whether a verified organizer may publish its own events is a client decision.
+
+## How a booking is given to a server, and how service requests work
+
+The brief (sections 12, 13 and 17) has a manager give tables to servers, a server see their own tables, and the staff deal with requests from
+a table (water, ice, the bill). Two migrations add it; the staff area of the old site does not use them.
+
+- **A booking has at most one server** (`site_booking_servers`, keyed by the booking). Individual tables do not exist yet (inventory is a count
+  per table type), so what is given out is the **booking**; the brief says "tables" and the client should confirm this is what they mean.
+  `assign_booking_server`, `unassign_booking_server` and `list_venue_booking_servers` are for the owner of the business and the manager of THAT
+  club (the venue setup check). The booking must be paid; the person must be an active `server` of the same club (not door, not another club's
+  server, not someone whose access was revoked, ended or whose shift is over). A server whose access ends later shows as unavailable so the
+  manager can see a table that is nobody's in practice.
+- **A server's own tables:** `my_assigned_tables(night)` returns the paid bookings given to the caller's current server memberships for one
+  business night (a slot before 06:00 belongs to the night before): the table, arrival time, party, lead guest's name, confirmation code and
+  whether they have arrived. **No email or phone.** Anyone without a server membership gets an empty list.
+- **Service requests** (`site_service_requests`): `create_service_request`, `list_service_requests`, `update_service_request`. Staff of the
+  club only (a server, the manager, the owner). Kinds: assistance, water/ice/mixers, order question, bill request, table issue. Statuses: New,
+  Acknowledged, In progress, Completed, Escalated, Cancelled. A request goes to the table's server if the booking has one.
+  - A server sees their own tables' requests and those of tables nobody has; the manager and owner see all of them. The oldest open request is first.
+  - **The first to acknowledge owns it**: a second server is told someone else has it (the request row is locked, and a script in
+    `concurrency.sh` presses Acknowledge twice at once). Doing the same thing twice is not an error and records nothing.
+  - **Asking for the same thing twice while it is open is one request** (a unique index, so two taps at once cannot both succeed).
+  - Escalating and cancelling need a reason. Only a manager hands a request to someone else (it goes back to New for that person). A server
+    cannot touch an escalated request.
+  - Every change is recorded in `audit_log` (`booking.server_*`, `service_request.*`) with who did it.
+- **Not built, and not guessed at:** requests made by the guest from the customer app (the column `source` allows `guest`; nothing creates one),
+  billing for a charged item (that goes through an order), and anything that needs production-only columns: what was paid, a table's bottle orders
+  and their service state. Those wait for `supabase db pull` (or `supabase/audit/06_server_desk_definitions.sql`).
 
 ## How the door scanner is scoped
 

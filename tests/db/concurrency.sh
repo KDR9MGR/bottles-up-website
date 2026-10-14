@@ -184,3 +184,77 @@ grep -q 'already added' "$OUT_F"             || fail_setup "session B should be 
 [ "$COPIES" = "1" ]                          || fail_setup "expected exactly one copy of the arrival time"
 [ "$WAITED" -ge 1 ]                          || fail_setup "session B did not wait for the venue lock"
 echo "ok - two people adding the same arrival time at once: exactly one copy, the other waited ${WAITED}s and was told it is already added"
+
+# ---------------------------------------------------------------------------------------------------------------
+# Service requests: two servers press Acknowledge on the same unclaimed request at the same moment ("multiple staff cannot claim
+# the same work accidentally"). update_service_request() locks the request row, so the second must WAIT and then be told someone
+# else has it. Without the lock both would read "New", both would be told ok, and the last write would silently win.
+# ---------------------------------------------------------------------------------------------------------------
+RS1=00000000-0000-0000-0000-0000000000d9
+RS2=00000000-0000-0000-0000-0000000000da
+ROWN=00000000-0000-0000-0000-0000000000db
+RORG=00000000-0000-0000-0000-0000000000dc
+RVEN=00000000-0000-0000-0000-0000000000dd
+RTYPE=00000000-0000-0000-0000-0000000000de
+RSLOT=00000000-0000-0000-0000-0000000000df
+RBOOK=00000000-0000-0000-0000-0000000000c1
+RREQ=00000000-0000-0000-0000-0000000000c2
+RM1=00000000-0000-0000-0000-0000000000c3
+RM2=00000000-0000-0000-0000-0000000000c4
+
+cleanup_requests() {
+  psql_db -c "delete from public.audit_log where entity_id = '$RREQ'" \
+          -c "delete from public.site_venues where id = '$RVEN'" \
+          -c "delete from public.site_organizations where id = '$RORG'" \
+          -c "delete from auth.users where id in ('$RS1', '$RS2', '$ROWN')" >/dev/null 2>&1 || true
+}
+trap 'rm -f "$OUT_A" "$OUT_B" "$OUT_C" "$OUT_D" "$OUT_E" "$OUT_F" "$OUT_G" "$OUT_H"; reset; cleanup_door; cleanup_setup; cleanup_requests' EXIT
+cleanup_requests
+
+psql_db >/dev/null <<SQL
+insert into auth.users (id, email) values ('$RS1', 'rserver1@test.example'), ('$RS2', 'rserver2@test.example'), ('$ROWN', 'rowner@test.example');
+insert into public.site_organizations (id, name, kind, created_by) values ('$RORG', 'Requests Co', 'venue_owner', '$ROWN');
+insert into public.site_venues (id, name, org_id) values ('$RVEN', 'Requests Club', '$RORG');
+insert into public.site_memberships (id, org_id, user_id, role, venue_id) values ('$RM1', '$RORG', '$RS1', 'server', '$RVEN'), ('$RM2', '$RORG', '$RS2', 'server', '$RVEN');
+insert into public.site_table_types (id, venue_id, name, max_guests, min_spend_cents, deposit_cents, inventory_count) values ('$RTYPE', '$RVEN', 'Booth', 6, 0, 0, 3);
+insert into public.site_venue_time_slots (id, venue_id, day_of_week, start_time, label) values ('$RSLOT', '$RVEN', 6, '21:00', 'Evening');
+insert into public.site_table_bookings (id, venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status)
+  values ('$RBOOK', '$RVEN', '$RTYPE', '$RSLOT', current_date + 3, 'Race Guest', 'race@test.example', 2, 1000, 'paid');
+insert into public.site_service_requests (id, venue_id, booking_id, kind) values ('$RREQ', '$RVEN', '$RBOOK', 'assistance');
+SQL
+
+OUT_G=$(mktemp); OUT_H=$(mktemp)
+
+psql_db >"$OUT_G" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$RS1","role":"authenticated","email":"rserver1@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:acknowledged' from (select public.update_service_request('$RREQ', 'acknowledge')) s;
+select pg_sleep(2);
+commit;
+SQL
+PID_G=$!
+
+sleep 0.7
+START=$SECONDS
+# Session B is expected to be refused, so it must not stop at the error: run it without ON_ERROR_STOP and keep its messages.
+psql -X -q -t -A -d "$DB" >"$OUT_H" 2>&1 <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$RS2","role":"authenticated","email":"rserver2@test.example"}', true) is not null;
+set local role authenticated;
+select 'B:acknowledged' from (select public.update_service_request('$RREQ', 'acknowledge')) s;
+commit;
+SQL
+WAITED=$((SECONDS - START))
+wait "$PID_G"
+
+HOLDER=$(psql_db -c "select assigned_membership_id from public.site_service_requests where id = '$RREQ'")
+ACKS=$(psql_db -c "select count(*) from public.audit_log where action = 'service_request.acknowledged' and entity_id = '$RREQ'")
+fail_req() { echo "FAIL - service request concurrency: $1 (holder: $HOLDER, acknowledgements recorded: $ACKS, session B waited ${WAITED}s, B said: $(tr '\n' ' ' <"$OUT_H"))"; exit 1; }
+grep -q '^A:acknowledged' "$OUT_G"                         || fail_req "the first server should have acknowledged it"
+! grep -q '^B:acknowledged' "$OUT_H"                       || fail_req "the second server must not also acknowledge it"
+grep -q 'someone else has already taken this request' "$OUT_H" || fail_req "the second server should be told someone else has it"
+[ "$HOLDER" = "$RM1" ]                                     || fail_req "the request should belong to the first server"
+[ "$ACKS" = "1" ]                                          || fail_req "exactly one acknowledgement should be recorded"
+[ "$WAITED" -ge 1 ]                                        || fail_req "session B did not wait for the row lock"
+echo "ok - two servers acknowledging one request at once: exactly one took it, the other waited ${WAITED}s and was told someone else has it"
