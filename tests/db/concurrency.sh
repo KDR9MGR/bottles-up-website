@@ -292,11 +292,12 @@ cleanup_pay() {
           -c "delete from public.site_table_bookings where id = '$PBOOK'" \
           -c "delete from public.site_night_closes where venue_id = '$PVEN'" \
           -c "delete from public.site_stock_movements where venue_id = '$PVEN'" \
+          -c "delete from public.site_vip_members where venue_id = '$PVEN'" \
           -c "delete from public.site_venues where id = '$PVEN'" \
           -c "delete from public.site_organizations where id = '$PORG'" \
           -c "delete from auth.users where id in ('$PU', '$PV1', '$PV2', '$POWN')" >/dev/null 2>&1 || true
 }
-trap 'rm -f "$OUT_A" "$OUT_B" "$OUT_C" "$OUT_D" "$OUT_E" "$OUT_F" "$OUT_G" "$OUT_H" "$OUT_I" "$OUT_J" "$OUT_K" "$OUT_L" "$OUT_M" "$OUT_N" "$OUT_O" "$OUT_P" "$OUT_Q" "$OUT_S" "$OUT_T" "$OUT_U" "$OUT_V" "$OUT_W" "$OUT_Y" "$OUT_Z"; reset; cleanup_door; cleanup_setup; cleanup_requests; cleanup_pay' EXIT
+trap 'rm -f "$OUT_A" "$OUT_B" "$OUT_C" "$OUT_D" "$OUT_E" "$OUT_F" "$OUT_G" "$OUT_H" "$OUT_I" "$OUT_J" "$OUT_K" "$OUT_L" "$OUT_M" "$OUT_N" "$OUT_O" "$OUT_P" "$OUT_Q" "$OUT_S" "$OUT_T" "$OUT_U" "$OUT_V" "$OUT_W" "$OUT_Y" "$OUT_Z" "$OUT_AA" "$OUT_AB"; reset; cleanup_door; cleanup_setup; cleanup_requests; cleanup_pay' EXIT
 cleanup_pay
 
 psql_db >/dev/null <<SQL
@@ -647,3 +648,41 @@ grep -q '^B:after=22' "$OUT_Z"   || fail_stock "the second delivery should have 
 [ "$WAITED" -ge 1 ]              || fail_stock "session B did not wait for the bottle's lock"
 echo "ok - two deliveries recorded at once: both land (10+5+7=22), the second waited ${WAITED}s and started from the first's result"
 rm -f "$OUT_Y" "$OUT_Z"
+
+# --- 14. a once-a-night VIP benefit redeemed by two people at once
+VIPM=$(psql_db -c "insert into public.site_vip_members (venue_id, name, email, credential_code, created_by) values ('$PVEN', 'Race Guest', 'raceguest@test.example', 'RACE0001', '$PV1') returning id")
+VIPK=$(psql_db -c "insert into public.site_vip_perks (member_id, kind, label, max_uses, period, created_by) values ('$VIPM', 'entry', 'Priority entry', 1, 'night', '$PV1') returning id")
+OUT_AA=$(mktemp); OUT_AB=$(mktemp)
+psql_db >"$OUT_AA" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV1","role":"authenticated","email":"pver1@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:used=' || (public.vip_redeem('$VIPK') ->> 'used');
+select pg_sleep(2);
+commit;
+SQL
+PID_AA=$!
+sleep 0.7
+START=$SECONDS
+OUT_AC=$(psql_db 2>&1 <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV2","role":"authenticated","email":"pver2@test.example"}', true) is not null;
+set local role authenticated;
+do \$\$ begin
+  perform public.vip_redeem('$VIPK');
+  raise notice 'B:redeemed';
+exception when others then raise notice 'B:%', sqlerrm;
+end \$\$;
+commit;
+SQL
+)
+WAITED=$((SECONDS - START))
+wait "$PID_AA"
+REDEMPTIONS=$(psql_db -c "select count(*) from public.site_vip_redemptions where perk_id = '$VIPK'")
+fail_vip() { echo "FAIL - VIP redemption concurrency: $1 (redemptions: $REDEMPTIONS, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_AA"), B said: $(echo "$OUT_AC" | tr '\n' ' '))"; exit 1; }
+grep -q '^A:used=1' "$OUT_AA"                                                   || fail_vip "the first person should have redeemed it"
+echo "$OUT_AC" | grep -q 'B:this benefit has already been used 1 of 1 tonight'   || fail_vip "the second person should have been told it was already used tonight"
+[ "$REDEMPTIONS" = "1" ]                                                          || fail_vip "expected exactly one redemption"
+[ "$WAITED" -ge 1 ]                                                               || fail_vip "session B did not wait for the perk's lock"
+echo "ok - a once-a-night benefit redeemed by two people at once: exactly one redemption, the other waited ${WAITED}s and was told it was already used"
+rm -f "$OUT_AA" "$OUT_AB"
