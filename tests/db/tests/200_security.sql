@@ -134,6 +134,9 @@ begin
   perform tests.assert_eq('someone else is told who has it', tests.run_as(sec_2, 'sec2@sec.example', format($q$select public.security_alert_act(%L, 'acknowledge')::text$q$, a1)), '{"status": "acknowledged", "by_name": "Sid Security", "changed": false}');
   perform tests.assert_eq('it shows as taken, by whom', tests.run_as(mgr_a, 'mgra@sec.example', format($q$select acknowledged_by_name || ':' || status from public.security_alerts(%L, %L) where alert_id = %L$q$, venue_a, night, a1)), 'Sid Security:acknowledged');
 
+  perform tests.assert_eq('the alert says whether the viewer is the one who took it', tests.run_as(sec_1, 'sec1@sec.example', format($q$select acknowledged_by_me::text from public.security_alerts(%L, %L) where alert_id = %L$q$, venue_a, night, a1))
+    || ' / ' || tests.run_as(sec_2, 'sec2@sec.example', format($q$select acknowledged_by_me::text from public.security_alerts(%L, %L) where alert_id = %L$q$, venue_a, night, a1)), 'true / false');
+
   perform tests.assert_eq('responding', tests.run_as(sec_1, 'sec1@sec.example', format($q$select public.security_alert_act(%L, 'respond')::text$q$, a1)), '{"status": "responding", "changed": true}');
   perform tests.assert_eq('...twice changes nothing', tests.run_as(sec_1, 'sec1@sec.example', format($q$select public.security_alert_act(%L, 'respond')::text$q$, a1)), '{"status": "responding", "changed": false}');
 

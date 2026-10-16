@@ -166,7 +166,7 @@ create function public.security_alerts(p_venue uuid, p_night date)
 returns table (
   alert_id uuid, kind text, urgent boolean, location text, details text, status text, raised_by_name text, raised_by_me boolean, raised_at timestamptz,
   acknowledged_by_name text, acknowledged_at timestamptz, resolved_by_name text, resolved_at timestamptz, resolution_note text,
-  escalated_by_name text, escalated_at timestamptz, escalation_note text, can_act boolean
+  escalated_by_name text, escalated_at timestamptz, escalation_note text, acknowledged_by_me boolean, can_act boolean
 )
 language plpgsql
 stable
@@ -188,7 +188,7 @@ begin
            case when a.acknowledged_by is null then null else coalesce(nullif(btrim(pa.name), ''), 'Staff member') end, a.acknowledged_at,
            case when a.resolved_by is null then null else coalesce(nullif(btrim(ps.name), ''), 'Staff member') end, a.resolved_at, a.resolution_note,
            case when a.escalated_by is null then null else coalesce(nullif(btrim(pe.name), ''), 'Staff member') end, a.escalated_at, a.escalation_note,
-           v_all
+           a.acknowledged_by = auth.uid(), v_all
     from public.site_security_alerts a
     left join public.profiles pr on pr.id = a.raised_by
     left join public.profiles pa on pa.id = a.acknowledged_by
