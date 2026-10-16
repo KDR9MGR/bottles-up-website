@@ -287,14 +287,14 @@ PM3=00000000-0000-0000-0000-0000000000fe
 PLINE2=00000000-0000-0000-0000-0000000000ff
 
 cleanup_pay() {
-  psql_db -c "delete from public.audit_log where entity_id in ('$PBOOK', '$PLINE', '$PLINE2', '$PPAY')" \
+  psql_db -c "delete from public.audit_log where entity_id in ('$PBOOK', '$PLINE', '$PLINE2', '$PPAY', '${ALERT:-}', '${SBOOK:-}', '${CBOOK:-}')" \
           -c "delete from public.site_table_booking_club_payments where booking_id = '$PBOOK'" \
           -c "delete from public.site_table_bookings where id = '$PBOOK'" \
           -c "delete from public.site_venues where id = '$PVEN'" \
           -c "delete from public.site_organizations where id = '$PORG'" \
           -c "delete from auth.users where id in ('$PU', '$PV1', '$PV2', '$POWN')" >/dev/null 2>&1 || true
 }
-trap 'rm -f "$OUT_A" "$OUT_B" "$OUT_C" "$OUT_D" "$OUT_E" "$OUT_F" "$OUT_G" "$OUT_H" "$OUT_I" "$OUT_J" "$OUT_K" "$OUT_L" "$OUT_M" "$OUT_N" "$OUT_O" "$OUT_P"; reset; cleanup_door; cleanup_setup; cleanup_requests; cleanup_pay' EXIT
+trap 'rm -f "$OUT_A" "$OUT_B" "$OUT_C" "$OUT_D" "$OUT_E" "$OUT_F" "$OUT_G" "$OUT_H" "$OUT_I" "$OUT_J" "$OUT_K" "$OUT_L" "$OUT_M" "$OUT_N" "$OUT_O" "$OUT_P" "$OUT_Q" "$OUT_S" "$OUT_T" "$OUT_U" "$OUT_V"; reset; cleanup_door; cleanup_setup; cleanup_requests; cleanup_pay' EXIT
 cleanup_pay
 
 psql_db >/dev/null <<SQL
@@ -526,3 +526,43 @@ grep -q '^B:already=true' "$OUT_T"   || fail_seat "the second tap should have be
 [ "$EST" = "20" ]                    || fail_seat "the first estimate should stand (the second tap changes nothing)"
 [ "$WAITED" -ge 1 ]                  || fail_seat "session B did not wait for the booking lock"
 echo "ok - a guest seated twice at once: exactly one seating and one message, the other waited ${WAITED}s and was told it is done"
+
+# --- 11. the same alert taken by two people at once (two security staff both tap Acknowledge)
+psql_db >/dev/null <<SQL
+insert into public.site_memberships (org_id, user_id, role, venue_id) values ('$PORG', '$PV1', 'security', '$PVEN'), ('$PORG', '$PV2', 'security', '$PVEN');
+SQL
+ALERT=$(psql_db -c "insert into public.site_security_alerts (venue_id, business_night, kind, urgent, location, raised_by)
+  values ('$PVEN', current_date, 'fight', true, 'Terrace', '$PU') returning id")
+OUT_U=$(mktemp); OUT_V=$(mktemp)
+psql_db >"$OUT_U" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV1","role":"authenticated","email":"pver1@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:changed=' || (public.security_alert_act('$ALERT', 'acknowledge') ->> 'changed');
+select pg_sleep(2);
+commit;
+SQL
+PID_U=$!
+sleep 0.7
+START=$SECONDS
+psql_db >"$OUT_V" <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV2","role":"authenticated","email":"pver2@test.example"}', true) is not null;
+set local role authenticated;
+select 'B:changed=' || (public.security_alert_act('$ALERT', 'acknowledge') ->> 'changed');
+commit;
+SQL
+WAITED=$((SECONDS - START))
+wait "$PID_U"
+HOLDER=$(psql_db -c "select acknowledged_by from public.site_security_alerts where id = '$ALERT'")
+STATUS=$(psql_db -c "select status from public.site_security_alerts where id = '$ALERT'")
+LOGGED=$(psql_db -c "select count(*) from public.audit_log where entity_id = '$ALERT' and action = 'security.alert_acknowledge'")
+fail_alert() { echo "FAIL - alert concurrency: $1 (holder: $HOLDER, status: $STATUS, logged: $LOGGED, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_U"), B said: $(tr '\n' ' ' <"$OUT_V"))"; exit 1; }
+grep -q '^A:changed=true' "$OUT_U"   || fail_alert "the first tap should have taken the alert"
+grep -q '^B:changed=false' "$OUT_V"  || fail_alert "the second tap should have been told it is already taken"
+[ "$HOLDER" = "$PV1" ]               || fail_alert "the alert should stay with the first person"
+[ "$STATUS" = "acknowledged" ]       || fail_alert "the alert should be acknowledged"
+[ "$LOGGED" = "1" ]                  || fail_alert "expected exactly one 'taken' entry in the audit log"
+[ "$WAITED" -ge 1 ]                  || fail_alert "session B did not wait for the alert's lock"
+echo "ok - an alert taken by two people at once: exactly one holds it, the other waited ${WAITED}s and was told who has it"
+rm -f "$OUT_U" "$OUT_V"
