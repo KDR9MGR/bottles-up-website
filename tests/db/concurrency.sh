@@ -448,3 +448,44 @@ grep -q '^B:delivered=true' "$OUT_P"     || fail_pd "the delivery should have go
 [ "$STATE" = "served" ]                  || fail_pd "the item should be delivered"
 [ "$WAITED" -ge 1 ]                      || fail_pd "session B did not wait for the booking lock"
 echo "ok - a payment settling the table and a delivery at the same moment: the delivery waited ${WAITED}s and saw the table paid"
+
+# --- 9. the same cash handed in twice at once (the whole cash held, tapped twice)
+CBOOK=$(psql_db -c "insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status)
+  values ('$PVEN', '$PTYPE', '$PSLOT', current_date + 30, 'Cash Guest', 'cashguest@test.example', 2, 4000, 'paid') returning id")
+psql_db -c "insert into public.site_table_booking_club_payments (booking_id, billed_amount_cents, amount_paid_cents, payment_method, recorded_by, missing_receipt_reason)
+  values ('$CBOOK', 4000, 4000, 'cash', '$PU', 'seeded')" >/dev/null
+OUT_Q=$(mktemp)
+psql_db >"$OUT_Q" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:handed in as ' || public.desk_submit_handover('$PVEN', current_date + 30, 4000)::text;
+select pg_sleep(2);
+commit;
+SQL
+PID_Q=$!
+sleep 0.7
+START=$SECONDS
+OUT_R=$(psql_db 2>&1 <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+do \$\$ begin
+  perform public.desk_submit_handover('$PVEN', current_date + 30, 4000);
+  raise notice 'B:handed in';
+exception when others then raise notice 'B:%', sqlerrm;
+end \$\$;
+commit;
+SQL
+)
+WAITED=$((SECONDS - START))
+wait "$PID_Q"
+HANDOVERS=$(psql_db -c "select count(*) from public.site_cash_handovers where venue_id = '$PVEN' and business_night = current_date + 30")
+CLAIMED=$(psql_db -c "select coalesce(sum(claimed_cents), 0) from public.site_cash_handovers where venue_id = '$PVEN' and business_night = current_date + 30")
+fail_cash() { echo "FAIL - cash handover concurrency: $1 (handovers: $HANDOVERS, claimed: $CLAIMED, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_Q"), B said: $(echo "$OUT_R" | tr '\n' ' '))"; exit 1; }
+grep -q '^A:handed in as ' "$OUT_Q"                       || fail_cash "the first tap should have handed the cash in"
+echo "$OUT_R" | grep -q 'B:you are not holding any cash'   || fail_cash "the second tap should have found nothing left to hand in"
+[ "$HANDOVERS" = "1" ]                                      || fail_cash "expected exactly one handover"
+[ "$CLAIMED" = "4000" ]                                     || fail_cash "the cash should have been handed in once"
+[ "$WAITED" -ge 1 ]                                         || fail_cash "session B did not wait for the first tap"
+echo "ok - the same cash handed in twice at once: exactly one handover, the other waited ${WAITED}s and found nothing left to hand in"
