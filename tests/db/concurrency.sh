@@ -291,11 +291,12 @@ cleanup_pay() {
           -c "delete from public.site_table_booking_club_payments where booking_id = '$PBOOK'" \
           -c "delete from public.site_table_bookings where id = '$PBOOK'" \
           -c "delete from public.site_night_closes where venue_id = '$PVEN'" \
+          -c "delete from public.site_stock_movements where venue_id = '$PVEN'" \
           -c "delete from public.site_venues where id = '$PVEN'" \
           -c "delete from public.site_organizations where id = '$PORG'" \
           -c "delete from auth.users where id in ('$PU', '$PV1', '$PV2', '$POWN')" >/dev/null 2>&1 || true
 }
-trap 'rm -f "$OUT_A" "$OUT_B" "$OUT_C" "$OUT_D" "$OUT_E" "$OUT_F" "$OUT_G" "$OUT_H" "$OUT_I" "$OUT_J" "$OUT_K" "$OUT_L" "$OUT_M" "$OUT_N" "$OUT_O" "$OUT_P" "$OUT_Q" "$OUT_S" "$OUT_T" "$OUT_U" "$OUT_V" "$OUT_W"; reset; cleanup_door; cleanup_setup; cleanup_requests; cleanup_pay' EXIT
+trap 'rm -f "$OUT_A" "$OUT_B" "$OUT_C" "$OUT_D" "$OUT_E" "$OUT_F" "$OUT_G" "$OUT_H" "$OUT_I" "$OUT_J" "$OUT_K" "$OUT_L" "$OUT_M" "$OUT_N" "$OUT_O" "$OUT_P" "$OUT_Q" "$OUT_S" "$OUT_T" "$OUT_U" "$OUT_V" "$OUT_W" "$OUT_Y" "$OUT_Z"; reset; cleanup_door; cleanup_setup; cleanup_requests; cleanup_pay' EXIT
 cleanup_pay
 
 psql_db >/dev/null <<SQL
@@ -610,3 +611,39 @@ echo "$OUT_X" | grep -q 'B:this night is already closed'      || fail_close "the
 [ "$WAITED" -ge 1 ]                                           || fail_close "session B did not wait for the first close"
 echo "ok - a night closed by two managers at once: exactly one close, the other waited ${WAITED}s and was told it is already closed"
 rm -f "$OUT_W"
+
+# --- 13. two deliveries of the same bottle recorded at once (neither may be lost)
+STOCKB=$(psql_db -c "insert into public.site_bottles (venue_id, name, size, price_cents, stock_quantity) values ('$PVEN', 'Race Vodka', '750ml', 9000, 10) returning id")
+OUT_Y=$(mktemp); OUT_Z=$(mktemp)
+psql_db >"$OUT_Y" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV1","role":"authenticated","email":"pver1@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:after=' || (public.stock_move('$PVEN', '$STOCKB', 'receive', 5, null, null, 'race-a') ->> 'after');
+select pg_sleep(2);
+commit;
+SQL
+PID_Y=$!
+sleep 0.7
+START=$SECONDS
+psql_db >"$OUT_Z" <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV2","role":"authenticated","email":"pver2@test.example"}', true) is not null;
+set local role authenticated;
+select 'B:after=' || (public.stock_move('$PVEN', '$STOCKB', 'receive', 7, null, null, 'race-b') ->> 'after');
+commit;
+SQL
+WAITED=$((SECONDS - START))
+wait "$PID_Y"
+LEVEL=$(psql_db -c "select stock_quantity from public.site_bottles where id = '$STOCKB'")
+MOVES=$(psql_db -c "select count(*) from public.site_stock_movements where bottle_id = '$STOCKB'")
+CHAIN=$(psql_db -c "select string_agg(before_qty || '>' || after_qty, ' ' order by created_at) from public.site_stock_movements where bottle_id = '$STOCKB'")
+fail_stock() { echo "FAIL - stock concurrency: $1 (level: $LEVEL, movements: $MOVES, chain: $CHAIN, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_Y"), B said: $(tr '\n' ' ' <"$OUT_Z"))"; exit 1; }
+grep -q '^A:after=15' "$OUT_Y"   || fail_stock "the first delivery should have taken the level to 15"
+grep -q '^B:after=22' "$OUT_Z"   || fail_stock "the second delivery should have waited and then taken it to 22"
+[ "$LEVEL" = "22" ]              || fail_stock "both deliveries should be in the level (10 + 5 + 7)"
+[ "$MOVES" = "2" ]               || fail_stock "expected two movements"
+[ "$CHAIN" = "10>15 15>22" ]     || fail_stock "the second movement should start where the first ended"
+[ "$WAITED" -ge 1 ]              || fail_stock "session B did not wait for the bottle's lock"
+echo "ok - two deliveries recorded at once: both land (10+5+7=22), the second waited ${WAITED}s and started from the first's result"
+rm -f "$OUT_Y" "$OUT_Z"
