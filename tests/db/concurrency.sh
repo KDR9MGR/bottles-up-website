@@ -290,11 +290,12 @@ cleanup_pay() {
   psql_db -c "delete from public.audit_log where entity_id in ('$PBOOK', '$PLINE', '$PLINE2', '$PPAY', '${ALERT:-}', '${SBOOK:-}', '${CBOOK:-}')" \
           -c "delete from public.site_table_booking_club_payments where booking_id = '$PBOOK'" \
           -c "delete from public.site_table_bookings where id = '$PBOOK'" \
+          -c "delete from public.site_night_closes where venue_id = '$PVEN'" \
           -c "delete from public.site_venues where id = '$PVEN'" \
           -c "delete from public.site_organizations where id = '$PORG'" \
           -c "delete from auth.users where id in ('$PU', '$PV1', '$PV2', '$POWN')" >/dev/null 2>&1 || true
 }
-trap 'rm -f "$OUT_A" "$OUT_B" "$OUT_C" "$OUT_D" "$OUT_E" "$OUT_F" "$OUT_G" "$OUT_H" "$OUT_I" "$OUT_J" "$OUT_K" "$OUT_L" "$OUT_M" "$OUT_N" "$OUT_O" "$OUT_P" "$OUT_Q" "$OUT_S" "$OUT_T" "$OUT_U" "$OUT_V"; reset; cleanup_door; cleanup_setup; cleanup_requests; cleanup_pay' EXIT
+trap 'rm -f "$OUT_A" "$OUT_B" "$OUT_C" "$OUT_D" "$OUT_E" "$OUT_F" "$OUT_G" "$OUT_H" "$OUT_I" "$OUT_J" "$OUT_K" "$OUT_L" "$OUT_M" "$OUT_N" "$OUT_O" "$OUT_P" "$OUT_Q" "$OUT_S" "$OUT_T" "$OUT_U" "$OUT_V" "$OUT_W"; reset; cleanup_door; cleanup_setup; cleanup_requests; cleanup_pay' EXIT
 cleanup_pay
 
 psql_db >/dev/null <<SQL
@@ -566,3 +567,46 @@ grep -q '^B:changed=false' "$OUT_V"  || fail_alert "the second tap should have b
 [ "$WAITED" -ge 1 ]                  || fail_alert "session B did not wait for the alert's lock"
 echo "ok - an alert taken by two people at once: exactly one holds it, the other waited ${WAITED}s and was told who has it"
 rm -f "$OUT_U" "$OUT_V"
+
+# --- 12. the same night closed by two managers at once
+psql_db >/dev/null <<SQL
+insert into public.site_memberships (org_id, user_id, role, venue_id) values ('$PORG', '$PV1', 'manager', '$PVEN'), ('$PORG', '$PV2', 'manager', '$PVEN');
+SQL
+OUT_W=$(mktemp)
+psql_db >"$OUT_W" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV1","role":"authenticated","email":"pver1@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:closed, exceptions=' || (public.close_night('$PVEN', current_date, true, 'closing with whatever is open') ->> 'exceptions');
+select pg_sleep(2);
+commit;
+SQL
+PID_W=$!
+sleep 0.7
+START=$SECONDS
+OUT_X=$(psql_db 2>&1 <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV2","role":"authenticated","email":"pver2@test.example"}', true) is not null;
+set local role authenticated;
+do \$\$ begin
+  perform public.close_night('$PVEN', current_date, true, 'closing with whatever is open');
+  raise notice 'B:closed';
+exception when others then raise notice 'B:%', sqlerrm;
+end \$\$;
+commit;
+SQL
+)
+WAITED=$((SECONDS - START))
+wait "$PID_W"
+CLOSES=$(psql_db -c "select count(*) from public.site_night_closes where venue_id = '$PVEN' and business_night = current_date")
+CLOSER=$(psql_db -c "select closed_by from public.site_night_closes where venue_id = '$PVEN' and business_night = current_date")
+LOGGED=$(psql_db -c "select count(*) from public.audit_log where action = 'night.closed' and entity_id = '$PVEN'")
+fail_close() { echo "FAIL - closing concurrency: $1 (closes: $CLOSES, closed by: $CLOSER, logged: $LOGGED, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_W"), B said: $(echo "$OUT_X" | tr '\n' ' '))"; exit 1; }
+grep -q '^A:closed' "$OUT_W"                                  || fail_close "the first manager should have closed the night"
+echo "$OUT_X" | grep -q 'B:this night is already closed'      || fail_close "the second manager should have been told it is already closed"
+[ "$CLOSES" = "1" ]                                           || fail_close "expected exactly one close"
+[ "$CLOSER" = "$PV1" ]                                        || fail_close "the first manager should be the one who closed it"
+[ "$LOGGED" = "1" ]                                           || fail_close "expected exactly one 'closed' entry in the audit log"
+[ "$WAITED" -ge 1 ]                                           || fail_close "session B did not wait for the first close"
+echo "ok - a night closed by two managers at once: exactly one close, the other waited ${WAITED}s and was told it is already closed"
+rm -f "$OUT_W"

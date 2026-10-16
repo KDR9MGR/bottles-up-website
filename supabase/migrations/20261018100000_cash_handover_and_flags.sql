@@ -103,6 +103,8 @@ as $$
       and b.booking_date between p_night and p_night + 1
       and public.booking_night(b.booking_date, s.start_time) = p_night
       and cp.recorded_by is not null
+      -- A correction is a new record that replaces the one it corrects: count the replacement, not both.
+      and not exists (select 1 from public.site_table_booking_club_payments c2 where c2.corrects_payment_id = cp.id)
     group by cp.recorded_by
   ), handed as (
     select h.from_user as uid, sum(h.claimed_cents)::int as cents

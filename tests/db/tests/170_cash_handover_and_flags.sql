@@ -269,6 +269,24 @@ begin
   perform tests.assert_eq('each handover acknowledged is in the audit log, with the difference', (select count(*) from public.audit_log where action = 'cash.handover_received' and entity_id = h1::text and details ->> 'difference_cents' = '-100')::int, 1);
   perform tests.assert_eq('flags and their resolution are in the audit log', (select count(*) from public.audit_log where action in ('payment.flagged', 'payment.flag_resolved'))::int, 5);  -- three flagged, two resolved
 
+  ---------------------------------------------------------------- a correction replaces the payment it corrects
+  declare
+    b_fix uuid; pc1 uuid; pc2 uuid; pc3 uuid; pc4 uuid;
+  begin
+    b_fix := tests.mkbooking(venue_a, type_a, slot_eve, night + 15, 'Correction Cora');
+    pc1 := tests.mkcash(b_fix, 3000, 'cash', srv_1);
+    pc2 := tests.mkcash(b_fix, 2500, 'cash', srv_1);
+    update public.site_table_booking_club_payments set corrects_payment_id = pc1 where id = pc2;
+    perform tests.assert_eq('a corrected payment counts once, as the correction',
+      tests.pos(srv_1, 'srv1@cash.example', venue_a, night + 15), 'Sam Server:me:2500:0:2500');
+    perform tests.logout();
+    pc3 := tests.mkcash(b_fix, 1000, 'cash', srv_2);
+    pc4 := tests.mkcash(b_fix, 800, 'cash', mgr_a);
+    update public.site_table_booking_club_payments set corrects_payment_id = pc3 where id = pc4;
+    perform tests.assert_eq('...even when someone else recorded the correction: the cash moves to them, and the first person no longer holds it',
+      tests.pos(mgr_a, 'mgra@cash.example', venue_a, night + 15), 'Mia Manager:me:800:0:800 | Sam Server:other:2500:0:2500');
+  end;
+
   ---------------------------------------------------------------- closed to clients
   perform tests.login_anon();
   perform tests.assert_raises('an anonymous visitor cannot read the cash position', format($q$select * from public.desk_cash_position(%L, %L)$q$, venue_a, night), 'permission denied');
