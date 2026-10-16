@@ -489,3 +489,40 @@ echo "$OUT_R" | grep -q 'B:you are not holding any cash'   || fail_cash "the sec
 [ "$CLAIMED" = "4000" ]                                     || fail_cash "the cash should have been handed in once"
 [ "$WAITED" -ge 1 ]                                         || fail_cash "session B did not wait for the first tap"
 echo "ok - the same cash handed in twice at once: exactly one handover, the other waited ${WAITED}s and found nothing left to hand in"
+
+# --- 10. the same guest seated twice at once (a scan and a search, or a double tap)
+SBOOK=$(psql_db -c "insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status, confirmation_code)
+  values ('$PVEN', '$PTYPE', '$PSLOT', current_date + 31, 'Seat Guest', 'seatguest@test.example', 2, 4000, 'paid', 'SEAT01') returning id")
+psql_db -c "insert into public.site_booking_servers (booking_id, membership_id, assigned_by) values ('$SBOOK', '$PM1', '$PU')" >/dev/null
+OUT_S=$(mktemp); OUT_T=$(mktemp)
+psql_db >"$OUT_S" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:already=' || (public.desk_mark_seated('$SBOOK', 'scan', null, 20) ->> 'already');
+select pg_sleep(2);
+commit;
+SQL
+PID_S=$!
+sleep 0.7
+START=$SECONDS
+psql_db >"$OUT_T" <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+select 'B:already=' || (public.desk_mark_seated('$SBOOK', 'scan', null, 30) ->> 'already');
+commit;
+SQL
+WAITED=$((SECONDS - START))
+wait "$PID_S"
+SEATINGS=$(psql_db -c "select count(*) from public.site_booking_seating where booking_id = '$SBOOK'")
+ACKS=$(psql_db -c "select count(*) from public.site_outbox where ref_id = '$SBOOK' and kind = 'seated_ack'")
+EST=$(psql_db -c "select estimate_minutes from public.site_booking_seating where booking_id = '$SBOOK'")
+fail_seat() { echo "FAIL - seating concurrency: $1 (seatings: $SEATINGS, acknowledgments: $ACKS, estimate: $EST, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_S"), B said: $(tr '\n' ' ' <"$OUT_T"))"; exit 1; }
+grep -q '^A:already=false' "$OUT_S"  || fail_seat "the first tap should have seated the guest"
+grep -q '^B:already=true' "$OUT_T"   || fail_seat "the second tap should have been told the guest is already seated"
+[ "$SEATINGS" = "1" ]                || fail_seat "expected exactly one seating"
+[ "$ACKS" = "1" ]                    || fail_seat "expected exactly one acknowledgment to the guest"
+[ "$EST" = "20" ]                    || fail_seat "the first estimate should stand (the second tap changes nothing)"
+[ "$WAITED" -ge 1 ]                  || fail_seat "session B did not wait for the booking lock"
+echo "ok - a guest seated twice at once: exactly one seating and one message, the other waited ${WAITED}s and was told it is done"
