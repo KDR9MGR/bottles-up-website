@@ -61,6 +61,14 @@ begin
 exception when others then
   return 'ERROR: ' || sqlerrm;
 end $$;
+create function tests.seating_of(p_user uuid, p_email text, p_booking uuid) returns text language plpgsql as $$
+begin
+  perform tests.login(p_user, p_email);
+  return (select concat_ws('|', case when seated then 'seated' else 'waiting' end, coalesce(method, '-'), coalesce(estimate_minutes::text, '-'), coalesce(seated_by_name, '-'))
+          from public.desk_booking_seating(p_booking));
+exception when others then
+  return 'ERROR: ' || sqlerrm;
+end $$;
 create function tests.queued(p_booking uuid, p_kind text) returns int language sql security definer as $$
   select count(*)::int from public.site_outbox where ref_id = p_booking and kind = p_kind and status = 'queued' $$;
 create function tests.queued_estimate(p_booking uuid, p_kind text) returns text language sql security definer as $$
@@ -208,6 +216,14 @@ begin
   perform tests.assert_eq('...the table is back to waiting', tests.state(b_ada), 'out|-|-|-');
   perform tests.assert_eq('it can be seated again', tests.seat(srv_1, 'srv1@seat.example', b_ada, 'scan', null, 15), 'ok:already=false:est=15');
   perform tests.assert_eq('...which queues a new acknowledgment', tests.queued(b_ada, 'seated_ack'), 2);
+
+  ---------------------------------------------------------------- where a booking stands
+  perform tests.assert_eq('the server sees how their table was seated and by whom', tests.seating_of(srv_1, 'srv1@seat.example', b_ada), 'seated|scan|15|Sam Server');
+  perform tests.assert_eq('...a table that is not seated says so', tests.seating_of(mgr_a, 'mgra@seat.example', b_old), 'waiting|-|-|-');
+  perform tests.assert_eq('...a table checked in on the old staff page shows as seated, by whoever checked it in (this manager has no profile name)', tests.seating_of(mgr_a, 'mgra@seat.example', b_ann), 'seated|manual|-|Staff member');
+  perform tests.assert_eq('another server cannot read it', tests.seating_of(srv_2, 'srv2@seat.example', b_ada), 'ERROR: not allowed');
+  perform tests.assert_eq('a verifier cannot', tests.seating_of(ver_a, 'vera@seat.example', b_ada), 'ERROR: not allowed');
+  perform tests.assert_eq('another club''s manager cannot', tests.seating_of(mgr_b, 'mgrb@seat.example', b_ada), 'ERROR: not allowed');
 
   ---------------------------------------------------------------- what the guest was told
   -- (one test transaction = one timestamp, so the helper lists them by kind)

@@ -246,6 +246,32 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- 4b. Where one booking stands (for the table's page): seated or not, how, and the estimate
+-- ---------------------------------------------------------------------------
+create function public.desk_booking_seating(p_booking uuid)
+returns table (seated boolean, seated_at timestamptz, method text, estimate_minutes int, seated_by_name text, confirmation text)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_level text;
+begin
+  v_level := public.desk_booking_level(p_booking);
+  if public.booking_venue(p_booking) is null or v_level is null or v_level not in ('manager', 'server') then raise exception 'not allowed'; end if;
+  return query
+    select b.checked_in_at is not null, coalesce(s.seated_at, b.checked_in_at), s.method, s.estimate_minutes,
+           case when coalesce(s.seated_by, b.checked_in_by) is not null then coalesce(nullif(btrim(pr.name), ''), 'Staff member') end,
+           s.confirmation
+    from public.site_table_bookings b
+    left join public.site_booking_seating s on s.booking_id = b.id
+    left join public.profiles pr on pr.id = coalesce(s.seated_by, b.checked_in_by)
+    where b.id = p_booking;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- 5. What was sent to the guest about a booking
 -- ---------------------------------------------------------------------------
 create function public.desk_booking_messages(p_booking uuid)
@@ -274,9 +300,9 @@ $$;
 -- ---------------------------------------------------------------------------
 revoke all on function
   public.desk_find_booking(uuid, date, text), public.desk_mark_seated(uuid, text, text, int), public.desk_set_estimate(uuid, int),
-  public.desk_unseat(uuid, text), public.desk_booking_messages(uuid)
+  public.desk_unseat(uuid, text), public.desk_booking_messages(uuid), public.desk_booking_seating(uuid)
 from public, anon;
 grant execute on function
   public.desk_find_booking(uuid, date, text), public.desk_mark_seated(uuid, text, text, int), public.desk_set_estimate(uuid, int),
-  public.desk_unseat(uuid, text), public.desk_booking_messages(uuid)
+  public.desk_unseat(uuid, text), public.desk_booking_messages(uuid), public.desk_booking_seating(uuid)
 to authenticated, service_role;
