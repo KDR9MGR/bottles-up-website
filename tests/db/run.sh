@@ -80,4 +80,7 @@ bash tests/db/migration_guard.sh
 echo "--- migration_guard_verify.sh"
 bash tests/db/migration_guard_verify.sh
 
+echo "--- migration_guard_september.sh"
+bash tests/db/migration_guard_september.sh
+
 echo "==> all database tests passed ($assertions assertions + the concurrency and migration-guard scripts)$([ "$WITH_FIX" = "1" ] && echo " with $NPROP proposed fix(es) applied")"
