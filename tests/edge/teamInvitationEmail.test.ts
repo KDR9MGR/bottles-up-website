@@ -21,10 +21,10 @@ const LINK = 'https://www.bottlesupapp.com/accept-invite?token=abc123';
 describe('what the invited person receives', () => {
   it('says who invited them, to what, and in which role', () => {
     const { subject, html, text } = buildInvitationEmail(ctx(), LINK);
-    expect(subject).toBe('Olivia Owner invited you to join Club Co on BottlesUp as Door Staff');
+    expect(subject).toBe('Olivia Owner invited you to join Club Co on BottlesUp Business as Door Staff');
     expect(html).toContain('Door Staff');
     expect(html).toContain('Club Co');
-    expect(text).toContain('Olivia Owner invited you to join Club Co on BottlesUp as Door Staff.');
+    expect(text).toContain('Olivia Owner invited you to join Club Co on BottlesUp Business as Door Staff.');
   });
 
   it('contains the accept link in both the html and the plain-text version', () => {
@@ -46,7 +46,7 @@ describe('what the invited person receives', () => {
   });
 
   it('falls back to the business name when the inviter has no name', () => {
-    expect(buildInvitationEmail(ctx({ inviterName: null }), LINK).subject).toBe('Club Co invited you to join Club Co on BottlesUp as Door Staff');
+    expect(buildInvitationEmail(ctx({ inviterName: null }), LINK).subject).toBe('Club Co invited you to join Club Co on BottlesUp Business as Door Staff');
   });
 
   it('says when the access is temporary and when it ends, in Toronto time with the zone shown', () => {

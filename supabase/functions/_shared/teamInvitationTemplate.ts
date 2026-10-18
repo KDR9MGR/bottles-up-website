@@ -66,7 +66,7 @@ export function buildInvitationEmail(ctx: InvitationEmailContext, link: string):
   const role = roleLabel(ctx.role);
   const org = oneLine(ctx.orgName);
   const who = ctx.inviterName ? oneLine(ctx.inviterName) : org;
-  const subject = `${who} invited you to join ${org} on BottlesUp as ${role}`.slice(0, 180);
+  const subject = `${who} invited you to join ${org} on BottlesUp Business as ${role}`.slice(0, 180);
 
   const where = [ctx.venueName, ctx.eventTitle].filter((v): v is string => !!v).map(oneLine);
   const window = describeWindow(ctx.accessStartAt, ctx.accessEndAt);
@@ -80,7 +80,7 @@ export function buildInvitationEmail(ctx: InvitationEmailContext, link: string):
   const html = `
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0a0a0a; color: #fff; border-radius: 16px;">
       <h1 style="color: #f97316; font-size: 22px;">You've been invited to join a team</h1>
-      <p><strong>${escapeHtml(who)}</strong> invited you to join <strong>${escapeHtml(org)}</strong> on BottlesUp as <strong>${escapeHtml(role)}</strong>.</p>
+      <p><strong>${escapeHtml(who)}</strong> invited you to join <strong>${escapeHtml(org)}</strong> on BottlesUp Business as <strong>${escapeHtml(role)}</strong>.</p>
       <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
         ${rows.map(([k, v]) => `<tr><td style="padding: 4px 0; color: #ccc;">${escapeHtml(k)}</td><td style="padding: 4px 0; color: #ccc; text-align: right;">${escapeHtml(v)}</td></tr>`).join('\n        ')}
       </table>
@@ -94,7 +94,7 @@ export function buildInvitationEmail(ctx: InvitationEmailContext, link: string):
   `;
 
   const text = [
-    `${who} invited you to join ${org} on BottlesUp as ${role}.`,
+    `${who} invited you to join ${org} on BottlesUp Business as ${role}.`,
     '',
     ...rows.map(([k, v]) => `${k}: ${v}`),
     '',
