@@ -12,7 +12,8 @@
 --                                          (never claimed sent), and the booking and who made it are logged.
 --
 -- Same rules as an online booking: the arrival day is the day after the night for an after-midnight time; pricing is the table's flat deposit or its hourly
--- rate times the hours (at least the minimum); the party fits the table; only paid bookings take a table. A closed night takes no new booking. Plain CREATE.
+-- rate times the hours (at least the minimum); the party fits the table; only paid bookings take a table. A closed night takes no new booking, and the
+-- same guest cannot be booked twice for the same time (a repeated tap, or a retry after a lost answer). Plain CREATE.
 -- Needs the server desk (20261014*), seating and outbox (20261018110000) and close night (20261018140000) migrations.
 
 create function public.desk_walkin_options(p_venue uuid, p_night date)
@@ -103,6 +104,11 @@ begin
   end if;
 
   v_arrival := case when s.start_time < time '06:00:00' then p_night + 1 else p_night end;
+  -- The same guest twice for the same time is almost always a repeated tap or a retry after a lost answer: refuse it, so nobody is booked twice.
+  if exists (select 1 from public.site_table_bookings k where k.venue_id = p_venue and k.time_slot_id = s.id and k.booking_date = v_arrival
+                and lower(k.customer_email) = v_email and k.status = 'paid') then
+    raise exception 'this guest already has a booking for that time';
+  end if;
   select count(*)::int into v_booked from public.site_table_bookings k
    where k.table_type_id = t.id and k.time_slot_id = s.id and k.booking_date = v_arrival and k.status = 'paid';
   if v_booked >= t.inventory_count then raise exception 'no tables of this type are left for that time'; end if;

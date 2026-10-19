@@ -107,6 +107,13 @@ begin
   perform tests.assert_eq('the options now show the booth gone for that time', split_part(tests.options_text(mgr_a, 'mgra@wk.example', venue_a, night), ' | ', 1), '21:00/Booth=1of1(0)');
   perform tests.assert_eq('the last table cannot be sold twice', tests.walkin(owner_u, 'owner@wk.example', venue_a, night, t_booth, s_eve, 2, null, 'Bob Late', 'bob@walk.example', null), 'ERROR: no tables of this type are left for that time');
   perform tests.assert_eq('...and the refusal booked nothing', (select count(*)::int from public.site_table_bookings where customer_email = 'bob@walk.example'), 0);
+  perform tests.assert_eq('the same guest cannot be booked twice for the same time (a repeated tap or a retry after a lost answer)', tests.walkin(mgr_a, 'mgra@wk.example', venue_a, night, t_pair, s_eve, 2, null, 'Ann Walker', 'ANN@walk.example', null), 'ERROR: this guest already has a booking for that time');
+  perform tests.logout();
+  perform tests.assert_eq('...and it booked nothing more', (select count(*)::int from public.site_table_bookings where customer_email = 'ann@walk.example'), 1);
+  insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status)
+    values (venue_a, t_hour, s_late, night + 1, 'Mixed Case', 'MiXed@Walk.Example', 2, 8000, 'paid');
+  perform tests.assert_eq('...even when the earlier booking was made online with capital letters in the address', tests.walkin(mgr_a, 'mgra@wk.example', venue_a, night, t_pair, s_late, 2, null, 'Mixed Case', 'mixed@walk.example', null), 'ERROR: this guest already has a booking for that time');
+  perform tests.logout();
   r := tests.walkin(mgr_a, 'mgra@wk.example', venue_a, night, t_booth, s_late, 2, null, 'Cy Latecomer', 'cy@walk.example', null);
   perform tests.assert_true('the same booth at the after-midnight time is a different booking, stored under the NEXT calendar day', r ~ ('^ok:BT-[A-HJ-NP-Z2-9]{8}:10000:' || (night + 1)::text || ':left=0$'));
   perform tests.assert_eq('...and the options count it under that night', split_part(tests.options_text(mgr_a, 'mgra@wk.example', venue_a, night), ' | ', 4), '01:00/Booth=1of1(0)');
