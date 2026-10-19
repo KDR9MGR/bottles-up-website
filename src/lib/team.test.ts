@@ -88,7 +88,7 @@ describe('the link and the fallback email', () => {
     const m = mailtoLink('nia@example.com', 'Club Co', 'Bottle Server', 'https://x.example/accept-invite?token=abc');
     expect(m.startsWith('mailto:nia%40example.com?')).toBe(true);
     const params = new URLSearchParams(m.split('?')[1]);
-    expect(params.get('subject')).toBe('You are invited to join Club Co on BottlesUp');
+    expect(params.get('subject')).toBe('You are invited to join Club Co on BottlesUp Business');
     expect(params.get('body')).toContain('https://x.example/accept-invite?token=abc');
     expect(params.get('body')).toContain('as Bottle Server');
   });

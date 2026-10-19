@@ -16,6 +16,7 @@ import ComingSoon from './ComingSoon';
 import TeamSection from '../team/TeamSection';
 import DoorGuests from '../door/DoorGuests';
 import DoorScanner from '../door/DoorScanner';
+import OrganizerEvents from '../events/OrganizerEvents';
 import BookingLinkSection from './BookingLinkSection';
 import BookingsSection from './BookingsSection';
 import { OwnerOverview, OwnerVenues, VerificationBanner } from './OwnerSections';
@@ -133,11 +134,11 @@ const WorkspacePage = () => {
       </>
     );
   }
-  else if (current.role === 'organizer' && activeSection === 'home') {
+  else if (current.role === 'organizer' && (activeSection === 'home' || activeSection === 'events')) {
     content = (
       <>
         <VerificationBanner workspace={current} business={business} />
-        <ComingSoon title="My Events" description={sectionDescription(current.role, activeSection)} />
+        <OrganizerEvents workspace={current} />
       </>
     );
   } else {

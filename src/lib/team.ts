@@ -83,8 +83,8 @@ export function mailtoLink(to: string, businessName: string, roleName: string, l
   // Names are typed by users: collapse any line break so a name cannot add a mail header once decoded.
   const business = businessName.replace(/\s+/g, ' ').trim();
   const role = roleName.replace(/\s+/g, ' ').trim();
-  const subject = `You are invited to join ${business} on BottlesUp`;
-  const body = `You have been invited to join ${business} on BottlesUp as ${role}.\n\nAccept the invitation here:\n${link}\n\nSign in or create an account with ${to} to accept.`;
+  const subject = `You are invited to join ${business} on BottlesUp Business`;
+  const body = `You have been invited to join ${business} on BottlesUp Business as ${role}.\n\nAccept the invitation here:\n${link}\n\nSign in or create an account with ${to} to accept.`;
   return `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 

@@ -42,7 +42,7 @@ export async function sendStaffInviteEmail(opts: {
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0a0a0a; color: #fff; border-radius: 16px;">
       <h1 style="color: #f97316; font-size: 22px;">You've been added to the team 🍾</h1>
       <p>Hi ${opts.toName ?? 'there'},</p>
-      <p>BottlesUp has granted you access as <strong>${roleLabel}</strong>${opts.eventTitle ? ` for <strong>${opts.eventTitle}</strong>` : ''}.</p>
+      <p>BottlesUp Business has granted you access as <strong>${roleLabel}</strong>${opts.eventTitle ? ` for <strong>${opts.eventTitle}</strong>` : ''}.</p>
       <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
         <tr><td style="padding: 4px 0; color: #ccc;">Role</td><td style="padding: 4px 0; color: #ccc; text-align: right;">${roleLabel}</td></tr>
         ${opts.eventTitle ? `<tr><td style="padding: 4px 0; color: #ccc;">Event</td><td style="padding: 4px 0; color: #ccc; text-align: right;">${opts.eventTitle}</td></tr>` : ''}
@@ -65,7 +65,7 @@ export async function sendStaffInviteEmail(opts: {
     body: JSON.stringify({
       from: fromEmail,
       to: opts.toEmail,
-      subject: `You've been added to the BottlesUp team as ${roleLabel}`,
+      subject: `You've been added to the BottlesUp Business team as ${roleLabel}`,
       html,
     }),
   });
