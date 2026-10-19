@@ -287,14 +287,17 @@ PM3=00000000-0000-0000-0000-0000000000fe
 PLINE2=00000000-0000-0000-0000-0000000000ff
 
 cleanup_pay() {
-  psql_db -c "delete from public.audit_log where entity_id in ('$PBOOK', '$PLINE', '$PLINE2', '$PPAY')" \
+  psql_db -c "delete from public.audit_log where entity_id in ('$PBOOK', '$PLINE', '$PLINE2', '$PPAY', '${ALERT:-}', '${SBOOK:-}', '${CBOOK:-}')" \
           -c "delete from public.site_table_booking_club_payments where booking_id = '$PBOOK'" \
           -c "delete from public.site_table_bookings where id = '$PBOOK'" \
+          -c "delete from public.site_night_closes where venue_id = '$PVEN'" \
+          -c "delete from public.site_stock_movements where venue_id = '$PVEN'" \
+          -c "delete from public.site_vip_members where venue_id = '$PVEN'" \
           -c "delete from public.site_venues where id = '$PVEN'" \
           -c "delete from public.site_organizations where id = '$PORG'" \
           -c "delete from auth.users where id in ('$PU', '$PV1', '$PV2', '$POWN')" >/dev/null 2>&1 || true
 }
-trap 'rm -f "$OUT_A" "$OUT_B" "$OUT_C" "$OUT_D" "$OUT_E" "$OUT_F" "$OUT_G" "$OUT_H" "$OUT_I" "$OUT_J" "$OUT_K" "$OUT_L" "$OUT_M" "$OUT_N" "$OUT_O" "$OUT_P"; reset; cleanup_door; cleanup_setup; cleanup_requests; cleanup_pay' EXIT
+trap 'rm -f "$OUT_A" "$OUT_B" "$OUT_C" "$OUT_D" "$OUT_E" "$OUT_F" "$OUT_G" "$OUT_H" "$OUT_I" "$OUT_J" "$OUT_K" "$OUT_L" "$OUT_M" "$OUT_N" "$OUT_O" "$OUT_P" "$OUT_Q" "$OUT_S" "$OUT_T" "$OUT_U" "$OUT_V" "$OUT_W" "$OUT_Y" "$OUT_Z" "$OUT_AA" "$OUT_AB"; reset; cleanup_door; cleanup_setup; cleanup_requests; cleanup_pay' EXIT
 cleanup_pay
 
 psql_db >/dev/null <<SQL
@@ -448,3 +451,238 @@ grep -q '^B:delivered=true' "$OUT_P"     || fail_pd "the delivery should have go
 [ "$STATE" = "served" ]                  || fail_pd "the item should be delivered"
 [ "$WAITED" -ge 1 ]                      || fail_pd "session B did not wait for the booking lock"
 echo "ok - a payment settling the table and a delivery at the same moment: the delivery waited ${WAITED}s and saw the table paid"
+
+# --- 9. the same cash handed in twice at once (the whole cash held, tapped twice)
+CBOOK=$(psql_db -c "insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status)
+  values ('$PVEN', '$PTYPE', '$PSLOT', current_date + 30, 'Cash Guest', 'cashguest@test.example', 2, 4000, 'paid') returning id")
+psql_db -c "insert into public.site_table_booking_club_payments (booking_id, billed_amount_cents, amount_paid_cents, payment_method, recorded_by, missing_receipt_reason)
+  values ('$CBOOK', 4000, 4000, 'cash', '$PU', 'seeded')" >/dev/null
+OUT_Q=$(mktemp)
+psql_db >"$OUT_Q" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:handed in as ' || public.desk_submit_handover('$PVEN', current_date + 30, 4000)::text;
+select pg_sleep(2);
+commit;
+SQL
+PID_Q=$!
+sleep 0.7
+START=$SECONDS
+OUT_R=$(psql_db 2>&1 <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+do \$\$ begin
+  perform public.desk_submit_handover('$PVEN', current_date + 30, 4000);
+  raise notice 'B:handed in';
+exception when others then raise notice 'B:%', sqlerrm;
+end \$\$;
+commit;
+SQL
+)
+WAITED=$((SECONDS - START))
+wait "$PID_Q"
+HANDOVERS=$(psql_db -c "select count(*) from public.site_cash_handovers where venue_id = '$PVEN' and business_night = current_date + 30")
+CLAIMED=$(psql_db -c "select coalesce(sum(claimed_cents), 0) from public.site_cash_handovers where venue_id = '$PVEN' and business_night = current_date + 30")
+fail_cash() { echo "FAIL - cash handover concurrency: $1 (handovers: $HANDOVERS, claimed: $CLAIMED, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_Q"), B said: $(echo "$OUT_R" | tr '\n' ' '))"; exit 1; }
+grep -q '^A:handed in as ' "$OUT_Q"                       || fail_cash "the first tap should have handed the cash in"
+echo "$OUT_R" | grep -q 'B:you are not holding any cash'   || fail_cash "the second tap should have found nothing left to hand in"
+[ "$HANDOVERS" = "1" ]                                      || fail_cash "expected exactly one handover"
+[ "$CLAIMED" = "4000" ]                                     || fail_cash "the cash should have been handed in once"
+[ "$WAITED" -ge 1 ]                                         || fail_cash "session B did not wait for the first tap"
+echo "ok - the same cash handed in twice at once: exactly one handover, the other waited ${WAITED}s and found nothing left to hand in"
+
+# --- 10. the same guest seated twice at once (a scan and a search, or a double tap)
+SBOOK=$(psql_db -c "insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status, confirmation_code)
+  values ('$PVEN', '$PTYPE', '$PSLOT', current_date + 31, 'Seat Guest', 'seatguest@test.example', 2, 4000, 'paid', 'SEAT01') returning id")
+psql_db -c "insert into public.site_booking_servers (booking_id, membership_id, assigned_by) values ('$SBOOK', '$PM1', '$PU')" >/dev/null
+OUT_S=$(mktemp); OUT_T=$(mktemp)
+psql_db >"$OUT_S" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:already=' || (public.desk_mark_seated('$SBOOK', 'scan', null, 20) ->> 'already');
+select pg_sleep(2);
+commit;
+SQL
+PID_S=$!
+sleep 0.7
+START=$SECONDS
+psql_db >"$OUT_T" <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PU","role":"authenticated","email":"pserver@test.example"}', true) is not null;
+set local role authenticated;
+select 'B:already=' || (public.desk_mark_seated('$SBOOK', 'scan', null, 30) ->> 'already');
+commit;
+SQL
+WAITED=$((SECONDS - START))
+wait "$PID_S"
+SEATINGS=$(psql_db -c "select count(*) from public.site_booking_seating where booking_id = '$SBOOK'")
+ACKS=$(psql_db -c "select count(*) from public.site_outbox where ref_id = '$SBOOK' and kind = 'seated_ack'")
+EST=$(psql_db -c "select estimate_minutes from public.site_booking_seating where booking_id = '$SBOOK'")
+fail_seat() { echo "FAIL - seating concurrency: $1 (seatings: $SEATINGS, acknowledgments: $ACKS, estimate: $EST, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_S"), B said: $(tr '\n' ' ' <"$OUT_T"))"; exit 1; }
+grep -q '^A:already=false' "$OUT_S"  || fail_seat "the first tap should have seated the guest"
+grep -q '^B:already=true' "$OUT_T"   || fail_seat "the second tap should have been told the guest is already seated"
+[ "$SEATINGS" = "1" ]                || fail_seat "expected exactly one seating"
+[ "$ACKS" = "1" ]                    || fail_seat "expected exactly one acknowledgment to the guest"
+[ "$EST" = "20" ]                    || fail_seat "the first estimate should stand (the second tap changes nothing)"
+[ "$WAITED" -ge 1 ]                  || fail_seat "session B did not wait for the booking lock"
+echo "ok - a guest seated twice at once: exactly one seating and one message, the other waited ${WAITED}s and was told it is done"
+
+# --- 11. the same alert taken by two people at once (two security staff both tap Acknowledge)
+psql_db >/dev/null <<SQL
+insert into public.site_memberships (org_id, user_id, role, venue_id) values ('$PORG', '$PV1', 'security', '$PVEN'), ('$PORG', '$PV2', 'security', '$PVEN');
+SQL
+ALERT=$(psql_db -c "insert into public.site_security_alerts (venue_id, business_night, kind, urgent, location, raised_by)
+  values ('$PVEN', current_date, 'fight', true, 'Terrace', '$PU') returning id")
+OUT_U=$(mktemp); OUT_V=$(mktemp)
+psql_db >"$OUT_U" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV1","role":"authenticated","email":"pver1@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:changed=' || (public.security_alert_act('$ALERT', 'acknowledge') ->> 'changed');
+select pg_sleep(2);
+commit;
+SQL
+PID_U=$!
+sleep 0.7
+START=$SECONDS
+psql_db >"$OUT_V" <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV2","role":"authenticated","email":"pver2@test.example"}', true) is not null;
+set local role authenticated;
+select 'B:changed=' || (public.security_alert_act('$ALERT', 'acknowledge') ->> 'changed');
+commit;
+SQL
+WAITED=$((SECONDS - START))
+wait "$PID_U"
+HOLDER=$(psql_db -c "select acknowledged_by from public.site_security_alerts where id = '$ALERT'")
+STATUS=$(psql_db -c "select status from public.site_security_alerts where id = '$ALERT'")
+LOGGED=$(psql_db -c "select count(*) from public.audit_log where entity_id = '$ALERT' and action = 'security.alert_acknowledge'")
+fail_alert() { echo "FAIL - alert concurrency: $1 (holder: $HOLDER, status: $STATUS, logged: $LOGGED, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_U"), B said: $(tr '\n' ' ' <"$OUT_V"))"; exit 1; }
+grep -q '^A:changed=true' "$OUT_U"   || fail_alert "the first tap should have taken the alert"
+grep -q '^B:changed=false' "$OUT_V"  || fail_alert "the second tap should have been told it is already taken"
+[ "$HOLDER" = "$PV1" ]               || fail_alert "the alert should stay with the first person"
+[ "$STATUS" = "acknowledged" ]       || fail_alert "the alert should be acknowledged"
+[ "$LOGGED" = "1" ]                  || fail_alert "expected exactly one 'taken' entry in the audit log"
+[ "$WAITED" -ge 1 ]                  || fail_alert "session B did not wait for the alert's lock"
+echo "ok - an alert taken by two people at once: exactly one holds it, the other waited ${WAITED}s and was told who has it"
+rm -f "$OUT_U" "$OUT_V"
+
+# --- 12. the same night closed by two managers at once
+psql_db >/dev/null <<SQL
+insert into public.site_memberships (org_id, user_id, role, venue_id) values ('$PORG', '$PV1', 'manager', '$PVEN'), ('$PORG', '$PV2', 'manager', '$PVEN');
+SQL
+OUT_W=$(mktemp)
+psql_db >"$OUT_W" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV1","role":"authenticated","email":"pver1@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:closed, exceptions=' || (public.close_night('$PVEN', current_date, true, 'closing with whatever is open') ->> 'exceptions');
+select pg_sleep(2);
+commit;
+SQL
+PID_W=$!
+sleep 0.7
+START=$SECONDS
+OUT_X=$(psql_db 2>&1 <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV2","role":"authenticated","email":"pver2@test.example"}', true) is not null;
+set local role authenticated;
+do \$\$ begin
+  perform public.close_night('$PVEN', current_date, true, 'closing with whatever is open');
+  raise notice 'B:closed';
+exception when others then raise notice 'B:%', sqlerrm;
+end \$\$;
+commit;
+SQL
+)
+WAITED=$((SECONDS - START))
+wait "$PID_W"
+CLOSES=$(psql_db -c "select count(*) from public.site_night_closes where venue_id = '$PVEN' and business_night = current_date")
+CLOSER=$(psql_db -c "select closed_by from public.site_night_closes where venue_id = '$PVEN' and business_night = current_date")
+LOGGED=$(psql_db -c "select count(*) from public.audit_log where action = 'night.closed' and entity_id = '$PVEN'")
+fail_close() { echo "FAIL - closing concurrency: $1 (closes: $CLOSES, closed by: $CLOSER, logged: $LOGGED, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_W"), B said: $(echo "$OUT_X" | tr '\n' ' '))"; exit 1; }
+grep -q '^A:closed' "$OUT_W"                                  || fail_close "the first manager should have closed the night"
+echo "$OUT_X" | grep -q 'B:this night is already closed'      || fail_close "the second manager should have been told it is already closed"
+[ "$CLOSES" = "1" ]                                           || fail_close "expected exactly one close"
+[ "$CLOSER" = "$PV1" ]                                        || fail_close "the first manager should be the one who closed it"
+[ "$LOGGED" = "1" ]                                           || fail_close "expected exactly one 'closed' entry in the audit log"
+[ "$WAITED" -ge 1 ]                                           || fail_close "session B did not wait for the first close"
+echo "ok - a night closed by two managers at once: exactly one close, the other waited ${WAITED}s and was told it is already closed"
+rm -f "$OUT_W"
+
+# --- 13. two deliveries of the same bottle recorded at once (neither may be lost)
+STOCKB=$(psql_db -c "insert into public.site_bottles (venue_id, name, size, price_cents, stock_quantity) values ('$PVEN', 'Race Vodka', '750ml', 9000, 10) returning id")
+OUT_Y=$(mktemp); OUT_Z=$(mktemp)
+psql_db >"$OUT_Y" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV1","role":"authenticated","email":"pver1@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:after=' || (public.stock_move('$PVEN', '$STOCKB', 'receive', 5, null, null, 'race-a') ->> 'after');
+select pg_sleep(2);
+commit;
+SQL
+PID_Y=$!
+sleep 0.7
+START=$SECONDS
+psql_db >"$OUT_Z" <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV2","role":"authenticated","email":"pver2@test.example"}', true) is not null;
+set local role authenticated;
+select 'B:after=' || (public.stock_move('$PVEN', '$STOCKB', 'receive', 7, null, null, 'race-b') ->> 'after');
+commit;
+SQL
+WAITED=$((SECONDS - START))
+wait "$PID_Y"
+LEVEL=$(psql_db -c "select stock_quantity from public.site_bottles where id = '$STOCKB'")
+MOVES=$(psql_db -c "select count(*) from public.site_stock_movements where bottle_id = '$STOCKB'")
+CHAIN=$(psql_db -c "select string_agg(before_qty || '>' || after_qty, ' ' order by created_at) from public.site_stock_movements where bottle_id = '$STOCKB'")
+fail_stock() { echo "FAIL - stock concurrency: $1 (level: $LEVEL, movements: $MOVES, chain: $CHAIN, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_Y"), B said: $(tr '\n' ' ' <"$OUT_Z"))"; exit 1; }
+grep -q '^A:after=15' "$OUT_Y"   || fail_stock "the first delivery should have taken the level to 15"
+grep -q '^B:after=22' "$OUT_Z"   || fail_stock "the second delivery should have waited and then taken it to 22"
+[ "$LEVEL" = "22" ]              || fail_stock "both deliveries should be in the level (10 + 5 + 7)"
+[ "$MOVES" = "2" ]               || fail_stock "expected two movements"
+[ "$CHAIN" = "10>15 15>22" ]     || fail_stock "the second movement should start where the first ended"
+[ "$WAITED" -ge 1 ]              || fail_stock "session B did not wait for the bottle's lock"
+echo "ok - two deliveries recorded at once: both land (10+5+7=22), the second waited ${WAITED}s and started from the first's result"
+rm -f "$OUT_Y" "$OUT_Z"
+
+# --- 14. a once-a-night VIP benefit redeemed by two people at once
+VIPM=$(psql_db -c "insert into public.site_vip_members (venue_id, name, email, credential_code, created_by) values ('$PVEN', 'Race Guest', 'raceguest@test.example', 'RACE0001', '$PV1') returning id")
+VIPK=$(psql_db -c "insert into public.site_vip_perks (member_id, kind, label, max_uses, period, created_by) values ('$VIPM', 'entry', 'Priority entry', 1, 'night', '$PV1') returning id")
+OUT_AA=$(mktemp); OUT_AB=$(mktemp)
+psql_db >"$OUT_AA" <<SQL &
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV1","role":"authenticated","email":"pver1@test.example"}', true) is not null;
+set local role authenticated;
+select 'A:used=' || (public.vip_redeem('$VIPK') ->> 'used');
+select pg_sleep(2);
+commit;
+SQL
+PID_AA=$!
+sleep 0.7
+START=$SECONDS
+OUT_AC=$(psql_db 2>&1 <<SQL
+begin;
+select set_config('request.jwt.claims', '{"sub":"$PV2","role":"authenticated","email":"pver2@test.example"}', true) is not null;
+set local role authenticated;
+do \$\$ begin
+  perform public.vip_redeem('$VIPK');
+  raise notice 'B:redeemed';
+exception when others then raise notice 'B:%', sqlerrm;
+end \$\$;
+commit;
+SQL
+)
+WAITED=$((SECONDS - START))
+wait "$PID_AA"
+REDEMPTIONS=$(psql_db -c "select count(*) from public.site_vip_redemptions where perk_id = '$VIPK'")
+fail_vip() { echo "FAIL - VIP redemption concurrency: $1 (redemptions: $REDEMPTIONS, session B waited ${WAITED}s, A said: $(tr '\n' ' ' <"$OUT_AA"), B said: $(echo "$OUT_AC" | tr '\n' ' '))"; exit 1; }
+grep -q '^A:used=1' "$OUT_AA"                                                   || fail_vip "the first person should have redeemed it"
+echo "$OUT_AC" | grep -q 'B:this benefit has already been used 1 of 1 tonight'   || fail_vip "the second person should have been told it was already used tonight"
+[ "$REDEMPTIONS" = "1" ]                                                          || fail_vip "expected exactly one redemption"
+[ "$WAITED" -ge 1 ]                                                               || fail_vip "session B did not wait for the perk's lock"
+echo "ok - a once-a-night benefit redeemed by two people at once: exactly one redemption, the other waited ${WAITED}s and was told it was already used"
+rm -f "$OUT_AA" "$OUT_AB"
