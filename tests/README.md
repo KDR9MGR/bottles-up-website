@@ -48,7 +48,7 @@ Test files: `010` check-in, `020` entry codes, `030` row level security, `040` t
 
 Some of these tests build on tables and columns that exist only in production; `tests/db/prod_shapes/` creates the minimum shape right before the migration that needs it (see its README). `tests/db/tools/mutate_migrations.py` makes small wrong changes to a migration, one at a time, and reports the ones no test noticed (usage in its header).
 
-It creates a database called `bottlesup_test` (never point it at a real project), replays `supabase/migrations` on plain Postgres through a small Supabase stand-in (`00_supabase_shim.sql`), then runs `tests/db/tests/*.sql`, `concurrency.sh`, `migration_guard.sh` and `migration_guard_verify.sh`: who may scan, every `checkin_ticket` outcome, the entry-code lockout, RLS on orders, two staff scanning one ticket at the same time (through the old scanner and the scoped one), two people adding the same arrival time at the same moment, and the safe application of the check-in and entry-code fixes.
+It creates a database called `bottlesup_test` (never point it at a real project), replays `supabase/migrations` on plain Postgres through a small Supabase stand-in (`00_supabase_shim.sql`), then runs `tests/db/tests/*.sql`, `concurrency.sh`, `concurrency_outbox.sh`, `migration_guard.sh` and `migration_guard_verify.sh`: who may scan, every `checkin_ticket` outcome, the entry-code lockout, RLS on orders, two staff scanning one ticket at the same time (through the old scanner and the scoped one), two people adding the same arrival time at the same moment, and the safe application of the check-in and entry-code fixes.
 
 ### The check-in expiry fix, and how it is applied safely
 
@@ -69,3 +69,7 @@ The entry-code function had its own gaps, fixed the same guarded way by `supabas
 ## Type check, lint, and the baseline
 
 `npm run typecheck` fails on any type error that is not in `tsc-baseline.json` (about 127 today, nearly all because `src/types/database.ts` is out of date). When you fix some, run `node scripts/tsc-ratchet.mjs --update` so they cannot come back. `npm run lint:ci` allows at most 8 warnings and no errors.
+
+## Outbox sender (guest e-mails) and chat clean-up
+
+`supabase/functions/process-outbox` sends the guest messages the vendor app queues in `site_outbox` (table seated, wait estimate changed, VIP invitation) through Resend, then deletes expired chats. It is not switched on by merging: it needs deploying and a schedule, and until then the app keeps saying "Queued, not sent yet". The rules (what is sent, what fails at once, what is retried, the 12 hour age limit, the wording) are in `supabase/functions/_shared/outbox.ts` and tested without a network in `tests/edge/outbox.test.ts`; `tests/edge/processOutboxEndpoint.test.ts` checks that only the service role key can start a run. The database half, `20261019100000_outbox_claim.sql` (`outbox_claim`, `outbox_finish`), is tested in `tests/db/tests/300_outbox_claim.sql`, and `tests/db/concurrency_outbox.sh` proves two simultaneous runs are never handed the same message (it measures that the second run does not wait, because without `SKIP LOCKED` waiting is the only visible difference). Mutation checks: break a rule on purpose and confirm a test fails, but run the tests once FIRST: a baseline that is already red makes every mutant look killed.

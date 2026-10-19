@@ -71,6 +71,9 @@ done
 echo "--- concurrency.sh"
 bash tests/db/concurrency.sh
 
+echo "--- concurrency_outbox.sh"
+bash tests/db/concurrency_outbox.sh
+
 echo "--- migration_guard.sh"
 bash tests/db/migration_guard.sh
 
