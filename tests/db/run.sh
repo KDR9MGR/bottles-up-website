@@ -31,6 +31,14 @@ psql_db -f tests/db/00_supabase_shim.sql -f tests/db/01_prod_prerequisites.sql
 COUNT=$(ls supabase/migrations/*.sql | wc -l | tr -d ' ')
 echo "==> replaying $COUNT migrations (byte order, like the migration runner)"
 for f in $(ls supabase/migrations/*.sql | LC_ALL=C sort); do
+  # A migration that builds on tables or columns that exist only in production gets them first, from
+  # tests/db/prod_shapes/<the migration's timestamp>_*.sql (see the README there).
+  ts=$(basename "$f" | cut -d_ -f1)
+  for shape in tests/db/prod_shapes/"$ts"_*.sql; do
+    [ -e "$shape" ] || continue
+    echo "    (production-only shapes for $(basename "$f"): $(basename "$shape"))"
+    PGOPTIONS='-c client_min_messages=warning' psql_db -f "$shape" >/dev/null || { echo "PROD SHAPES FAILED: $shape"; exit 1; }
+  done
   PGOPTIONS='-c client_min_messages=warning' psql_db -f "$f" >/dev/null || { echo "MIGRATION FAILED: $f"; exit 1; }
 done
 
