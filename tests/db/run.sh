@@ -80,6 +80,9 @@ bash tests/db/concurrency_walkin.sh
 echo "--- concurrency_partial_delivery.sh"
 bash tests/db/concurrency_partial_delivery.sh
 
+echo "--- concurrency_group_admission.sh"
+bash tests/db/concurrency_group_admission.sh
+
 echo "--- migration_guard.sh"
 bash tests/db/migration_guard.sh
 
