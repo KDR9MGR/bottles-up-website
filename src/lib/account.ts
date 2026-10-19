@@ -80,6 +80,12 @@ const FRIENDLY: [RegExp, string][] = [
   [/already have a pending request/i, 'You already asked to claim this venue. We will review it soon.'],
   [/already belongs to your business/i, 'This venue already belongs to your business.'],
   [/venue not found/i, 'We could not find that venue.'],
+  [/under review or verified cannot be cancelled/i, 'A business that is under review or verified cannot be cancelled here. Please contact BottlesUp.'],
+  [/still has team members/i, 'This business still has team members. Remove them first, then cancel it.'],
+  [/live venue, so it cannot be cancelled/i, 'This business has a live venue, so it cannot be cancelled here. Please contact BottlesUp.'],
+  [/published event, so it cannot be cancelled/i, 'This business has a published event, so it cannot be cancelled here. Please contact BottlesUp.'],
+  [/already has records attached/i, 'This business already has bookings or orders attached, so it cannot be cancelled here. Please contact BottlesUp.'],
+  [/business not found/i, 'We could not find that business.'],
 ];
 
 /** Database errors are written for developers; people get a plain sentence. Unknown ones pass through. */
@@ -198,6 +204,15 @@ export async function fetchMyProfile(userId: string): Promise<MyProfile | null> 
 
 export async function createOrganization(name: string, kind: BusinessKind): Promise<string> {
   return call<string>('create_organization', { p_name: name, p_kind: kind });
+}
+
+/**
+ * Cancels a business that was added by mistake: deletes it with the details, draft venues and draft events inside it. The
+ * database allows this only to its own owner, only before verification, and never when it holds a live venue, a published
+ * event, other people's access or anything with bookings or orders.
+ */
+export async function cancelBusiness(orgId: string): Promise<void> {
+  await call('cancel_business', { p_org: orgId });
 }
 
 export interface BusinessDetails {

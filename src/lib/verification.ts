@@ -74,6 +74,15 @@ export function stateInfo(state: VerificationState): StateInfo {
   return INFO[state];
 }
 
+/**
+ * A business that was added by mistake can be cancelled by its owner until it has been verified: before it is submitted, or
+ * after the reviewer sent it back. Once it is under review or verified it may have been relied on, so only the BottlesUp team
+ * handles it. The database enforces the same rule (cancel_business); this decides whether the button is offered.
+ */
+export function canCancelBusiness(state: VerificationState): boolean {
+  return state === 'not_submitted' || state === 'more_information_needed';
+}
+
 // ---------------------------------------------------------------------------
 // What is still missing before a business can be submitted
 // ---------------------------------------------------------------------------
