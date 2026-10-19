@@ -23,7 +23,7 @@ const msg = (over: Partial<ClaimedMessage> = {}): ClaimedMessage => ({
 });
 const booking = (over: Partial<BookingFacts> = {}): BookingFacts => ({
   type: 'booking', customerEmail: 'hana@guest.example', customerName: 'Hana Holder', venueName: 'Active Lounge', tableTypeName: 'VIP booth',
-  guestCount: 4, confirmationCode: 'BT-HOLD1', startTime: '22:00:00', seated: true, estimateMinutes: 20, ...over,
+  guestCount: 4, confirmationCode: 'BT-HOLD1', startTime: '22:00:00', seated: true, estimateMinutes: 20, dueCents: 0, ...over,
 });
 const vip = (over: Partial<VipFacts> = {}): VipFacts => ({
   type: 'vip', email: 'vera@guest.example', name: 'Vera VIP', tier: 'Gold', credentialCode: 'VIP-8H3K2', validFrom: '2026-10-01', validUntil: '2026-12-31',
@@ -126,6 +126,66 @@ describe('seated acknowledgment', () => {
   it('is not sent without a usable address', () => {
     expect(failed(decideMessage(msg(), booking({ customerEmail: null }), NOW, SITE))).toMatch(/no valid e-mail/);
     expect(failed(decideMessage(msg(), booking({ customerEmail: 'not an address' }), NOW, SITE))).toMatch(/no valid e-mail/);
+  });
+});
+
+describe('walk-in confirmation', () => {
+  const walk = msg({ kind: 'walkin_confirmation' });
+
+  it('says the table is booked, with the details, the code, and what is still to pay at the club', () => {
+    const d = sent(decideMessage(walk, booking({ seated: false, estimateMinutes: null, dueCents: 10000 }), NOW, SITE));
+    expect(d.to).toBe('hana@guest.example');
+    expect(d.subject).toBe('Your table at Active Lounge is booked');
+    for (const part of ['Hana Holder', 'Active Lounge', 'VIP booth', '4 guests', '10:00 PM', 'BT-HOLD1', '$100.00', 'Still to pay at the club']) {
+      expect(d.html).toContain(part);
+      expect(d.text).toContain(part);
+    }
+    expect(d.text).toContain('View your booking: https://bottlesupapp.com/booking/BT-HOLD1');
+    expect(d.text).toContain('Show your booking code');
+  });
+
+  it('is sent although the guest is not "seated" in the sense the seating messages need, and needs no estimate', () => {
+    sent(decideMessage(walk, booking({ seated: false, estimateMinutes: null }), NOW, SITE));
+  });
+
+  it('leaves out the amount when nothing is due', () => {
+    const d = sent(decideMessage(walk, booking({ dueCents: 0 }), NOW, SITE));
+    expect(d.text).not.toContain('Still to pay');
+  });
+
+  it('escapes what a person typed', () => {
+    const d = sent(decideMessage(walk, booking({ customerName: '<img src=x>', venueName: 'A & B' }), NOW, SITE));
+    expect(d.html).not.toContain('<img');
+    expect(d.html).toContain('A &amp; B');
+  });
+
+  it('is not sent without a valid address, or for a booking that is gone, or with other facts', () => {
+    expect(failed(decideMessage(walk, booking({ customerEmail: 'nope' }), NOW, SITE))).toMatch(/no valid e-mail/);
+    expect(failed(decideMessage(walk, null, NOW, SITE))).toMatch(/no longer exists/);
+    expect(failed(decideMessage(walk, vip(), NOW, SITE))).toMatch(/no longer exists/);
+  });
+
+  it('is not sent when it is more than 12 hours old', () => {
+    const old = new Date(NOW - (MAX_AGE_HOURS * 3600_000 + 1000)).toISOString();
+    expect(failed(decideMessage(msg({ kind: 'walkin_confirmation', created_at: old }), booking(), NOW, SITE))).toMatch(/more than/);
+  });
+
+  it('reads the booking, including what is still due', async () => {
+    const db = createFakeDb({
+      site_table_bookings: [{
+        id: 'b9', customer_email: 'a@b.co', customer_name: 'A', guest_count: 2, confirmation_code: 'BT-X', amount_total_cents: 10000, amount_paid_cents: 2500,
+        table_type: { name: 'Booth' }, venue: { name: 'Club' }, time_slot: { start_time: '22:00:00' },
+      }],
+    });
+    const f = (await loadFacts(db.client, msg({ kind: 'walkin_confirmation', ref_id: 'b9' }))) as BookingFacts;
+    expect(f.dueCents).toBe(7500);
+    expect(f.seated).toBe(false);
+  });
+
+  it('never reports a negative amount due', async () => {
+    const db = createFakeDb({ site_table_bookings: [{ id: 'b9', customer_email: 'a@b.co', amount_total_cents: 1000, amount_paid_cents: 5000, venue: { name: 'C' }, table_type: { name: 'T' }, time_slot: { start_time: '22:00:00' } }] });
+    const f = (await loadFacts(db.client, msg({ kind: 'walkin_confirmation', ref_id: 'b9' }))) as BookingFacts;
+    expect(f.dueCents).toBe(0);
   });
 });
 
