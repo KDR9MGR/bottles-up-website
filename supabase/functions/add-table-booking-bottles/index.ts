@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeadersFor, handleOptions } from '../_shared/cors.ts';
 import { addBottlesToBooking, type BottleRequest } from '../_shared/bottleOrdering.ts';
+import { tableStaffVerdict } from '../_shared/tableStaff.ts';
 
 // Bottle Payment Options section 3: a customer adds bottles to their OWN
 // already-paid booking from "My Bookings". Section 8: staff opens the table
@@ -62,7 +63,17 @@ Deno.serve(async (req: Request) => {
       supabase.from('cms_admins').select('id').eq('id', userData.user.id).maybeSingle(),
       supabase.from('door_staff').select('id').eq('id', userData.user.id).maybeSingle(),
     ]);
-    const isStaff = !!admin || !!doorStaff;
+    let isStaff = !!admin || !!doorStaff;
+
+    // A manager, an owner, or the server of THIS table (a membership at the club, which the two lists above do not know about) may add bottles too. The database
+    // decides, with the caller's own login, and says why not when the table or the night is closed. Nothing changes for anyone else: a person it does not know
+    // goes on as a customer below, and a database that does not have the function yet behaves as before.
+    if (!isStaff) {
+      const { error: mayError } = await anonClient.rpc('desk_may_add_bottles', { p_booking: booking_id });
+      const verdict = tableStaffVerdict(mayError);
+      if (verdict.kind === 'refused') return json({ error: verdict.message }, 409);
+      isStaff = verdict.kind === 'staff';
+    }
 
     // Ownership check - the anon client above only proves who the caller is,
     // never which bookings they're allowed to touch. This mirrors the RLS

@@ -31,6 +31,12 @@ clean_data() {
 trap clean_data EXIT
 clean_data
 
+# The replay ends with September's rewrite of checkin_ticket() (20260923100000) on top of this fix, so first put the function into the state
+# THIS guard is about: the old version, then the 30 Aug migration applied. (migration_guard_september.sh covers the September rewrite.)
+psql_db -f "$BEFORE" >/dev/null
+run_mig
+[ "$RC" = "0" ]                                  || fail "test setup: could not apply the 30 Aug fix to the old version first: $OUT"
+
 guard_declared
 guard_already_fixed
 guard_hand_edited

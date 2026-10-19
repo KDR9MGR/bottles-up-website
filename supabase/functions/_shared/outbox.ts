@@ -4,6 +4,7 @@
 // claims a batch with outbox_claim(), sends each one by e-mail, and reports with outbox_finish(). The database guarantees one sender per message
 // at a time and stops after 5 attempts (20261019100000_outbox_claim.sql); the rules here decide WHAT happens to each claimed message:
 //
+//   (walkin_confirmation: a table a manager booked for a guest who is here. It says the table is booked, the code, and the deposit still due at the club.)
 //   * it is sent, only if the facts are still true when it goes out (a guest who was un-seated is not told they are seated; an estimate that
 //     was cleared is not announced; an ended VIP membership is not invited);
 //   * it fails at once, with a reason a manager can read, when it can never be sent (no address, unknown kind, gone, too old);
@@ -39,6 +40,8 @@ export interface BookingFacts {
   startTime: string | null;
   seated: boolean;
   estimateMinutes: number | null;
+  /** What is still to be paid at the club (the booking's total less what was collected), in cents. */
+  dueCents: number;
 }
 
 export interface VipFacts {
@@ -146,6 +149,34 @@ function renderBooking(kind: 'seated_ack' | 'estimate_updated', f: BookingFacts,
   return { subject, html, text };
 }
 
+function renderWalkin(f: BookingFacts, siteUrl: string): { subject: string; html: string; text: string } {
+  const name = oneLine(f.customerName ?? '') || 'there';
+  const venue = oneLine(f.venueName);
+  const link = f.confirmationCode ? `${siteUrl.replace(/\/+$/, '')}/booking/${encodeURIComponent(f.confirmationCode)}` : null;
+  const rows = bookingRows(f);
+  if (f.dueCents > 0) rows.push(['Still to pay at the club', `$${(f.dueCents / 100).toFixed(2)}`]);
+  const intro = `Your table at ${venue} is booked.`;
+  const html = shell(
+    'Your table is booked',
+    `<p>Hi ${escapeHtml(name)},</p>
+      <p>${escapeHtml(intro)}</p>
+      ${detailRows(rows)}
+      ${link ? `<p><a href="${escapeHtml(link)}" style="color: #f97316;">View your booking</a></p>` : ''}
+      <p style="color: #999; font-size: 13px;">Show your booking code to the team at the venue. What is still to pay is paid at the club.</p>`,
+  );
+  const text = [
+    `Hi ${name},`,
+    '',
+    intro,
+    '',
+    ...rows.map(([k, v]) => `${k}: ${v}`),
+    ...(link ? ['', `View your booking: ${link}`] : []),
+    '',
+    'Show your booking code to the team at the venue. What is still to pay is paid at the club.',
+  ].join('\n');
+  return { subject: oneLine(`Your table at ${venue} is booked`), html, text };
+}
+
 function renderVip(f: VipFacts): { subject: string; html: string; text: string } {
   const name = oneLine(f.name) || 'there';
   const venue = oneLine(f.venueName);
@@ -186,6 +217,13 @@ export function decideMessage(msg: ClaimedMessage, facts: Facts, nowMs: number, 
     return { action: 'send', to: facts.customerEmail.trim(), ...m };
   }
 
+  if (msg.kind === 'walkin_confirmation') {
+    if (!facts || facts.type !== 'booking') return { action: 'fail', reason: 'Not sent: the booking no longer exists' };
+    if (!isSendableEmail(facts.customerEmail)) return { action: 'fail', reason: 'Not sent: the booking has no valid e-mail address' };
+    const m = renderWalkin(facts, siteUrl);
+    return { action: 'send', to: facts.customerEmail.trim(), ...m };
+  }
+
   if (msg.kind === 'vip_invite') {
     if (!facts || facts.type !== 'vip') return { action: 'fail', reason: 'Not sent: the VIP membership no longer exists' };
     if (facts.ended) return { action: 'fail', reason: 'Not sent: the VIP membership has ended' };
@@ -209,10 +247,10 @@ type Db = { from: (table: string) => any };
 export async function loadFacts(db: Db, msg: ClaimedMessage): Promise<Facts> {
   if (!msg.ref_id) return null;
 
-  if (msg.kind === 'seated_ack' || msg.kind === 'estimate_updated') {
+  if (msg.kind === 'seated_ack' || msg.kind === 'estimate_updated' || msg.kind === 'walkin_confirmation') {
     const { data: b, error } = await db
       .from('site_table_bookings')
-      .select('customer_email, customer_name, guest_count, confirmation_code, table_type:site_table_types(name), venue:site_venues(name), time_slot:site_venue_time_slots(start_time)')
+      .select('customer_email, customer_name, guest_count, confirmation_code, amount_total_cents, amount_paid_cents, table_type:site_table_types(name), venue:site_venues(name), time_slot:site_venue_time_slots(start_time)')
       .eq('id', msg.ref_id)
       .maybeSingle();
     if (error) throw new Error('could not read the booking');
@@ -230,6 +268,7 @@ export async function loadFacts(db: Db, msg: ClaimedMessage): Promise<Facts> {
       startTime: b.time_slot?.start_time ?? null,
       seated: !!seat,
       estimateMinutes: seat?.estimate_minutes ?? null,
+      dueCents: Math.max((b.amount_total_cents ?? 0) - (b.amount_paid_cents ?? 0), 0),
     };
   }
 

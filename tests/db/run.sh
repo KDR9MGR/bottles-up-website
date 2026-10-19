@@ -74,10 +74,25 @@ bash tests/db/concurrency.sh
 echo "--- concurrency_outbox.sh"
 bash tests/db/concurrency_outbox.sh
 
+echo "--- concurrency_walkin.sh"
+bash tests/db/concurrency_walkin.sh
+
+echo "--- concurrency_partial_delivery.sh"
+bash tests/db/concurrency_partial_delivery.sh
+
+echo "--- concurrency_group_admission.sh"
+bash tests/db/concurrency_group_admission.sh
+
 echo "--- migration_guard.sh"
 bash tests/db/migration_guard.sh
 
 echo "--- migration_guard_verify.sh"
 bash tests/db/migration_guard_verify.sh
+
+echo "--- migration_guard_september.sh"
+bash tests/db/migration_guard_september.sh
+
+echo "--- migration_guard_door_staff.sh"
+bash tests/db/migration_guard_door_staff.sh
 
 echo "==> all database tests passed ($assertions assertions + the concurrency and migration-guard scripts)$([ "$WITH_FIX" = "1" ] && echo " with $NPROP proposed fix(es) applied")"
