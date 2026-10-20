@@ -119,15 +119,15 @@ begin
   perform tests.assert_eq('...and the options count it under that night', split_part(tests.options_text(mgr_a, 'mgra@wk.example', venue_a, night), ' | ', 4), '01:00/Booth=1of1(0)');
   perform tests.assert_eq('an unpaid online booking does not take a table', (select count(*)::int from public.site_table_bookings where status <> 'paid'), 0);
   perform tests.logout();
-  insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status)
-    values (venue_a, t_pair, s_eve, night, 'Pending Pat', 'pat@x.example', 2, 2500, 'pending');
-  perform tests.assert_eq('...so a pending one leaves the table available', split_part(split_part(tests.options_text(mgr_a, 'mgra@wk.example', venue_a, night), ' | ', 2), '=', 2), '0of3(3)');
+  insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status, created_at)
+    values (venue_a, t_pair, s_eve, night, 'Pending Pat', 'pat@x.example', 2, 2500, 'pending', now() - interval '11 minutes');
+  perform tests.assert_eq('...so a checkout that was abandoned more than 10 minutes ago (the hold) leaves the table available', split_part(split_part(tests.options_text(mgr_a, 'mgra@wk.example', venue_a, night), ' | ', 2), '=', 2), '0of3(3)');
 
   perform tests.logout();
   insert into public.site_table_types (venue_id, name, max_guests, min_spend_cents, deposit_cents, inventory_count, sort_order) values (venue_a, 'Solo table', 2, 0, 3000, 1, 4) returning id into t_solo;
-  insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status)
-    values (venue_a, t_solo, s_eve, night, 'Pending Pete', 'pete@x.example', 2, 3000, 'pending');
-  perform tests.assert_true('a table that only has an unpaid online booking on it can still be given to a guest who is here', tests.walkin(mgr_a, 'mgra@wk.example', venue_a, night, t_solo, s_eve, 2, null, 'Quin Solo', 'quin@walk.example', null) like 'ok:%');
+  insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status, created_at)
+    values (venue_a, t_solo, s_eve, night, 'Pending Pete', 'pete@x.example', 2, 3000, 'pending', now() - interval '11 minutes');
+  perform tests.assert_true('a table that only has an abandoned unpaid online booking on it can still be given to a guest who is here', tests.walkin(mgr_a, 'mgra@wk.example', venue_a, night, t_solo, s_eve, 2, null, 'Quin Solo', 'quin@walk.example', null) like 'ok:%');
   perform tests.logout();
   insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status)
     values (venue_a, t_booth, s_late, night + 1, 'Oversold Ollie', 'ollie@x.example', 2, 10000, 'paid');

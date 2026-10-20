@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import QRCode from 'npm:qrcode@1.5.3';
 import { corsHeadersFor, handleOptions, isPreviewOrLocalOrigin } from '../_shared/cors.ts';
+import { tablesTaken } from '../_shared/tableCapacity.ts';
 import { generateConfirmationCode, sendTableBookingEmail, formatTimeSlot } from '../_shared/tableBookingEmail.ts';
 import { computeArrivalDate } from '../_shared/bookingNight.ts';
 
@@ -118,16 +119,16 @@ Deno.serve(async (req: Request) => {
       depositCents = tableType.deposit_cents;
     }
 
-    // Same best-effort capacity check as a normal checkout - a walk-in still
+    // Same capacity check as a normal checkout (paid bookings, checkouts in progress, tables a manager has held or taken out of use) - a walk-in still
     // shouldn't oversell a table type past its configured inventory.
-    const { count: paidCount } = await supabase
-      .from('site_table_bookings')
-      .select('id', { count: 'exact', head: true })
-      .eq('table_type_id', table_type_id)
-      .eq('time_slot_id', time_slot_id)
-      .eq('booking_date', arrivalDate)
-      .eq('status', 'paid');
-    if ((paidCount ?? 0) >= tableType.inventory_count) {
+    let takenTables: number;
+    try {
+      takenTables = await tablesTaken(supabase, { typeId: table_type_id, slotId: time_slot_id, arrivalDate });
+    } catch (availabilityError) {
+      console.error('table availability check failed:', availabilityError);
+      return json({ error: 'Could not check availability just now. Please try again.' }, 503);
+    }
+    if (takenTables >= tableType.inventory_count) {
       return json({ error: 'No tables of this type left for that date and time' }, 409);
     }
 

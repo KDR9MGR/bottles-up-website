@@ -64,10 +64,13 @@ begin
   select coalesce(array_agg(x), '{}') into taken from public.get_unavailable_table_types(venue, arrival, slot_six) x;
   perform tests.assert_eq('...and not a day later', taken, '{}'::uuid[]);
 
-  -- only a paid booking blocks a table
+  -- only a paid booking takes a table for good; a checkout in progress HOLDS it for 10 minutes (20261021100000), then lets go
   update public.site_table_bookings set status = 'pending' where confirmation_code = 'AM-LATE1';
   select coalesce(array_agg(x), '{}') into taken from public.get_unavailable_table_types(venue, night, slot_late) x;
-  perform tests.assert_eq('a booking still waiting for payment does not block the 1:00 AM table', taken, '{}'::uuid[]);
+  perform tests.assert_eq('a checkout started just now holds the 1:00 AM table', taken, array[t_booth]);
+  update public.site_table_bookings set created_at = now() - interval '11 minutes' where confirmation_code = 'AM-LATE1';
+  select coalesce(array_agg(x), '{}') into taken from public.get_unavailable_table_types(venue, night, slot_late) x;
+  perform tests.assert_eq('a booking that has been waiting for payment longer than the hold does not block the 1:00 AM table', taken, '{}'::uuid[]);
   update public.site_table_bookings set status = 'cancelled' where confirmation_code = 'AM-LATE1';
   select coalesce(array_agg(x), '{}') into taken from public.get_unavailable_table_types(venue, night, slot_late) x;
   perform tests.assert_eq('...nor does a cancelled one', taken, '{}'::uuid[]);

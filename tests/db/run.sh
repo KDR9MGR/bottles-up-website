@@ -83,6 +83,9 @@ bash tests/db/concurrency_partial_delivery.sh
 echo "--- concurrency_group_admission.sh"
 bash tests/db/concurrency_group_admission.sh
 
+echo "--- concurrency_floor.sh"
+bash tests/db/concurrency_floor.sh
+
 echo "--- migration_guard.sh"
 bash tests/db/migration_guard.sh
 
@@ -94,5 +97,8 @@ bash tests/db/migration_guard_september.sh
 
 echo "--- migration_guard_door_staff.sh"
 bash tests/db/migration_guard_door_staff.sh
+
+echo "--- migration_guard_floor.sh"
+bash tests/db/migration_guard_floor.sh
 
 echo "==> all database tests passed ($assertions assertions + the concurrency and migration-guard scripts)$([ "$WITH_FIX" = "1" ] && echo " with $NPROP proposed fix(es) applied")"
