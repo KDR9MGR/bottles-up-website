@@ -73,6 +73,17 @@ begin
   perform tests.logout();
   return r;
 end $$;
+create function tests.options_text(p_user uuid, p_email text, p_booking uuid) returns text language plpgsql as $$
+declare r text;
+begin
+  perform tests.login(p_user, p_email);
+  select string_agg(table_name || ':' || available || ':' || fits || ':' || is_current || ':' || coalesce(price_difference_cents::text, 'none'), ' | ') into r from public.desk_booking_move_options(p_booking);
+  perform tests.logout();
+  return r;
+exception when others then
+  perform tests.logout();
+  return 'ERROR: ' || sqlerrm;
+end $$;
 create function tests.activity_actions(p_user uuid, p_email text, p_booking uuid) returns text language plpgsql as $$
 declare r text;
 begin
@@ -338,6 +349,18 @@ begin
   perform tests.assert_eq('blocked tables are not free to move into', tests.try(mgr_a, 'mgra@fl.example', format($q$select public.desk_move_booking(%L, %L, 'Into the blocked sofas')::text$q$, b1, t_sofa)), 'ERROR: no tables of that type are free for that time');
   delete from public.site_table_blocks;
   perform tests.assert_eq('the booth is taken (Solo Sue), so Mia cannot go in either', tests.try(mgr_a, 'mgra@fl.example', format($q$select public.desk_move_booking(%L, %L, 'Booth is full')::text$q$, b1, t_booth)), 'ERROR: no tables of that type are free for that time');
+  perform tests.assert_eq('the options list every table of the club with free counts, whether the party fits, where it is now and the price difference',
+    tests.options_text(mgr_a, 'mgra@fl.example', b1), 'Booth:0:true:false:7500 | Pair table:1:true:true:0 | Sofa:2:true:false:none');
+  perform tests.assert_eq('a party of 7 fits only the sofa', tests.options_text(mgr_a, 'mgra@fl.example', b2), 'Booth:0:false:false:7500 | Pair table:1:false:true:0 | Sofa:2:true:false:none');
+  perform tests.assert_eq('a party of 1 does not fit the pair table (it needs 2)', tests.options_text(mgr_a, 'mgra@fl.example', b3), 'Booth:0:true:true:0 | Pair table:1:false:false:-7500 | Sofa:2:true:false:none');
+  foreach who in array others loop
+    perform tests.assert_eq('the options are refused to ' || who, tests.options_text((select id from auth.users where email = who), who, b1), 'ERROR: not allowed');
+  end loop;
+  perform tests.assert_eq('another club''s booking is not allowed for this manager', tests.options_text(mgr_a, 'mgra@fl.example', b_b), 'ERROR: not allowed');
+  perform tests.assert_eq('an unknown booking too', tests.options_text(mgr_a, 'mgra@fl.example', gen_random_uuid()), 'ERROR: not allowed');
+  perform tests.login_anon();
+  perform tests.assert_raises('a visitor cannot ask', format($q$select * from public.desk_booking_move_options(%L)$q$, b1), 'permission denied');
+  perform tests.logout();
   update public.site_table_bookings set status = 'cancelled' where id = b3;
 
   v_json := tests.runj(mgr_a, 'mgra@fl.example', format($q$select public.desk_move_booking(%L, %L, ' Guest wanted the booth ')$q$, b1, t_booth));
@@ -436,7 +459,7 @@ begin
     (select bool_and(p.prosecdef and coalesce(p.proconfig::text, '') like '%search_path=public%')
        from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
       where ns.nspname = 'public' and p.proname in ('list_venue_table_layout', 'place_venue_table', 'unplace_venue_table', 'set_table_included_admissions', 'desk_table_states', 'desk_table_block',
-        'desk_table_release', 'desk_table_blocks', 'desk_move_booking', 'desk_booking_moves', 'venue_deposit_terms', 'save_venue_deposit_terms', 'site_table_taken_count',
+        'desk_table_release', 'desk_table_blocks', 'desk_move_booking', 'desk_booking_moves', 'desk_booking_move_options', 'venue_deposit_terms', 'save_venue_deposit_terms', 'site_table_taken_count',
         'site_table_bookings_snapshot_terms', 'get_unavailable_table_types', 'desk_walkin_options', 'desk_create_walkin')));
   perform tests.assert_true('the blocks and moves tables have row level security on', (select bool_and(relrowsecurity) from pg_class where oid in ('public.site_table_blocks'::regclass, 'public.site_booking_moves'::regclass)));
   perform tests.login(mgr_a, 'mgra@fl.example');

@@ -14,7 +14,7 @@
 --     (the website's checkout and legacy walk-in functions call it too: see supabase/functions)
 --
 --   MOVING A BOOKING
---   * site_booking_moves (closed table), desk_move_booking(booking, new table type, reason), desk_booking_moves(booking)
+--   * site_booking_moves (closed table), desk_move_booking(booking, new table type, reason), desk_booking_moves(booking), desk_booking_move_options(booking)
 --     the same booking moves to another table type for the same arrival time after the availability and party-size checks; who, when, from, to and why are kept;
 --     the amounts the guest agreed to do NOT change (the price difference is recorded, never charged or refunded silently).
 --
@@ -635,6 +635,38 @@ begin
 end;
 $$;
 
+-- The tables a confirmed booking could be moved to: every table type of the venue, how many are free for the booking's arrival time, whether the party fits
+-- (seats and minimum), and the recorded price difference. The booking's own table is listed too and marked, so the app can show where it is now. The move itself
+-- re-checks every one of these while it holds the tables, so this list is only what the app offers.
+create function public.desk_booking_move_options(p_booking uuid)
+returns table (table_type_id uuid, table_name text, max_guests int, min_guests int, available int, fits boolean, is_current boolean, price_difference_cents int)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  b public.site_table_bookings;
+  f public.site_table_types;
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+  if public.desk_booking_level(p_booking) is distinct from 'manager' then raise exception 'not allowed'; end if;
+  select * into b from public.site_table_bookings where id = p_booking;
+  if not found then raise exception 'not allowed'; end if;
+  select * into f from public.site_table_types where id = b.table_type_id;
+  return query
+    select t.id, t.name, t.max_guests, t.min_guests,
+           greatest(t.inventory_count - public.site_table_taken_count(t.id, b.time_slot_id, b.booking_date), 0),
+           b.guest_count <= t.max_guests and (t.min_guests is null or b.guest_count >= t.min_guests),
+           t.id = b.table_type_id,
+           case when f.pricing_mode = 'flat' and t.pricing_mode = 'flat' then t.deposit_cents - f.deposit_cents end
+      from public.site_table_types t
+     where t.venue_id = b.venue_id
+     order by t.sort_order, t.created_at;
+end;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- 8. Deposit terms: the venue's default, and a copy on every new booking
 -- ---------------------------------------------------------------------------
@@ -738,13 +770,13 @@ revoke all on function public.site_table_bookings_snapshot_terms() from public, 
 revoke all on function
   public.list_venue_table_layout(uuid), public.place_venue_table(uuid, uuid, uuid, numeric, numeric, numeric, numeric), public.unplace_venue_table(uuid, uuid),
   public.set_table_included_admissions(uuid, uuid, int), public.desk_table_states(uuid, date), public.desk_table_block(uuid, date, uuid, uuid, text, int, text, int),
-  public.desk_table_release(uuid), public.desk_table_blocks(uuid, date), public.desk_move_booking(uuid, uuid, text), public.desk_booking_moves(uuid),
+  public.desk_table_release(uuid), public.desk_table_blocks(uuid, date), public.desk_move_booking(uuid, uuid, text), public.desk_booking_moves(uuid), public.desk_booking_move_options(uuid),
   public.venue_deposit_terms(uuid), public.save_venue_deposit_terms(uuid, jsonb)
   from public, anon;
 grant execute on function
   public.list_venue_table_layout(uuid), public.place_venue_table(uuid, uuid, uuid, numeric, numeric, numeric, numeric), public.unplace_venue_table(uuid, uuid),
   public.set_table_included_admissions(uuid, uuid, int), public.desk_table_states(uuid, date), public.desk_table_block(uuid, date, uuid, uuid, text, int, text, int),
-  public.desk_table_release(uuid), public.desk_table_blocks(uuid, date), public.desk_move_booking(uuid, uuid, text), public.desk_booking_moves(uuid),
+  public.desk_table_release(uuid), public.desk_table_blocks(uuid, date), public.desk_move_booking(uuid, uuid, text), public.desk_booking_moves(uuid), public.desk_booking_move_options(uuid),
   public.venue_deposit_terms(uuid), public.save_venue_deposit_terms(uuid, jsonb)
   to authenticated, service_role;
 -- the three replaced functions keep the grants they already had (create or replace does not change them)
