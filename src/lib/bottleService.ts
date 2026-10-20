@@ -3,13 +3,16 @@ import type { BottleServiceStatus } from '@/types/database';
 
 export const BOTTLE_SERVICE_STATUS_LABELS: Record<BottleServiceStatus, string> = {
   awaiting_prep: 'Awaiting Prep',
+  accepted: 'Accepted',
   preparing: 'Preparing',
   ready: 'Ready',
   picked_up: 'Picked Up',
   served: 'Served',
 };
 
-export const BOTTLE_SERVICE_STATUSES: BottleServiceStatus[] = ['awaiting_prep', 'preparing', 'ready', 'picked_up', 'served'];
+// In the order an order moves: Submitted (awaiting prep), Accepted, Preparing, Ready (to collect), On the way (picked up), Delivered (served). 'Accepted' exists since
+// 20261022100000_order_accepted_stage.sql; the app and the website's staff pages both read it.
+export const BOTTLE_SERVICE_STATUSES: BottleServiceStatus[] = ['awaiting_prep', 'accepted', 'preparing', 'ready', 'picked_up', 'served'];
 
 // Shared by the door-staff check-in screen and the CMS booking detail sheet -
 // section 7 of Bottle Payment Options, extended with a "Picked Up" state in

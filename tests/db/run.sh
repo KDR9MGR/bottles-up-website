@@ -101,4 +101,7 @@ bash tests/db/migration_guard_door_staff.sh
 echo "--- migration_guard_floor.sh"
 bash tests/db/migration_guard_floor.sh
 
+echo "--- migration_guard_accepted.sh"
+bash tests/db/migration_guard_accepted.sh
+
 echo "==> all database tests passed ($assertions assertions + the concurrency and migration-guard scripts)$([ "$WITH_FIX" = "1" ] && echo " with $NPROP proposed fix(es) applied")"
