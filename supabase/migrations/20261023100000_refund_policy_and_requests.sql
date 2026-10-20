@@ -396,6 +396,30 @@ begin
 end;
 $$;
 
+-- The terms this booking was made under, for its page: the deposit terms and included admissions copied onto it (20261021100000) and the refund policy (above), in words.
+-- A manager or owner of the club, or the server the table was given to.
+create function public.desk_booking_terms(p_booking uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  b public.site_table_bookings;
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+  if public.desk_booking_level(p_booking) is null then raise exception 'not allowed'; end if;
+  select * into b from public.site_table_bookings where id = p_booking;
+  return jsonb_build_object(
+    'deposit_cents', b.deposit_cents,
+    'deposit_terms', b.deposit_terms,
+    'included_admissions', b.included_admissions,
+    'refund_policy_set', b.refund_policy is not null,
+    'refund_policy_lines', to_jsonb(public.refund_policy_lines(b.refund_policy)));
+end;
+$$;
+
 create function public.desk_request_refund(p_booking uuid, p_reason text)
 returns uuid
 language plpgsql
@@ -672,13 +696,13 @@ $$;
 -- 7. Grants
 -- ---------------------------------------------------------------------------
 revoke all on function
-  public.venue_refund_policy(uuid), public.save_venue_refund_policy(uuid, jsonb), public.public_venue_refund_policy(uuid), public.desk_refund_options(uuid),
+  public.venue_refund_policy(uuid), public.save_venue_refund_policy(uuid, jsonb), public.public_venue_refund_policy(uuid), public.desk_refund_options(uuid), public.desk_booking_terms(uuid),
   public.desk_request_refund(uuid, text), public.guest_request_refund(text, text, text), public.desk_refund_requests(uuid, text), public.desk_decide_refund(uuid, boolean, int, text, text),
   public.desk_complete_club_refund(uuid, text, text), public.desk_may_cancel_booking(uuid), public.refund_request_begin(uuid), public.refund_request_finish(uuid, uuid, boolean, text),
   public.cms_refund_requests(text), public.cms_refund_policies()
   from public, anon;
 grant execute on function
-  public.venue_refund_policy(uuid), public.save_venue_refund_policy(uuid, jsonb), public.desk_refund_options(uuid), public.desk_request_refund(uuid, text),
+  public.venue_refund_policy(uuid), public.save_venue_refund_policy(uuid, jsonb), public.desk_refund_options(uuid), public.desk_booking_terms(uuid), public.desk_request_refund(uuid, text),
   public.desk_refund_requests(uuid, text), public.desk_decide_refund(uuid, boolean, int, text, text), public.desk_complete_club_refund(uuid, text, text), public.desk_may_cancel_booking(uuid),
   public.refund_request_begin(uuid), public.refund_request_finish(uuid, uuid, boolean, text), public.cms_refund_requests(text), public.cms_refund_policies()
   to authenticated, service_role;

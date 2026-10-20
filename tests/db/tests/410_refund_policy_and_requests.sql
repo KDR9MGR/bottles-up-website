@@ -208,6 +208,19 @@ begin
   end loop;
   perform tests.assert_eq('another club''s booking is "not allowed"', tests.try(mgr_a, 'mgra@rf.example', format($q$select public.desk_refund_options(%L)::text$q$, b_other)), 'ERROR: not allowed');
 
+  ---------------------------------------------------------------- 5b. the terms a booking was made under, for its page
+  perform tests.assert_eq('the manager reads the terms of a booking: deposit terms, included admissions, the policy in words', (tests.runj(mgr_a, 'mgra@rf.example', format($q$select public.desk_booking_terms(%L)$q$, b_far)) - 'refund_policy_lines'),
+    '{"deposit_cents": 10000, "deposit_terms": {"default": true, "purpose": "reservation_fee", "venue_pct": 100, "recipient": "venue"}, "refund_policy_set": true, "included_admissions": null}'::jsonb);
+  perform tests.assert_eq('...the policy lines are the ones the booking carries, not the venue''s current ones', jsonb_array_length(tests.runj(mgr_a, 'mgra@rf.example', format($q$select public.desk_booking_terms(%L) -> 'refund_policy_lines'$q$, b_far))), 4);
+  perform tests.assert_eq('a booking made before any policy says the venue decides', (tests.runj(mgr_b, 'mgrb@rf.example', format($q$select public.desk_booking_terms(%L)$q$, b_pre)) -> 'refund_policy_lines' ->> 0), 'This venue has not set a refund policy: refunds are decided by the venue.');
+  foreach who in array others loop
+    perform tests.assert_eq('the terms are refused to ' || who, tests.try((select id from auth.users where email = who), who, format($q$select public.desk_booking_terms(%L)::text$q$, b_far)), 'ERROR: not allowed');
+  end loop;
+  perform tests.assert_eq('another club''s booking is "not allowed"', tests.try(mgr_a, 'mgra@rf.example', format($q$select public.desk_booking_terms(%L)::text$q$, b_other)), 'ERROR: not allowed');
+  perform tests.login_anon();
+  perform tests.assert_raises('a visitor cannot read them', format($q$select public.desk_booking_terms(%L)$q$, b_far), 'permission denied');
+  perform tests.logout();
+
   ---------------------------------------------------------------- 6. a member of staff records a request
   r1 := (tests.try(mgr_a, 'mgra@rf.example', format($q$select public.desk_request_refund(%L, ' Guest was ill ')::text$q$, b_far)))::uuid;
   select * into k from public.site_refund_requests where id = r1;
@@ -378,7 +391,7 @@ begin
     (select bool_and(p.prosecdef and coalesce(p.proconfig::text, '') like '%search_path=public%')
        from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
       where ns.nspname = 'public' and p.proname in ('venue_refund_policy', 'save_venue_refund_policy', 'public_venue_refund_policy', 'desk_refund_options', 'desk_request_refund', 'guest_request_refund',
-        'desk_refund_requests', 'desk_decide_refund', 'desk_complete_club_refund', 'desk_may_cancel_booking', 'refund_request_begin', 'refund_request_finish', 'cms_refund_requests', 'cms_refund_policies',
+        'desk_refund_requests', 'desk_decide_refund', 'desk_complete_club_refund', 'desk_may_cancel_booking', 'desk_booking_terms', 'refund_request_begin', 'refund_request_finish', 'cms_refund_requests', 'cms_refund_policies',
         'booking_hours_to_arrival', 'booking_refundable_cents', 'booking_refund_suggestion', 'site_table_bookings_snapshot_terms')));
   perform tests.assert_true('the two tables have row level security on', (select bool_and(relrowsecurity) from pg_class where oid in ('public.site_refund_policies'::regclass, 'public.site_refund_requests'::regclass)));
   perform tests.login(mgr_a, 'mgra@rf.example');
