@@ -81,7 +81,7 @@ begin
   insert into public.site_table_types (venue_id, name, max_guests, min_spend_cents, deposit_cents, inventory_count) values (venue_a, 'Booth', 6, 0, 10000, 50) returning id into t_a;
   insert into public.site_table_types (venue_id, name, max_guests, min_spend_cents, deposit_cents, inventory_count) values (venue_b, 'Terrace', 4, 0, 1000, 50) returning id into t_b;
   select slot, arrival_date into slot_far, d_far from tests.mkslot(venue_a, 120);
-  select slot, arrival_date into slot_mid, d_mid from tests.mkslot(venue_a, 30);
+  select slot, arrival_date into slot_mid, d_mid from tests.mkslot(venue_a, 27);   -- 3 hours above the 24-hour rule: reading the clock in the wrong time zone (UTC, 4 to 5 hours off) would drop it under the rule
   select slot, arrival_date into slot_near, d_near from tests.mkslot(venue_a, 10);
   select slot, arrival_date into slot_past, d_past from tests.mkslot(venue_a, -2);
   select slot, arrival_date into slot_b, d_b from tests.mkslot(venue_b, 120);
@@ -184,12 +184,16 @@ begin
   perform tests.logout();
   perform tests.assert_eq('a booking made by the website''s server (the service role) carries it too', (select (refund_policy -> 'tiers' -> 0 ->> 'hours') from public.site_table_bookings where id = r1), '48');
   delete from public.site_table_bookings where id = r1;
+  insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status, refund_policy)
+    values (venue_a, t_a, slot_far, d_far, 'Given Gia', 'gia@rf.example', 2, 10000, 'paid', '{"tiers":[{"hours":1,"percent":100}],"no_refund_after_check_in":false,"note":"given"}'::jsonb) returning id into r1;
+  perform tests.assert_eq('a policy given with the booking is kept as given, not overwritten by the venue''s', (select refund_policy ->> 'note' from public.site_table_bookings where id = r1), 'given');
+  delete from public.site_table_bookings where id = r1;
   perform tests.assert_eq('the earlier snapshots (deposit terms, included admissions) still work', (select (deposit_terms ->> 'recipient') from public.site_table_bookings where id = b_far), 'venue');
 
   ---------------------------------------------------------------- 5. what the booking's own policy says now
   perform tests.assert_eq('a booking made 5 days ahead: 100 percent, the whole deposit, nothing used yet', tests.runj(mgr_a, 'mgra@rf.example', format($q$select public.desk_refund_options(%L)$q$, b_far)) - 'hours_to_arrival' - 'policy_lines' - 'why',
     '{"status": "paid", "percent": 100, "checked_in": false, "paid_cents": 10000, "paid_online": false, "deposit_cents": 10000, "available_cents": 10000, "suggested_cents": 10000, "open_request_id": null}'::jsonb);
-  perform tests.assert_eq('...30 hours ahead: half', (tests.runj(mgr_a, 'mgra@rf.example', format($q$select public.desk_refund_options(%L)$q$, b_mid)) ->> 'percent') || ':' || (tests.runj(mgr_a, 'mgra@rf.example', format($q$select public.desk_refund_options(%L)$q$, b_mid)) ->> 'suggested_cents'), '50:5000');
+  perform tests.assert_eq('...27 hours ahead (3 above the second rule): half', (tests.runj(mgr_a, 'mgra@rf.example', format($q$select public.desk_refund_options(%L)$q$, b_mid)) ->> 'percent') || ':' || (tests.runj(mgr_a, 'mgra@rf.example', format($q$select public.desk_refund_options(%L)$q$, b_mid)) ->> 'suggested_cents'), '50:5000');
   perform tests.assert_eq('...10 hours ahead: nothing, and it says why', (tests.runj(mgr_a, 'mgra@rf.example', format($q$select public.desk_refund_options(%L)$q$, b_near)) ->> 'percent') || ':' || (tests.runj(mgr_a, 'mgra@rf.example', format($q$select public.desk_refund_options(%L)$q$, b_near)) ->> 'why'),
     '0:The notice given is shorter than the policy allows a refund for.');
   perform tests.assert_eq('...guests who have arrived: nothing, and it says why', (tests.runj(mgr_a, 'mgra@rf.example', format($q$select public.desk_refund_options(%L)$q$, b_in)) ->> 'suggested_cents') || ':' || (tests.runj(mgr_a, 'mgra@rf.example', format($q$select public.desk_refund_options(%L)$q$, b_in)) ->> 'why'),
@@ -272,7 +276,7 @@ begin
   perform tests.assert_eq('never more than is left', tests.try(mgr_a, 'mgra@rf.example', format($q$select public.desk_decide_refund(%L, true, 10001, 'club', 'too much')$q$, r1)), 'ERROR: only 100.00 can still be refunded on this booking');
   perform tests.assert_eq('online needs an online payment', tests.try(mgr_a, 'mgra@rf.example', format($q$select public.desk_decide_refund(%L, true, 10000, 'online', null)$q$, r1)), 'ERROR: there is no online payment on this booking to return; record a refund made at the club instead');
   rq := (tests.try(mgr_a, 'mgra@rf.example', format($q$select public.desk_request_refund(%L, 'Guest wants it all back')::text$q$, b_mid)))::uuid;
-  perform tests.assert_eq('more than the policy suggests needs a reason (30 hours of notice: the policy gives half, 50.00)', tests.try(mgr_a, 'mgra@rf.example', format($q$select public.desk_decide_refund(%L, true, 6000, 'club', null)$q$, rq)),
+  perform tests.assert_eq('more than the policy suggests needs a reason (27 hours of notice: the policy gives half, 50.00)', tests.try(mgr_a, 'mgra@rf.example', format($q$select public.desk_decide_refund(%L, true, 6000, 'club', null)$q$, rq)),
     'ERROR: this is more than the refund policy suggests (50.00): say why');
   perform tests.assert_eq('...a one-word reason is not enough', tests.try(mgr_a, 'mgra@rf.example', format($q$select public.desk_decide_refund(%L, true, 6000, 'club', 'ok')$q$, rq)), 'ERROR: this is more than the refund policy suggests (50.00): say why');
   perform tests.assert_eq('...the suggested amount itself needs none', tests.try(mgr_a, 'mgra@rf.example', format($q$select public.desk_decide_refund(%L, true, 5000, 'club', null)$q$, rq)), 'approved');
@@ -320,7 +324,13 @@ begin
   perform tests.assert_eq('a BottlesUp admin claims it: it says what to return', (j ->> 'amount_cents') || ':' || (j ->> 'booking_id'), '10000:' || b_online::text);
   perform tests.assert_eq('...and it is now being processed', (select status from public.site_refund_requests where id = r1), 'processing');
   perform tests.assert_eq('a second claim is refused, so the money cannot be returned twice', tests.try(admin_u, 'admin@test.example', format($q$select public.refund_request_begin(%L)::text$q$, r1)), 'ERROR: this refund is not an approved online refund waiting to be processed');
-  perform tests.assert_eq('a club refund cannot be claimed as online', tests.try(admin_u, 'admin@test.example', format($q$select public.refund_request_begin(%L)::text$q$, r3)), 'ERROR: this refund is not an approved online refund waiting to be processed');
+  perform tests.assert_eq('while it is being processed the money is still claimed: nothing more can be refunded on that booking', public.booking_refundable_cents(b_online), 0);
+  perform tests.assert_eq('a finished club refund cannot be claimed as online', tests.try(admin_u, 'admin@test.example', format($q$select public.refund_request_begin(%L)::text$q$, r3)), 'ERROR: this refund is not an approved online refund waiting to be processed');
+  b_cancelled := tests.mkb(venue_a, t_a, slot_far, d_far, 'Club Payer', 10000, 10000);
+  r2 := (tests.try(mgr_a, 'mgra@rf.example', format($q$select public.desk_request_refund(%L, 'Paid at the club, returned at the club')::text$q$, b_cancelled)))::uuid;
+  perform tests.try(mgr_a, 'mgra@rf.example', format($q$select public.desk_decide_refund(%L, true, 10000, 'club', null)$q$, r2));
+  perform tests.assert_eq('an approved club refund that is still waiting cannot be claimed as an online one either', tests.try(admin_u, 'admin@test.example', format($q$select public.refund_request_begin(%L)::text$q$, r2)), 'ERROR: this refund is not an approved online refund waiting to be processed');
+  perform tests.assert_eq('...it is still approved, untouched', (select status from public.site_refund_requests where id = r2), 'approved');
   perform tests.assert_eq('only an admin finishes it', tests.try(mgr_a, 'mgra@rf.example', format($q$select public.refund_request_finish(%L, null, true, null)$q$, r1)), 'ERROR: not allowed');
   refund := gen_random_uuid();
   insert into public.site_table_booking_refunds (id, booking_id, refund_type, amount_cents, reason, stripe_refund_id) values (refund, b_online, 'online', 10000, 'Event cancelled by us', 're_test_1');
