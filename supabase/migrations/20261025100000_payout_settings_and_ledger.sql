@@ -146,18 +146,22 @@ stable
 security definer
 set search_path = public
 as $$
-  select b.id, public.booking_night(b.booking_date, s.start_time),
-         greatest(greatest(b.amount_paid_cents - coalesce((select sum(cp.amount_paid_cents) from public.site_table_booking_club_payments cp
-                                                            where cp.booking_id = b.id and not exists (select 1 from public.site_table_booking_club_payments c2 where c2.corrects_payment_id = cp.id)), 0), 0)
-                  - b.bottlesup_fee_cents, 0)::int
-    from public.site_table_bookings b
-    join public.site_venues v on v.id = b.venue_id
-    join public.site_venue_time_slots s on s.id = b.time_slot_id
-   where v.org_id = p_org
-     and b.status = 'paid' and b.stripe_payment_intent_id is not null
-     and public.booking_night(b.booking_date, s.start_time) between p_from and p_to
-     and public.booking_night(b.booking_date, s.start_time) <= (now() at time zone 'America/Toronto')::date - (select e.hold_days from public.payout_effective(p_org) e)
-     and not exists (select 1 from public.site_payout_item_bookings l where l.booking_id = b.id)
+  select x.id, x.night, x.amount
+    from (
+      select b.id, public.booking_night(b.booking_date, s.start_time) as night,
+             greatest(greatest(b.amount_paid_cents - coalesce((select sum(cp.amount_paid_cents) from public.site_table_booking_club_payments cp
+                                                                where cp.booking_id = b.id and not exists (select 1 from public.site_table_booking_club_payments c2 where c2.corrects_payment_id = cp.id)), 0), 0)
+                      - b.bottlesup_fee_cents, 0)::int as amount
+        from public.site_table_bookings b
+        join public.site_venues v on v.id = b.venue_id
+        join public.site_venue_time_slots s on s.id = b.time_slot_id
+       where v.org_id = p_org
+         and b.status = 'paid' and b.stripe_payment_intent_id is not null
+         and not exists (select 1 from public.site_payout_item_bookings l where l.booking_id = b.id)
+    ) x
+   where x.amount > 0
+     and x.night between p_from and p_to
+     and x.night <= (now() at time zone 'America/Toronto')::date - (select e.hold_days from public.payout_effective(p_org) e)
 $$;
 revoke all on function public.payout_next_date(int), public.payout_effective(uuid), public.payout_eligible_bookings(uuid, date, date) from public, anon, authenticated;
 grant execute on function public.payout_next_date(int) to service_role;
