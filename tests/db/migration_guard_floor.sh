@@ -47,7 +47,7 @@ strip() { # remove everything the migration builds (the three replaced functions
           -c "drop function if exists public.site_table_bookings_snapshot_terms()" \
           -c "drop function if exists public.list_venue_table_layout(uuid), public.place_venue_table(uuid, uuid, uuid, numeric, numeric, numeric, numeric), public.unplace_venue_table(uuid, uuid), public.set_table_included_admissions(uuid, uuid, int)" \
           -c "drop function if exists public.desk_table_states(uuid, date), public.desk_table_block(uuid, date, uuid, uuid, text, int, text, int), public.desk_table_release(uuid), public.desk_table_blocks(uuid, date)" \
-          -c "drop function if exists public.desk_move_booking(uuid, uuid, text), public.desk_booking_moves(uuid), public.venue_deposit_terms(uuid), public.save_venue_deposit_terms(uuid, jsonb)" \
+          -c "drop function if exists public.desk_move_booking(uuid, uuid, text), public.desk_booking_moves(uuid), public.desk_booking_move_options(uuid), public.venue_deposit_terms(uuid), public.save_venue_deposit_terms(uuid, jsonb)" \
           -c "drop function if exists public.site_table_taken_count(uuid, uuid, date, text), public.site_checkout_hold()" \
           -c "drop table if exists public.site_table_blocks, public.site_booking_moves" \
           -c "alter table public.site_table_types drop column if exists included_admissions" \
