@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { useUserAuth, userSignUp } from '@/hooks/useUserAuth';
 import TicketCard, { type TicketCardData } from '@/components/TicketCard';
+import RefundRequestCard from '@/components/RefundRequestCard';
 import { isAfterMidnightSlot, computeNightDate, formatWeekday, formatTimeSlot } from '@/lib/bookingNight';
 
 type PaidTicket = TicketCardData & { customerEmail?: string };
@@ -275,6 +276,10 @@ const BookingSuccess = () => {
           >
             <Link to={`/booking/${booking.confirmationCode}`}>Send Guest Tickets</Link>
           </Button>
+        )}
+
+        {booking && booking.paidNowCents > 0 && customerEmail && (
+          <RefundRequestCard confirmationCode={booking.confirmationCode} email={customerEmail} />
         )}
 
         {showAccountPrompt && customerEmail && (

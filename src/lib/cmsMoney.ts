@@ -14,8 +14,11 @@ export function plainMessage(error: DbError): string {
   return 'This could not be done just now. Check the connection and try again.';
 }
 
+// The database functions below are in no generated type yet, so the client is used loosely, as src/lib/account.ts does.
+const db = supabase as unknown as { rpc: (fn: string, args?: Record<string, unknown>) => PromiseLike<{ data: unknown; error: DbError }> };
+
 async function rpc<T>(fn: string, params?: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.rpc(fn, params);
+  const { data, error } = await db.rpc(fn, params);
   if (error) throw new CmsMoneyError(plainMessage(error));
   return data as T;
 }

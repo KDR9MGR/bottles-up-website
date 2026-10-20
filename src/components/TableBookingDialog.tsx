@@ -26,6 +26,7 @@ import type { Database, BottlePaymentChoice } from '@/types/database';
 import type { TableTypeWithVenue } from '@/pages/VipTables';
 import { isAfterMidnightSlot, computeArrivalDate, formatWeekday } from '@/lib/bookingNight';
 import BottlePreviewDialog from '@/components/BottlePreviewDialog';
+import { fetchPublicRefundPolicy, type PublicRefundPolicy } from '@/lib/refundPolicy';
 
 type BottleRow = Database['public']['Tables']['site_bottles']['Row'];
 
@@ -68,6 +69,7 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
   const [cart, setCart] = useState<Record<string, number>>({});
   const [previewBottle, setPreviewBottle] = useState<BottleRow | null>(null);
   const [bottlesupFeeBps, setBottlesupFeeBps] = useState(0);
+  const [refundPolicy, setRefundPolicy] = useState<PublicRefundPolicy | null>(null);
   const [bottlePaymentChoice, setBottlePaymentChoice] = useState<BottlePaymentChoice>('pay_ahead');
 
   const [promoInput, setPromoInput] = useState('');
@@ -113,6 +115,9 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
       .eq('id', 1)
       .maybeSingle()
       .then(({ data }) => setBottlesupFeeBps(data?.bottlesup_fee_bps ?? 0));
+    // The venue's cancellation and refund policy, shown before the guest pays (nothing is shown if it cannot be read).
+    setRefundPolicy(null);
+    void fetchPublicRefundPolicy(tableType.venue.id).then(setRefundPolicy);
   }, [open, tableType]);
 
   const availableDaysOfWeek = useMemo(
@@ -625,6 +630,13 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
                 </div>
               )}
             </div>
+
+            {refundPolicy && (
+              <div className="rounded-lg border border-gray-800 p-3 text-xs text-gray-400" data-testid="refund-policy">
+                <p className="mb-1 font-medium text-gray-300">Cancellations and refunds</p>
+                <ul className="list-disc space-y-0.5 pl-4">{refundPolicy.lines.map((line) => <li key={line}>{line}</li>)}</ul>
+              </div>
+            )}
 
             <p className="text-xs text-gray-500">
               {dueAtVenueCents > 0

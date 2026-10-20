@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, Ticket, Users, Settings, LogOut, ScanLine, CheckCircle2, ScrollText, Building2, Wine, HelpCircle, Crown, Tag, ClipboardCheck, BadgeCheck } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Ticket, Users, Settings, LogOut, ScanLine, CheckCircle2, ScrollText, Building2, Wine, HelpCircle, Crown, Tag, ClipboardCheck, BadgeCheck, RotateCcw, Percent, Landmark } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -24,6 +24,9 @@ const navItems = [
   { to: '/cms/venues', label: 'Venues', icon: Building2 },
   { to: '/cms/table-bookings', label: 'Table Bookings', icon: Wine },
   { to: '/cms/reconciliation', label: 'Reconciliation', icon: ClipboardCheck },
+  { to: '/cms/refunds', label: 'Refunds', icon: RotateCcw },
+  { to: '/cms/discounts', label: 'Discounts', icon: Percent },
+  { to: '/cms/payouts', label: 'Payouts', icon: Landmark },
   { to: '/cms/promo-codes', label: 'Promo Codes', icon: Tag },
   ...(ACCOUNT_ONBOARDING_ENABLED ? [{ to: '/cms/verifications', label: 'Verification', icon: BadgeCheck }] : []),
   { to: '/cms/vip-list', label: 'VIP List', icon: Users },
