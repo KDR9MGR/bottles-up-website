@@ -49,6 +49,7 @@ export function createFakeDb(seed: Record<string, Row[]> = {}): FakeDb {
     update(values: Row) { this.op = 'update'; this.payload = values; return this; }
     insert(values: Row | Row[]) { this.op = 'insert'; this.payload = values; return this; }
     eq(col: string, val: any) { this.filters.push((r) => r[col] === val); return this; }
+    neq(col: string, val: any) { this.filters.push((r) => r[col] !== val); return this; }
     is(col: string, val: any) { this.filters.push((r) => (val === null ? r[col] == null : r[col] === val)); return this; }
     in(col: string, vals: any[]) { this.filters.push((r) => vals.includes(r[col])); return this; }
     order() { return this; }
