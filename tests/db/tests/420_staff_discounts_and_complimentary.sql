@@ -104,7 +104,7 @@ declare
   rando constant uuid := '00000000-0000-0000-0000-000000000bd8';
   admin_u constant uuid := '00000000-0000-0000-0000-0000000000a2';
   org uuid; venue_a uuid; venue_b uuid; t_a uuid; t_b uuid; s_a uuid; s_b uuid; night date := current_date;
-  b1 uuid; b2 uuid; b3 uuid; b4 uuid; b5 uuid; b6 uuid; b7 uuid; b_zero uuid; b_pend uuid; b_closed uuid; b_b uuid; b_free uuid; b_free2 uuid; b_next uuid; b_stock uuid; b_owner uuid; s_next uuid;
+  b1 uuid; b2 uuid; b3 uuid; b4 uuid; b5 uuid; b6 uuid; b7 uuid; b_zero uuid; b_pend uuid; b_closed uuid; b_b uuid; b_free uuid; b_free2 uuid; b_next uuid; b_stock uuid; b_owner uuid; s_next uuid; b_cx uuid; b_late uuid; b_late2 uuid; b_stack uuid; b_own uuid; b_sold uuid;
   bt_vodka uuid; bt_patron uuid; bt_sold uuid; bt_off uuid; bt_b uuid;
   c1 uuid; c2 uuid; c3 uuid; c4 uuid; c5 uuid; r text; j jsonb; n int; who text; k record;
   others text[] := array['srv2@cn.example', 'door@cn.example', 'mgrb@cn.example', 'rando@cn.example'];
@@ -145,6 +145,14 @@ begin
   b_stock := tests.mktable(venue_a, t_a, s_a, night, 'Stock Table', 5000, 0, 5000, srv_1);
   b_next := tests.mktable(venue_a, t_a, s_next, night + 1, 'Tomorrow Table', 5000, 0, 5000, srv_1);
   b_owner := tests.mktable(venue_a, t_a, s_a, night, 'Owner Table', 20000, 0, 10000, srv_1);
+  b_cx := tests.mktable(venue_a, t_a, s_a, night, 'Cancelled Line', 20000, 0, 6000, srv_1);
+  insert into public.site_table_booking_bottles (booking_id, bottle_name, size, unit_price_cents, quantity, line_total_cents, payment_status, service_status, cancelled_at)
+    values (b_cx, 'Cancelled bottle', '750ml', 4000, 1, 4000, 'paid', 'awaiting_prep', now());
+  b_late := tests.mktable(venue_a, t_a, s_a, night, 'Late Close', 20000, 0, 10000, srv_1);
+  b_late2 := tests.mktable(venue_a, t_a, s_a, night, 'Paid Up Meanwhile', 20000, 0, 10000, srv_1);
+  b_stack := tests.mktable(venue_a, t_a, s_a, night, 'Stack Table', 20000, 0, 10000, srv_1);
+  b_own := tests.mktable(venue_a, t_a, s_a, night, 'Own Request', 20000, 0, 10000, srv_1);
+  b_sold := tests.mktable(venue_a, t_a, s_a, night, 'Sold Out Later', 5000, 0, 5000, srv_1);
   bt_vodka := tests.mkbottle(venue_a, 'Vodka', 3000);
   bt_patron := tests.mkbottle(venue_a, 'Patron', 5000, 5);
   bt_sold := tests.mkbottle(venue_a, 'Sold out', 4000, null, true, true);
@@ -215,6 +223,7 @@ begin
   perform tests.assert_eq('an amount is turned into the percent it is, rounded up: 2500 of 10000 is 25', tests.disc(mgr_a, 'mgra@cn.example', b3, 'amount', 2500), 'applied:2500:25');
   perform tests.assert_eq('a server asking for 1001 of 10000 (10.01 percent, more than their 10) must wait', tests.disc(srv_1, 'srv1@cn.example', b4, 'amount', 1001), 'pending:1001:11');
   perform tests.assert_eq('...and nothing changed on the table while it waits', tests.total(b4), '20000/0');
+  perform tests.assert_eq('while a discount waits, another on the same table is refused too', tests.disc(mgr_a, 'mgra@cn.example', b4, 'percent', 5), 'ERROR: this table already has a discount: discounts do not combine at this club');
 
   ---------------------------------------------------------------- 5. above the limit: waiting, and who may decide
   c1 := (select id from public.site_concessions where booking_id = b4);
@@ -252,6 +261,8 @@ begin
 
   ---------------------------------------------------------------- 6. what a discount can never be
   perform tests.assert_eq('more than the table still owes (3000 owed, nothing left after the 3000 paid)', tests.disc(owner_u, 'owner@cn.example', b6, 'percent', 10), 'ERROR: a discount of 3.00 is more than this table still owes (0.00)');
+  perform tests.assert_eq('a request that has to wait is also refused when it is more than the table owes (no point asking)', tests.disc(srv_1, 'srv1@cn.example', b6, 'percent', 50), 'ERROR: a discount of 15.00 is more than this table still owes (0.00)');
+  perform tests.assert_eq('a bottle that was cancelled is not part of what a percent is taken of (6000 of bottles, not 10000): 30 percent is 1800', tests.disc(mgr_a, 'mgra@cn.example', b_cx, 'percent', 30), 'applied:1800:30');
   perform tests.assert_eq('more than the bottles come to', tests.disc(mgr_a, 'mgra@cn.example', b_free, 'amount', 5001), 'ERROR: a discount cannot be more than the table''s bottles (50.00)');
   perform tests.assert_eq('a table with no bottles has nothing to discount', tests.disc(mgr_a, 'mgra@cn.example', b_zero, 'percent', 5), 'ERROR: there are no bottles on this table to discount');
   perform tests.assert_eq('a kind must be chosen', tests.disc(mgr_a, 'mgra@cn.example', b_free, 'fixed', 5), 'ERROR: choose a percent or an amount');
@@ -350,6 +361,34 @@ begin
   foreach who in array array['mgra@cn.example', 'owner@cn.example', 'srv1@cn.example', 'rando@cn.example'] loop
     perform tests.assert_eq('the CMS views are refused to ' || who, tests.try((select id from auth.users where email = who), who, $q$select count(*)::text from public.cms_concessions()$q$) || '|' || tests.try((select id from auth.users where email = who), who, $q$select count(*)::text from public.cms_discount_limits()$q$), 'ERROR: not allowed|ERROR: not allowed');
   end loop;
+
+  ---------------------------------------------------------------- 10b. what is checked AGAIN when a waiting request is approved
+  perform tests.assert_eq('a request waits', tests.disc(srv_1, 'srv1@cn.example', b_late, 'percent', 20), 'pending:2000:20');
+  update public.site_table_bookings set reconciled_at = now() where id = b_late;
+  perform tests.assert_eq('the table is closed out before it is approved: refused', tests.decide(mgr_a, 'mgra@cn.example', (select id from public.site_concessions where booking_id = b_late), true), 'ERROR: this table has already been closed out');
+  perform tests.assert_eq('a request waits on another table', tests.disc(srv_1, 'srv1@cn.example', b_late2, 'percent', 20), 'pending:2000:20');
+  update public.site_table_bookings set amount_paid_cents = amount_total_cents where id = b_late2;
+  perform tests.assert_eq('the table is paid in full before it is approved: it owes nothing, so refused', tests.decide(mgr_a, 'mgra@cn.example', (select id from public.site_concessions where booking_id = b_late2), true), 'ERROR: a discount of 20.00 is more than this table still owes (0.00)');
+  perform tests.assert_eq('...and it stays waiting', (select status from public.site_concessions where booking_id = b_late2), 'pending');
+  -- stacking switched off between asking and approving
+  perform tests.try(owner_u, 'owner@cn.example', format($q$select public.save_venue_discount_limits(%L, '{"allow_stacking":true}'::jsonb)::text$q$, venue_a));
+  perform tests.assert_eq('with stacking on, a server''s request waits', tests.disc(srv_1, 'srv1@cn.example', b_stack, 'percent', 20), 'pending:2000:20');
+  perform tests.assert_eq('...and a manager gives 10 percent on the same table', tests.disc(mgr_a, 'mgra@cn.example', b_stack, 'percent', 10), 'applied:1000:10');
+  perform tests.try(owner_u, 'owner@cn.example', format($q$select public.save_venue_discount_limits(%L, '{"allow_stacking":false}'::jsonb)::text$q$, venue_a));
+  perform tests.assert_eq('the owner turns stacking off: approving the waiting one would be a second discount, so it is refused', tests.decide(mgr_a2, 'mgra2@cn.example', (select id from public.site_concessions where booking_id = b_stack and status = 'pending'), true), 'ERROR: this table already has a discount: discounts do not combine at this club');
+  -- a bottle that goes off the menu between asking and approving
+  perform tests.assert_eq('a server asks for a bottle beyond their allowance (they have given one tonight)', tests.free(srv_1, 'srv1@cn.example', b_sold, bt_vodka, 1), 'pending:3000');
+  update public.site_bottles set is_sold_out = true where id = bt_vodka;
+  perform tests.assert_eq('the bottle sells out before the owner approves it: refused', tests.decide(owner_u, 'owner@cn.example', (select id from public.site_concessions where booking_id = b_sold and status = 'pending'), true), 'ERROR: that bottle is not available right now');
+  perform tests.assert_eq('a request for a sold-out bottle that would have to wait is refused at once', tests.free(srv_1, 'srv1@cn.example', b_late2, bt_vodka, 1), 'ERROR: that bottle is not available right now');
+  update public.site_bottles set is_sold_out = false where id = bt_vodka;
+  -- the owner raises a manager's limit after the manager asked: they still cannot approve their own
+  perform tests.assert_eq('a manager asks for 40 percent (above their 30)', tests.disc(mgr_a, 'mgra@cn.example', b_own, 'percent', 40), 'pending:4000:40');
+  perform tests.try(owner_u, 'owner@cn.example', format($q$select public.save_venue_discount_limits(%L, '{"manager_max_percent":50}'::jsonb)::text$q$, venue_a));
+  perform tests.assert_eq('the owner raises the managers to 50: it is now within their limit, but it is still their own request', tests.pending_text(mgr_a, 'mgra@cn.example', venue_a) like '%CN-OWNREQUEST discount 40% 4000 by manager decide=false%', true);
+  perform tests.assert_eq('...they cannot approve it', tests.decide(mgr_a, 'mgra@cn.example', (select id from public.site_concessions where booking_id = b_own), true), 'ERROR: you cannot approve your own request: another manager or the owner decides');
+  perform tests.assert_eq('...another manager can', tests.decide(mgr_a2, 'mgra2@cn.example', (select id from public.site_concessions where booking_id = b_own), true), 'applied');
+  perform tests.try(owner_u, 'owner@cn.example', format($q$select public.save_venue_discount_limits(%L, '{"manager_max_percent":30}'::jsonb)::text$q$, venue_a));
 
   ---------------------------------------------------------------- 11. declarations and the closed tables
   perform tests.assert_true('every new function runs with its owner''s rights and a fixed search path',

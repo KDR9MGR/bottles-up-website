@@ -468,7 +468,7 @@ begin
   select * into c from public.site_concessions where id = p_id for update;
   if not found then raise exception 'not allowed'; end if;
   v_role := public.concession_role(c.venue_id);
-  if v_role is null or v_role not in ('owner', 'manager') then raise exception 'not allowed'; end if;
+  if v_role is null then raise exception 'not allowed'; end if;   -- without a booking the role is only ever 'owner', 'manager' or null
   if c.status <> 'pending' then raise exception 'this request has already been decided'; end if;
   if p_approve is null then raise exception 'approve or decline'; end if;
   if v_note is not null and char_length(v_note) > 300 then raise exception 'the note can be up to 300 characters'; end if;
@@ -519,7 +519,7 @@ begin
   select * into c from public.site_concessions where id = p_id for update;
   if not found then raise exception 'not allowed'; end if;
   v_role := public.concession_role(c.venue_id);
-  if v_role is null or v_role not in ('owner', 'manager') then raise exception 'not allowed'; end if;
+  if v_role is null then raise exception 'not allowed'; end if;   -- without a booking the role is only ever 'owner', 'manager' or null
   if c.status = 'voided' then return 'voided'; end if;
   if c.status <> 'applied' then raise exception 'only something that has been applied can be taken back'; end if;
   if v_note is null or char_length(v_note) < 3 then raise exception 'say why it is taken back'; end if;
