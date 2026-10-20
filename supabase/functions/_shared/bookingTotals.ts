@@ -23,16 +23,23 @@ export interface RecomputedTotals {
 // (a confirmed Stripe session or a manually recorded in-person payment), which the
 // caller handles separately, since it can also include payments this function has
 // no way to derive (e.g. cash collected at the venue).
+const BOOKING_COLUMNS = 'deposit_cents, discount_cents, venue:site_venues(tax_rate_bps, deposit_is_credit)';
+
+// The booking, with what staff have discounted (staff_discount_cents, 20261024100000_staff_discounts_and_complimentary.sql). Before that migration is applied the column
+// does not exist and the database says so: read the booking without it (nothing can have been discounted by staff yet).
+async function readBooking(supabase: SupabaseClient, bookingId: string) {
+  const withStaff = await supabase.from('site_table_bookings').select(`${BOOKING_COLUMNS}, staff_discount_cents`).eq('id', bookingId).single();
+  if (!withStaff.error) return withStaff.data;
+  const plain = await supabase.from('site_table_bookings').select(BOOKING_COLUMNS).eq('id', bookingId).single();
+  return plain.data;
+}
+
 export async function recomputeTableBookingTotals(
   supabase: SupabaseClient,
   bookingId: string,
 ): Promise<RecomputedTotals> {
-  const [{ data: booking }, { data: lines }, { data: content }] = await Promise.all([
-    supabase
-      .from('site_table_bookings')
-      .select('deposit_cents, discount_cents, venue:site_venues(tax_rate_bps, deposit_is_credit)')
-      .eq('id', bookingId)
-      .single(),
+  const [booking, { data: lines }, { data: content }] = await Promise.all([
+    readBooking(supabase, bookingId),
     supabase
       .from('site_table_booking_bottles')
       .select('line_total_cents, payment_status, cancelled_at')
@@ -65,7 +72,10 @@ export async function recomputeTableBookingTotals(
   const discounted = Math.max(preTax - booking.discount_cents, 0);
   const taxCents = Math.round((discounted * (venue.tax_rate_bps ?? 0)) / 10000);
   const bottlesupFeeCents = Math.round((discounted * (content?.bottlesup_fee_bps ?? 0)) / 10000);
-  const amountTotalCents = discounted + taxCents + bottlesupFeeCents + creditedDueAtVenueCents;
+  // What the club's own people discounted (a server or manager with the owner's limits) comes off what is owed, after tax is worked out, and stays through bottles being
+  // added or cancelled; it can never take the total below zero.
+  const staffDiscountCents = Number((booking as { staff_discount_cents?: number | null }).staff_discount_cents ?? 0);
+  const amountTotalCents = Math.max(discounted + taxCents + bottlesupFeeCents + creditedDueAtVenueCents - staffDiscountCents, 0);
 
   return {
     bottleSubtotalCents: taxedBottleCents + dueAtVenueBottleCentsRaw,

@@ -8,16 +8,68 @@ import { createFakeDb } from './stubs/fakeDb';
 type Line = { line_total_cents: number; payment_status: 'paid' | 'due_at_venue' | 'pending_payment'; cancelled_at?: string | null };
 
 function bookingWith(opts: {
-  deposit?: number; discount?: number; taxBps?: number | null; depositIsCredit?: boolean; feeBps?: number | null; lines?: Line[];
+  deposit?: number; discount?: number; staffDiscount?: number; taxBps?: number | null; depositIsCredit?: boolean; feeBps?: number | null; lines?: Line[];
 }) {
-  const { deposit = 10000, discount = 0, taxBps = 1300, depositIsCredit = false, feeBps = 500, lines = [] } = opts;
+  const { deposit = 10000, discount = 0, staffDiscount, taxBps = 1300, depositIsCredit = false, feeBps = 500, lines = [] } = opts;
   return createFakeDb({
-    site_table_bookings: [{ id: 'bk1', deposit_cents: deposit, discount_cents: discount, venue: { tax_rate_bps: taxBps, deposit_is_credit: depositIsCredit } }],
+    site_table_bookings: [{ id: 'bk1', deposit_cents: deposit, discount_cents: discount, ...(staffDiscount === undefined ? {} : { staff_discount_cents: staffDiscount }), venue: { tax_rate_bps: taxBps, deposit_is_credit: depositIsCredit } }],
     site_table_booking_bottles: lines.map((l) => ({ booking_id: 'bk1', cancelled_at: null, ...l })),
     site_content: feeBps === null ? [] : [{ id: 1, bottlesup_fee_bps: feeBps }],
   });
 }
 const totals = (db: ReturnType<typeof createFakeDb>) => recomputeTableBookingTotals(db.client, 'bk1');
+
+describe('recomputeTableBookingTotals: what the club\'s own people discounted', () => {
+  it('comes off what is owed, after tax is worked out', async () => {
+    // 10000 + 1300 tax + 500 fee = 11800, less 2000 given by staff
+    expect((await totals(bookingWith({ staffDiscount: 2000 }))).amountTotalCents).toBe(9800);
+  });
+
+  it('stays when bottles are added (the total is worked out again from the lines)', async () => {
+    // preTax 10000 + 20000 = 30000 -> 3900 + 1500 -> 35400, less 5000
+    expect((await totals(bookingWith({ staffDiscount: 5000, lines: [{ line_total_cents: 20000, payment_status: 'paid' }] }))).amountTotalCents).toBe(30400);
+  });
+
+  it('applies to bottles due at the venue too', async () => {
+    // 11800 + 15000 due at venue = 26800, less 1500
+    expect((await totals(bookingWith({ staffDiscount: 1500, lines: [{ line_total_cents: 15000, payment_status: 'due_at_venue' }] }))).amountTotalCents).toBe(25300);
+  });
+
+  it('never takes the total below zero', async () => {
+    expect((await totals(bookingWith({ deposit: 0, feeBps: 0, taxBps: 0, staffDiscount: 999999 }))).amountTotalCents).toBe(0);
+  });
+
+  it('is nothing when the booking has none (and before the column exists)', async () => {
+    expect((await totals(bookingWith({}))).amountTotalCents).toBe(11800);
+    expect((await totals(bookingWith({ staffDiscount: 0 }))).amountTotalCents).toBe(11800);
+  });
+
+  it('does not change what the other figures are', async () => {
+    expect(await totals(bookingWith({ staffDiscount: 2000 }))).toEqual({ bottleSubtotalCents: 0, taxCents: 1300, bottlesupFeeCents: 500, amountTotalCents: 9800 });
+  });
+
+  it('reads the booking without the column when the database does not have it yet', async () => {
+    const db = bookingWith({});
+    const real = db.client.from;
+    let attempts = 0;
+    db.client.from = (table: string) => {
+      const q: any = real(table);
+      if (table !== 'site_table_bookings') return q;
+      const select = q.select.bind(q);
+      q.select = (cols?: string) => {
+        attempts += 1;
+        if (cols && cols.includes('staff_discount_cents')) {
+          const failing: any = { eq: () => failing, single: () => Promise.resolve({ data: null, error: { code: '42703', message: 'column site_table_bookings.staff_discount_cents does not exist' } }) };
+          return failing;
+        }
+        return select(cols);
+      };
+      return q;
+    };
+    expect((await recomputeTableBookingTotals(db.client, 'bk1')).amountTotalCents).toBe(11800);
+    expect(attempts).toBe(2);
+  });
+});
 
 describe('recomputeTableBookingTotals', () => {
   it('deposit only: tax 13% and platform fee 5% are added on top', async () => {
