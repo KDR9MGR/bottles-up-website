@@ -68,19 +68,24 @@ declare
   mgr_a constant uuid := '00000000-0000-0000-0000-000000000cd3';
   org_u constant uuid := '00000000-0000-0000-0000-000000000cd4';
   rando constant uuid := '00000000-0000-0000-0000-000000000cd5';
+  owner_c constant uuid := '00000000-0000-0000-0000-000000000cd6';
+  org_c uuid; venue_c uuid; t_c uuid; s_c uuid; c_odd uuid; c_item uuid;
   org_a uuid; org_b uuid; org_o uuid; venue_a uuid; venue_b uuid; t_a uuid; t_b uuid; s_a uuid; s_b uuid;
   ba1 uuid; ba2 uuid; ba3 uuid; ba4 uuid; ba5 uuid; ba6 uuid; ba7 uuid; bb1 uuid; bb2 uuid;
   i1 uuid; i2 uuid; i3 uuid; j jsonb; r text; k record; n int;
   everyone text[] := array['owner_a@po.example', 'mgra@po.example', 'org@po.example', 'rando@po.example'];
   who text;
 begin
-  insert into auth.users (id, email) values (owner_a, 'owner_a@po.example'), (owner_b, 'owner_b@po.example'), (mgr_a, 'mgra@po.example'), (org_u, 'org@po.example'), (rando, 'rando@po.example');
+  insert into auth.users (id, email) values (owner_a, 'owner_a@po.example'), (owner_b, 'owner_b@po.example'), (mgr_a, 'mgra@po.example'), (org_u, 'org@po.example'), (rando, 'rando@po.example'), (owner_c, 'owner_c@po.example');
   perform tests.login(owner_a, 'owner_a@po.example');
   org_a := public.create_organization('Payout Club Co', 'venue_owner');
   venue_a := public.create_org_venue(org_a, 'Club A');
   perform tests.login(owner_b, 'owner_b@po.example');
   org_b := public.create_organization('Other Club Co', 'venue_owner');
   venue_b := public.create_org_venue(org_b, 'Club B');
+  perform tests.login(owner_c, 'owner_c@po.example');
+  org_c := public.create_organization('Third Club Co', 'venue_owner');
+  venue_c := public.create_org_venue(org_c, 'Club C');
   perform tests.login(org_u, 'org@po.example');
   org_o := public.create_organization('Night Events', 'organizer');
   perform tests.logout();
@@ -98,6 +103,10 @@ begin
   ba7 := tests.mkpaid(venue_a, t_a, s_a, 10, 'Fully Refunded', 0, 0);
   bb1 := tests.mkpaid(venue_b, t_b, s_b, 10, 'Other Eligible', 20000, 0);
   bb2 := tests.mkpaid(venue_b, t_b, s_b, 0, 'Other Tonight', 1000, 0);
+  insert into public.site_table_types (venue_id, name, max_guests, min_spend_cents, deposit_cents, inventory_count) values (venue_c, 'Lounge', 4, 0, 0, 100) returning id into t_c;
+  insert into public.site_venue_time_slots (venue_id, day_of_week, start_time) values (venue_c, 1, '21:00') returning id into s_c;
+  c_odd := tests.mkpaid(venue_c, t_c, s_c, 10, 'Odd Amount', 12345, 0);
+  perform tests.mkpaid(venue_c, t_c, s_c, 10, 'Round Amount', 20000, 0);
 
   ---------------------------------------------------------------- 1. the settings: only BottlesUp admins, and valid ones
   perform tests.assert_eq('the settings start as manual transfer, Wednesday, 2 days, no percentage chosen', tests.try(admin_u, 'admin@test.example', $q$select (select payout_method || '/' || payout_weekday || '/' || hold_days || '/' || commission_bps || '/' || commission_set from public.cms_payout_settings())$q$), 'manual_transfer/3/2/0/false');
@@ -154,7 +163,7 @@ begin
 
   ---------------------------------------------------------------- 4. the account: a status and masked details, never a full number
   perform tests.assert_eq('every business is listed, incomplete until BottlesUp says otherwise', tests.try(admin_u, 'admin@test.example', $q$select (select string_agg(org_name || '=' || status, ',' order by org_name) from public.cms_payout_accounts())$q$),
-    'Night Events=incomplete,Other Club Co=incomplete,Payout Club Co=incomplete');
+    'Night Events=incomplete,Other Club Co=incomplete,Payout Club Co=incomplete,Third Club Co=incomplete');
   perform tests.assert_eq('"ready" needs an account holder and the last digits', tests.try(admin_u, 'admin@test.example', format($q$select public.cms_save_payout_account(%L, '{"status":"ready"}'::jsonb)$q$, org_a)), 'ERROR: an account is only ready once it has an account holder and the last digits of the account');
   perform tests.assert_eq('"action required" needs to say what', tests.try(admin_u, 'admin@test.example', format($q$select public.cms_save_payout_account(%L, '{"status":"action_required"}'::jsonb)$q$, org_a)), 'ERROR: say what action is needed, so the business can be told');
   perform tests.assert_eq('a full account number is refused', tests.try(admin_u, 'admin@test.example', format($q$select public.cms_save_payout_account(%L, '{"masked_account":"123456789012"}'::jsonb)$q$, org_a)), 'ERROR: never enter a full account number: only the last few digits, for example •••• 1234');
@@ -187,7 +196,6 @@ begin
   perform tests.assert_eq('...and it is logged', (select count(*)::int from public.audit_log where action = 'payout.item_created' and entity_id = i1::text and actor_id = admin_u), 1);
   perform tests.assert_eq('nothing is eligible any more for the same period (a booking is in ONE payout)', tests.eligible_text(org_a), '(none)');
   perform tests.assert_eq('...and a second payout for it is refused', tests.try(admin_u, 'admin@test.example', format($q$select public.cms_create_payout_item(%L, tests.today() - 40, tests.today())::text$q$, org_a)), 'ERROR: nothing is eligible for that period: no paid online bookings past the waiting days that are not already in a payout');
-  perform tests.assert_raises('the same booking cannot be put into two payouts even by a mistake', format($q$insert into public.site_payout_item_bookings (item_id, booking_id, amount_cents) values (%L, %L, 1)$q$, i1, ba1), 'duplicate key');
   perform tests.assert_eq('the list shows it, with how many bookings', tests.try(admin_u, 'admin@test.example', format($q$select (select org_name || ':' || status || ':' || bookings || ':' || net_cents from public.cms_payout_items(null, %L))$q$, org_a)), 'Payout Club Co:pending:3:16170');
   perform tests.assert_eq('...filtered by status', tests.try(admin_u, 'admin@test.example', $q$select (select count(*) from public.cms_payout_items('paid'))::text$q$), '0');
   perform tests.assert_eq('...a status that does not exist is refused', tests.try(admin_u, 'admin@test.example', $q$select count(*)::text from public.cms_payout_items('maybe')$q$), 'ERROR: unknown status');
@@ -226,6 +234,21 @@ begin
   perform tests.assert_eq('...a cancelled payout cannot be changed', tests.try(admin_u, 'admin@test.example', format($q$select public.cms_set_payout_item_status(%L, 'paid', 'REF-123')$q$, i2)), 'ERROR: a payout that is cancelled cannot be changed');
   i3 := (tests.try(admin_u, 'admin@test.example', format($q$select public.cms_create_payout_item(%L, tests.today() - 40, tests.today())::text$q$, org_b)))::uuid;
   perform tests.assert_eq('...and a new payout takes them again', (select count(*)::int from public.site_payout_item_bookings where item_id = i3), 1);
+  perform tests.assert_raises('the same booking cannot be put into two payouts even by a mistake (the table itself refuses)', format($q$insert into public.site_payout_item_bookings (item_id, booking_id, amount_cents) values (%L, %L, 1)$q$, i3, ba1), 'duplicate key');
+
+  ---------------------------------------------------------------- 6b. rounding, a percentage that is not a round number, a period, an override that keeps what it was not told to change, and a retry after failing
+  perform tests.assert_eq('the payout day is a week away when today is that day (never "today")', public.payout_next_date(extract(dow from tests.today())::int), tests.today() + 7);
+  perform tests.assert_eq('...and the next day when it is tomorrow', public.payout_next_date((extract(dow from tests.today())::int + 1) % 7), tests.today() + 1);
+  perform tests.assert_eq('a business gets its own 3.45 percent', tests.try(admin_u, 'admin@test.example', format($q$select public.cms_save_payout_override(%L, '{"commission_bps":345,"payout_weekday":2,"hold_days":1}'::jsonb)::text$q$, org_c)), '{"note": null, "hold_days": 1, "commission_bps": 345, "payout_weekday": 2}');
+  perform tests.assert_eq('a later change of the note alone keeps the percentage, the weekday and the waiting days', tests.try(admin_u, 'admin@test.example', format($q$select public.cms_save_payout_override(%L, '{"note":"Agreed by phone"}'::jsonb)::text$q$, org_c)), '{"note": "Agreed by phone", "hold_days": 1, "commission_bps": 345, "payout_weekday": 2}');
+  perform tests.assert_eq('the commission is rounded to the nearest cent in the preview (32345 x 3.45% = 1115.9 -> 1116)', tests.eligible_text(org_c), 'Third Club Co 2 bookings gross=32345 commission=1116 net=31229');
+  perform tests.assert_eq('a period of more than a year is refused when making a payout too', tests.try(admin_u, 'admin@test.example', format($q$select public.cms_create_payout_item(%L, tests.today() - 400, tests.today())::text$q$, org_c)), 'ERROR: choose a period of a year at most');
+  c_item := (tests.try(admin_u, 'admin@test.example', format($q$select public.cms_create_payout_item(%L, tests.today() - 40, tests.today())::text$q$, org_c)))::uuid;
+  perform tests.assert_eq('...and the payout is rounded the same way, with the business''s own weekday for the expected date', (select commission_cents || ':' || net_cents || ':' || (expected_on = public.payout_next_date(2))::text from public.site_payout_items where id = c_item), '1116:31229:true');
+  perform tests.assert_eq('a pending payout can fail', tests.try(admin_u, 'admin@test.example', format($q$select public.cms_set_payout_item_status(%L, 'failed', null, 'Wrong bank details')$q$, c_item)), 'failed');
+  perform tests.assert_eq('a failed payout is not "processing" again: only a pending one is', tests.try(admin_u, 'admin@test.example', format($q$select public.cms_set_payout_item_status(%L, 'processing')$q$, c_item)), 'ERROR: only a pending payout can be marked as processing');
+  perform tests.assert_eq('a masked account with only the last digits is accepted', tests.try(admin_u, 'admin@test.example', format($q$select public.cms_save_payout_account(%L, '{"masked_account":"ok 1234"}'::jsonb)$q$, org_c)), 'incomplete');
+  perform tests.assert_raises('the table itself refuses an account number that is not masked, even when written past the function', format($q$insert into public.site_payout_accounts (org_id, masked_account) values (%L, 'full 98765432') on conflict (org_id) do update set masked_account = excluded.masked_account$q$, org_c), 'violates check constraint');
 
   ---------------------------------------------------------------- 7. what an owner or organizer sees of their own business
   j := tests.runj(owner_a, 'owner_a@po.example', format($q$select public.my_payouts(%L)$q$, org_a));

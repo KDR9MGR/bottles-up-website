@@ -625,7 +625,7 @@ $$;
 
 create function public.cms_refund_requests(p_status text default null)
 returns table (
-  request_id uuid, venue_name text, confirmation_code text, guest_name text, guest_email text, requested_by_kind text, reason text, status text, paid_cents int,
+  request_id uuid, booking_id uuid, venue_name text, confirmation_code text, guest_name text, guest_email text, requested_by_kind text, reason text, status text, paid_cents int,
   policy_percent int, suggested_cents int, approved_cents int, method text, decision_note text, failure_note text, created_at timestamptz, decided_at timestamptz, completed_at timestamptz
 )
 language plpgsql
@@ -638,7 +638,7 @@ begin
   if not public.is_cms_admin() then raise exception 'not allowed'; end if;
   if p_status is not null and p_status not in ('requested', 'approved', 'declined', 'processing', 'completed', 'failed') then raise exception 'unknown status'; end if;
   return query
-    select r.id, v.name, b.confirmation_code, b.customer_name, b.customer_email, r.requested_by_kind, r.reason, r.status, b.amount_paid_cents,
+    select r.id, r.booking_id, v.name, b.confirmation_code, b.customer_name, b.customer_email, r.requested_by_kind, r.reason, r.status, b.amount_paid_cents,
            r.policy_percent, r.suggested_cents, r.approved_cents, r.method, r.decision_note, r.failure_note, r.created_at, r.decided_at, r.completed_at
       from public.site_refund_requests r
       join public.site_table_bookings b on b.id = r.booking_id
