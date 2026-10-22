@@ -86,6 +86,9 @@ bash tests/db/concurrency_group_admission.sh
 echo "--- concurrency_floor.sh"
 bash tests/db/concurrency_floor.sh
 
+echo "--- concurrency_door_sales.sh"
+bash tests/db/concurrency_door_sales.sh
+
 echo "--- migration_guard.sh"
 bash tests/db/migration_guard.sh
 
