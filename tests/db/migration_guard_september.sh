@@ -139,11 +139,17 @@ FN_ARGS="p_venue_id uuid, p_booking_date date, p_time_slot_id uuid"
 MIG=$AVAIL_MIG
 BEFORE=$AVAIL_BEFORE
 
-AVAIL_FINAL=$(fp)
+# A LATER migration (20261021100000, the floor plan) replaces this function again, so the replay does not end with this migration's version. Keep whatever the
+# replay ended with, produce THIS migration's version from the 20260731 one, test it, and put the replay's version back at the end.
+LIVE_DEF=$(psql_db -c "select pg_get_functiondef('public.get_unavailable_table_types(uuid, date, uuid)'::regprocedure)")
 DECLARED_BEFORE=$(grep -E "c_before +constant" "$AVAIL_MIG" | grep -oE "[0-9a-f]{32}")
-[ "$AVAIL_FINAL" != "$DECLARED_BEFORE" ]         || fail "test setup: the replayed function should be the new one"
 psql_db -f "$AVAIL_BEFORE" >/dev/null
 [ "$(fp)" = "$DECLARED_BEFORE" ]                 || fail "the migration declares fingerprint $DECLARED_BEFORE for the 20260731 function, but the repository version is $(fp)"
+run_mig
+[ "$RC" = "0" ]                                  || fail "test setup: the migration failed on the 20260731 version: $OUT"
+AVAIL_FINAL=$(fp)
+[ "$AVAIL_FINAL" != "$DECLARED_BEFORE" ]         || fail "test setup: the migration should have changed the function"
+psql_db -f "$AVAIL_BEFORE" >/dev/null
 
 # 1. The 20260731 version is replaced, and ends exactly where the replay did.
 run_mig
@@ -189,5 +195,6 @@ run_mig
 psql_db -f "$AVAIL_BEFORE" >/dev/null
 run_mig
 [ "$RC" = "0" ] && [ "$(fp)" = "$AVAIL_FINAL" ]  || fail "could not put the new function back at the end: $OUT"
+echo "$LIVE_DEF;" | psql_db >/dev/null   # whatever the replay ended with (see above)
 
 echo "ok - September migrations: no-op where already live, build on both known checkin_ticket versions, stop (and leave nothing half-built) on a hand-edited, differently-secured, missing or conflicting object, replace the 20260731 availability function, tolerate formatting"

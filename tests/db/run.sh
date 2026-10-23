@@ -83,6 +83,12 @@ bash tests/db/concurrency_partial_delivery.sh
 echo "--- concurrency_group_admission.sh"
 bash tests/db/concurrency_group_admission.sh
 
+echo "--- concurrency_floor.sh"
+bash tests/db/concurrency_floor.sh
+
+echo "--- concurrency_door_sales.sh"
+bash tests/db/concurrency_door_sales.sh
+
 echo "--- migration_guard.sh"
 bash tests/db/migration_guard.sh
 
@@ -94,6 +100,15 @@ bash tests/db/migration_guard_september.sh
 
 echo "--- migration_guard_door_staff.sh"
 bash tests/db/migration_guard_door_staff.sh
+
+echo "--- migration_guard_floor.sh"
+bash tests/db/migration_guard_floor.sh
+
+echo "--- migration_guard_accepted.sh"
+bash tests/db/migration_guard_accepted.sh
+
+echo "--- migration_guard_refund_receipt.sh"
+bash tests/db/migration_guard_refund_receipt.sh
 
 echo "--- migration_guard_account_deletion.sh"
 bash tests/db/migration_guard_account_deletion.sh

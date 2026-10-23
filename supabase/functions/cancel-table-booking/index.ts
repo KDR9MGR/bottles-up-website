@@ -52,10 +52,16 @@ Deno.serve(async (req: Request) => {
       supabase.from('cms_admins').select('id, email').eq('id', userData.user.id).maybeSingle(),
       supabase.from('door_staff').select('id, email').eq('id', userData.user.id).maybeSingle(),
     ]);
+    let actorEmail = admin?.email ?? doorStaff?.email ?? 'unknown';
     if (!admin && !doorStaff) {
-      return json({ error: 'Forbidden' }, 403);
+      // A club's manager or owner may cancel a booking of their own club. The database decides (desk_may_cancel_booking), with the caller's own login: it raises
+      // "not allowed" for anyone else, and for a booking of another club.
+      const { error: deskError } = await anonClient.rpc('desk_may_cancel_booking', { p_booking: booking_id });
+      if (deskError) {
+        return json({ error: 'Forbidden' }, 403);
+      }
+      actorEmail = userData.user.email ?? 'unknown';
     }
-    const actorEmail = admin?.email ?? doorStaff?.email ?? 'unknown';
 
     const { data: booking, error: bookingError } = await supabase
       .from('site_table_bookings')

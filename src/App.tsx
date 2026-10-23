@@ -26,6 +26,9 @@ import CmsCheckIns from "./cms/pages/CheckIns";
 import CmsAuditLog from "./cms/pages/AuditLog";
 import CmsContent from "./cms/pages/Content";
 import CmsHelp from "./cms/pages/Help";
+import CmsRefunds from "./cms/pages/Refunds";
+import CmsConcessions from "./cms/pages/Concessions";
+import CmsPayouts from "./cms/pages/Payouts";
 import BookingSuccess from "./pages/BookingSuccess";
 import BookingCancel from "./pages/BookingCancel";
 import ClubPaymentConfirm from "./pages/ClubPaymentConfirm";
@@ -162,6 +165,9 @@ const App = () => {
               <Route path="venues" element={<CmsVenues />} />
               <Route path="table-bookings" element={<CmsTableBookings />} />
               <Route path="reconciliation" element={<CmsReconciliation />} />
+              <Route path="refunds" element={<CmsRefunds />} />
+              <Route path="discounts" element={<CmsConcessions />} />
+              <Route path="payouts" element={<CmsPayouts />} />
               <Route path="promo-codes" element={<CmsPromoCodes />} />
               {ACCOUNT_ONBOARDING_ENABLED && <Route path="verifications" element={<CmsVerifications />} />}
               <Route path="vip-list" element={<CmsVipList />} />

@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { corsHeadersFor, handleOptions, isPreviewOrLocalOrigin } from '../_shared/cors.ts';
+import { tablesTaken } from '../_shared/tableCapacity.ts';
 import { validatePromoCode } from '../_shared/promoCode.ts';
 import { dueAtVenueBottleCents } from '../_shared/bottlePayment.ts';
 import { computeArrivalDate } from '../_shared/bookingNight.ts';
@@ -182,18 +183,18 @@ Deno.serve(async (req: Request) => {
       productLabel = `${tableType.venue.name} - ${tableType.name} table (deposit)`;
     }
 
-    // Best-effort capacity check against bookings already confirmed paid for this exact
-    // table type + slot + date. Not airtight under heavy concurrent checkouts (same
-    // documented trade-off as ticket sales), but sufficient at this venue's scale.
-    const { count: paidCount } = await supabase
-      .from('site_table_bookings')
-      .select('id', { count: 'exact', head: true })
-      .eq('table_type_id', table_type_id)
-      .eq('time_slot_id', time_slot_id)
-      .eq('booking_date', arrivalDate)
-      .eq('status', 'paid');
+    // Capacity check for this exact table type + slot + date: paid bookings, checkouts that other guests started in the last 10 minutes (the checkout hold) and the
+    // tables a manager has held or taken out of use, all counted by the database (see _shared/tableCapacity.ts). Not airtight under heavy concurrent
+    // checkouts (same documented trade-off as ticket sales), but sufficient at this venue's scale.
+    let takenTables: number;
+    try {
+      takenTables = await tablesTaken(supabase, { typeId: table_type_id, slotId: time_slot_id, arrivalDate, excludeEmail: customer_email });
+    } catch (availabilityError) {
+      console.error('table availability check failed:', availabilityError);
+      return json({ error: 'We could not check availability just now. Please try again.' }, 503);
+    }
 
-    if ((paidCount ?? 0) >= tableType.inventory_count) {
+    if (takenTables >= tableType.inventory_count) {
       return json({ error: 'No tables of this type left for that date and time' }, 409);
     }
 
