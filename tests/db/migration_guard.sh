@@ -49,9 +49,9 @@ scan T-ENDED; scan T-NT
 ADMITTED=$(psql_db -c "select count(*) from public.site_orders where ticket_code in ('T-ENDED', 'T-NT') and checked_in_at is not null")
 [ "$ADMITTED" = "2" ]                            || fail "test setup: the old version should have admitted both refused tickets (got $ADMITTED)"
 AUDIT_OUT=$(psql -X -t -A -F '|' -v ON_ERROR_STOP=1 -d "$DB" -f "$AUDIT" 2>&1) || fail "the audit script failed: $AUDIT_OUT"
-echo "$AUDIT_OUT" | grep -q "T-ENDED"              || fail "the audit did not list the expired ticket that was admitted: $AUDIT_OUT"
-echo "$AUDIT_OUT" | grep -q "T-NT"                 || fail "the audit did not list the code-protected ticket that was admitted: $AUDIT_OUT"
-echo "$AUDIT_OUT" | grep -qE '^1\|1\|2\|'          || fail "the audit summary should count 1 expired + 1 code-required over 2 orders: $AUDIT_OUT"
+grep -q "T-ENDED" <<<"$AUDIT_OUT"              || fail "the audit did not list the expired ticket that was admitted: $AUDIT_OUT"
+grep -q "T-NT" <<<"$AUDIT_OUT"                 || fail "the audit did not list the code-protected ticket that was admitted: $AUDIT_OUT"
+grep -qE '^1\|1\|2\|' <<<"$AUDIT_OUT"          || fail "the audit summary should count 1 expired + 1 code-required over 2 orders: $AUDIT_OUT"
 
 # A LEGITIMATE refusal followed, in a separate moment, by an admission (the guest then entered their code) is not the bug and
 # must not be flagged: the bug writes both rows in one instant.
@@ -62,8 +62,8 @@ insert into public.scan_attempts (ticket_code_attempted, result, order_id, scann
   select 'T-STALE', 'ok', id, '$STAFF', now() - interval '1 minute' from public.site_orders where ticket_code = 'T-STALE';
 SQL
 AUDIT_OUT=$(psql -X -t -A -F '|' -v ON_ERROR_STOP=1 -d "$DB" -f "$AUDIT" 2>&1)
-echo "$AUDIT_OUT" | grep -q "T-STALE"             && fail "the audit flagged a legitimate refuse-then-admit sequence: $AUDIT_OUT"
-echo "$AUDIT_OUT" | grep -qE '^1\|1\|2\|'          || fail "the audit SUMMARY counted a legitimate refuse-then-admit sequence (it should still be 1 + 1 over 2 orders): $AUDIT_OUT"
+grep -q "T-STALE" <<<"$AUDIT_OUT"             && fail "the audit flagged a legitimate refuse-then-admit sequence: $AUDIT_OUT"
+grep -qE '^1\|1\|2\|' <<<"$AUDIT_OUT"          || fail "the audit SUMMARY counted a legitimate refuse-then-admit sequence (it should still be 1 + 1 over 2 orders): $AUDIT_OUT"
 clean_data
 run_mig
 [ "$RC" = "0" ]                                  || fail "the migration failed on the old version: $OUT"

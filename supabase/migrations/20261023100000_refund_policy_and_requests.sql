@@ -486,7 +486,7 @@ create function public.desk_refund_requests(p_venue uuid, p_status text default 
 returns table (
   request_id uuid, booking_id uuid, confirmation_code text, guest_name text, table_name text, booking_date date, requested_by_kind text, reason text, status text,
   paid_cents int, available_cents int, policy_percent int, suggested_cents int, approved_cents int, method text, decision_note text, failure_note text,
-  decided_at timestamptz, created_at timestamptz, completed_at timestamptz, refund_reference text, refund_receipt_path text
+  decided_at timestamptz, created_at timestamptz, completed_at timestamptz
 )
 language plpgsql
 stable
@@ -501,11 +501,10 @@ begin
   return query
     select r.id, r.booking_id, b.confirmation_code, b.customer_name, t.name, b.booking_date, r.requested_by_kind, r.reason, r.status,
            b.amount_paid_cents, public.booking_refundable_cents(b.id, r.id), r.policy_percent, r.suggested_cents, r.approved_cents, r.method, r.decision_note, r.failure_note,
-           r.decided_at, r.created_at, r.completed_at, f.pos_reference, f.receipt_photo_path
+           r.decided_at, r.created_at, r.completed_at
       from public.site_refund_requests r
       join public.site_table_bookings b on b.id = r.booking_id
       join public.site_table_types t on t.id = b.table_type_id
-      left join public.site_table_booking_refunds f on f.id = r.refund_id
      where r.venue_id = p_venue and (p_status is null or r.status = p_status)
      order by (r.status = 'requested') desc, r.created_at desc, r.id
      limit 200;
@@ -577,8 +576,6 @@ begin
   if r.status <> 'approved' or r.method <> 'club' then raise exception 'only an approved refund that is paid back at the club can be recorded here'; end if;
   if v_ref is null and v_path is null then raise exception 'add the terminal or receipt reference, or a photo of the receipt, as evidence'; end if;
   if v_ref is not null and char_length(v_ref) > 200 then raise exception 'the reference is too long'; end if;
-  -- the photo is filed under the booking's own id in the private receipts bucket (the bucket's policy lets a manager of THAT booking add one there), so it cannot point at another booking's file
-  if v_path is not null and (char_length(v_path) > 300 or v_path not like r.booking_id::text || '/%' or v_path like '%..%') then raise exception 'the receipt photo does not belong to this booking'; end if;
   perform 1 from public.site_table_bookings b where b.id = r.booking_id for update;
   insert into public.site_table_booking_refunds (booking_id, refund_type, amount_cents, reason, pos_reference, receipt_photo_path, recorded_by)
   values (r.booking_id, 'club', r.approved_cents, r.reason, v_ref, v_path, auth.uid()) returning id into v_refund;

@@ -67,9 +67,9 @@ seed
 # The one defect that leaves a trace is findable: a code accepted after the event had ended (an event with no end time counts as
 # over 12 hours after it started).
 AUDIT_OUT=$(psql -X -t -A -F '|' -v ON_ERROR_STOP=1 -d "$DB" -f "$AUDIT" 2>&1) || fail "the audit script failed: $AUDIT_OUT"
-echo "$AUDIT_OUT" | grep -q "GV-ENDED"             || fail "the audit did not list the guest admitted by code after the event ended: $AUDIT_OUT"
-echo "$AUDIT_OUT" | grep -q "GV-STALE"             || fail "the audit did not list the guest admitted after an event with no end time had passed its 12-hour window: $AUDIT_OUT"
-echo "$AUDIT_OUT" | grep -q "GV-NULL"              && fail "the audit listed a code accepted BEFORE the event ended: $AUDIT_OUT"
+grep -q "GV-ENDED" <<<"$AUDIT_OUT"             || fail "the audit did not list the guest admitted by code after the event ended: $AUDIT_OUT"
+grep -q "GV-STALE" <<<"$AUDIT_OUT"             || fail "the audit did not list the guest admitted after an event with no end time had passed its 12-hour window: $AUDIT_OUT"
+grep -q "GV-NULL" <<<"$AUDIT_OUT"              && fail "the audit listed a code accepted BEFORE the event ended: $AUDIT_OUT"
 clean_data
 
 # The migration cures all three.

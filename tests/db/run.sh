@@ -107,4 +107,7 @@ bash tests/db/migration_guard_floor.sh
 echo "--- migration_guard_accepted.sh"
 bash tests/db/migration_guard_accepted.sh
 
+echo "--- migration_guard_refund_receipt.sh"
+bash tests/db/migration_guard_refund_receipt.sh
+
 echo "==> all database tests passed ($assertions assertions + the concurrency and migration-guard scripts)$([ "$WITH_FIX" = "1" ] && echo " with $NPROP proposed fix(es) applied")"
