@@ -8,7 +8,11 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 DB="${TEST_DB_NAME:-bottlesup_test}"
 psql_db() { psql -X -q -t -A -v ON_ERROR_STOP=1 -d "$DB" "$@"; }
-fail() { echo "FAIL - outbox concurrency: $1"; exit 1; }
+fail() {
+  echo "FAIL - outbox concurrency: $1"
+  if [ -n "${OUT_A:-}" ]; then echo "--- run A output:"; head -5 "$OUT_A"; echo "--- run B output:"; head -5 "$OUT_B"; fi
+  exit 1
+}
 
 # Other scripts in this run leave committed rows behind (for example the seating race leaves a queued "seated" message: its venue cannot be
 # deleted while other bookings still point at it). They must not take part in this race, so they are parked (held for an hour) and released after.
@@ -43,8 +47,9 @@ SQL
 WAITED=$(( $(now_ms) - START ))
 wait "$PID_A"
 
-A_IDS=$(grep '^A:' "$OUT_A" | sed 's/^A://' | sort)
-B_IDS=$(grep '^B:' "$OUT_B" | sed 's/^B://' | sort)
+# (no match must reach the checks below, which say what went wrong: with pipefail a run that was handed nothing would end the script here without a word)
+A_IDS=$(grep '^A:' "$OUT_A" | sed 's/^A://' | sort || true)
+B_IDS=$(grep '^B:' "$OUT_B" | sed 's/^B://' | sort || true)
 NA=$(printf '%s\n' "$A_IDS" | grep -c . || true)
 NB=$(printf '%s\n' "$B_IDS" | grep -c . || true)
 SHARED=$(comm -12 <(printf '%s\n' "$A_IDS") <(printf '%s\n' "$B_IDS") | grep -c . || true)

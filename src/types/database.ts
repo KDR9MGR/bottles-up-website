@@ -222,7 +222,7 @@ export interface Database {
           result: ScanResult;
           order_id: string | null;
           booking_id: string | null;
-          scanned_by: string;
+          scanned_by: string | null;
           created_at: string;
         };
         Insert: {
@@ -231,7 +231,7 @@ export interface Database {
           result: ScanResult;
           order_id?: string | null;
           booking_id?: string | null;
-          scanned_by: string;
+          scanned_by?: string | null;
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['scan_attempts']['Row']>;

@@ -32,7 +32,7 @@ type ScanIssueRow = {
   id: string;
   ticket_code_attempted: string;
   result: ScanResult;
-  scanned_by: string;
+  scanned_by: string | null; // empty once that person has deleted their account
   created_at: string;
 };
 
@@ -178,7 +178,7 @@ const CmsCheckIns = () => {
                 <TableRow key={issue.id}>
                   <TableCell className="font-mono text-xs">{issue.ticket_code_attempted}</TableCell>
                   <TableCell>{issueLabel[issue.result as Exclude<ScanResult, 'ok'>]}</TableCell>
-                  <TableCell>{staffMap[issue.scanned_by] ?? 'Unknown'}</TableCell>
+                  <TableCell>{(issue.scanned_by ? staffMap[issue.scanned_by] : null) ?? 'Unknown'}</TableCell>
                   <TableCell>{new Date(issue.created_at).toLocaleString()}</TableCell>
                 </TableRow>
               ))}
