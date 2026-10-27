@@ -193,6 +193,14 @@ create table public.site_community_rules (
   published_by uuid references auth.users (id) on delete set null
 );
 
+-- Each time a person asks for caption ideas (to keep it to a sensible number a day: every request costs BottlesUp money).
+create table public.site_ai_caption_uses (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index site_ai_caption_uses_user_idx on public.site_ai_caption_uses (user_id, created_at desc);
+
 -- Who has accepted which version of the community rules.
 create table public.site_rules_acceptance (
   user_id uuid primary key references auth.users (id) on delete cascade,
@@ -210,10 +218,11 @@ alter table public.site_member_lists enable row level security;
 alter table public.site_story_views enable row level security;
 alter table public.site_banned_terms enable row level security;
 alter table public.site_community_rules enable row level security;
+alter table public.site_ai_caption_uses enable row level security;
 alter table public.site_rules_acceptance enable row level security;
 revoke all on table
   public.site_posts, public.site_post_media, public.site_post_tags, public.site_post_likes, public.site_post_saves, public.site_comments,
-  public.site_member_lists, public.site_story_views, public.site_banned_terms, public.site_community_rules, public.site_rules_acceptance
+  public.site_member_lists, public.site_story_views, public.site_banned_terms, public.site_community_rules, public.site_ai_caption_uses, public.site_rules_acceptance
 from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -445,6 +454,27 @@ begin
   values (auth.uid(), coalesce(nullif(auth.jwt() ->> 'email', ''), 'unknown'), 'rules_published', 'community_rules', v_version::text,
           jsonb_build_object('version', v_version, 'characters', char_length(v_body)));
   return public.rules_current();
+end;
+$$;
+
+-- The edge function `suggest-caption` calls this AS the person, before it asks the model for anything: caption ideas must be switched on, the person must have accepted the
+-- community rules, and at most 20 requests a day. One request is counted here; the function then calls the model. Answers how many are left today.
+create function public.ai_caption_begin()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_used int;
+begin
+  if auth.uid() is null then raise exception 'Sign in first.'; end if;
+  if not public.feature_enabled('social') or not public.feature_enabled('ai_captions') then raise exception 'Caption ideas are not open yet.'; end if;
+  perform public.social_require_rules();
+  select count(*) into v_used from public.site_ai_caption_uses u where u.user_id = auth.uid() and u.created_at > now() - interval '1 day';
+  if v_used >= 20 then raise exception 'You have used all of today''s caption ideas. Try again tomorrow.'; end if;
+  insert into public.site_ai_caption_uses (user_id) values (auth.uid());
+  return jsonb_build_object('left', 19 - v_used);
 end;
 $$;
 
@@ -1166,7 +1196,7 @@ revoke all on function
   public.social_media_profile(text), public.social_media_can_add(text), public.social_media_visible(text),
   public.post_visible(uuid, uuid), public.profile_mini(uuid), public.post_card(uuid, uuid), public.social_rules_version(), public.social_require_rules(),
   public.social_text_ok(text), public.social_json_int(jsonb, text), public.comment_card(uuid, uuid),
-  public.rules_status(), public.rules_accept(int), public.rules_current(), public.cms_publish_rules(text), public.cms_set_banned_term(text, boolean), public.cms_list_banned_terms(),
+  public.rules_status(), public.rules_accept(int), public.rules_current(), public.cms_publish_rules(text), public.cms_set_banned_term(text, boolean), public.cms_list_banned_terms(), public.ai_caption_begin(),
   public.post_create(uuid, text, text, text, jsonb, jsonb, boolean), public.post_edit(uuid, uuid, text, text, boolean), public.post_delete(uuid, uuid),
   public.post_get(uuid, uuid), public.post_untag(uuid, uuid),
   public.profile_posts(uuid, uuid, text, int, timestamptz, uuid), public.feed_home(uuid, int, timestamptz, uuid), public.feed_suggested(uuid, int),
@@ -1180,7 +1210,7 @@ from public, anon, authenticated;
 grant execute on function public.social_media_can_add(text), public.social_media_visible(text) to authenticated;
 
 grant execute on function
-  public.rules_status(), public.rules_accept(int), public.cms_publish_rules(text), public.cms_set_banned_term(text, boolean), public.cms_list_banned_terms(),
+  public.rules_status(), public.rules_accept(int), public.cms_publish_rules(text), public.cms_set_banned_term(text, boolean), public.cms_list_banned_terms(), public.ai_caption_begin(),
   public.post_create(uuid, text, text, text, jsonb, jsonb, boolean), public.post_edit(uuid, uuid, text, text, boolean), public.post_delete(uuid, uuid),
   public.post_get(uuid, uuid), public.post_untag(uuid, uuid),
   public.profile_posts(uuid, uuid, text, int, timestamptz, uuid), public.feed_home(uuid, int, timestamptz, uuid), public.feed_suggested(uuid, int),

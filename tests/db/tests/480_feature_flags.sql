@@ -16,7 +16,7 @@ begin
   perform tests.assert_eq('social starts off', (j ->> 'social')::boolean, false);
   perform tests.assert_eq('the marketplace starts off', (j ->> 'marketplace')::boolean, false);
   perform tests.assert_eq('subscriptions start off', (j ->> 'subscriptions')::boolean, false);
-  perform tests.assert_eq('all 15 switches exist', (select count(*) from jsonb_object_keys(j))::int, 15);
+  perform tests.assert_eq('all 16 switches exist', (select count(*) from jsonb_object_keys(j))::int, 16);
   perform tests.assert_eq('none is on', (select count(*) from jsonb_each(j) e where e.value = 'true'::jsonb)::int, 0);
   perform tests.assert_raises('a visitor cannot change a switch', $q$select public.cms_set_feature('social', true)$q$, 'permission denied');
   perform tests.assert_raises('a visitor cannot read the table', $q$select * from public.site_feature_flags$q$, 'permission denied');
@@ -33,7 +33,7 @@ begin
   perform tests.assert_eq('...and only that one changed', (select count(*) from jsonb_each(j) e where e.value = 'true'::jsonb)::int, 1);
   perform tests.assert_eq('the list for the CMS shows it with its note', (select enabled from public.cms_list_features() where key = 'social'), true);
   perform tests.assert_true('...every switch has a note', (select bool_and(note is not null) from public.cms_list_features()));
-  perform tests.assert_eq('15 rows in the CMS list', (select count(*) from public.cms_list_features())::int, 15);
+  perform tests.assert_eq('16 rows in the CMS list', (select count(*) from public.cms_list_features())::int, 16);
 
   perform tests.login_anon();
   perform tests.assert_eq('a visitor now sees social on', (public.site_features() ->> 'social')::boolean, true);

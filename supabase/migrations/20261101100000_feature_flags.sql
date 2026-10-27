@@ -34,7 +34,8 @@ insert into public.site_feature_flags (key, note) values
   ('advertising', 'Sponsored placements'),
   ('creator_earnings', 'Creator income and payouts'),
   ('ranks', 'Follower-based verification ranks and awards'),
-  ('jobs', 'Jobs and opportunities');
+  ('jobs', 'Jobs and opportunities'),
+  ('ai_captions', 'Caption ideas written by an AI for a post, which the person reads and changes before posting');
 
 -- What is switched on. Anyone may ask, signed in or not (the app asks before it knows who is using it); it shows no person, only names of features.
 create function public.site_features()

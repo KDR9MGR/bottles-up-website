@@ -671,6 +671,36 @@ begin
   perform tests.assert_raises('...nor the rules status', $q$select public.rules_status()$q$, 'permission denied');
   perform tests.logout();
 
+  ---------------------------------------------------------------- caption ideas (the gate before the model is asked)
+  perform tests.assert_eq('caption ideas are off at first', tests.q(ann, a_e, 'public.ai_caption_begin()'), 'ERROR: Caption ideas are not open yet.');
+  perform tests.login(admin_u, 'admin@test.example'); perform public.cms_set_feature('ai_captions', true); perform tests.logout();
+  perform tests.assert_eq('a visitor cannot ask', (select count(*) from public.site_ai_caption_uses)::int, 0);
+  perform tests.login_anon();
+  perform tests.assert_raises('...at all', $q$select public.ai_caption_begin()$q$, 'permission denied');
+  perform tests.logout();
+  insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000005f9', 'newcomer@posts.example');
+  perform tests.assert_eq('someone who has not accepted the community rules cannot ask', tests.q('00000000-0000-0000-0000-0000000005f9', 'newcomer@posts.example', 'public.ai_caption_begin()'), 'ERROR: Read and accept the community rules first.');
+  perform tests.assert_eq('the first request says how many are left', tests.f(ann, a_e, 'public.ai_caption_begin()', '{left}'), '19');
+  perform tests.assert_eq('...and the next', tests.f(ann, a_e, 'public.ai_caption_begin()', '{left}'), '18');
+  perform tests.assert_eq('each one is counted for the person', (select count(*) from public.site_ai_caption_uses where user_id = ann)::int, 2);
+  insert into public.site_ai_caption_uses (user_id) select ann from generate_series(1, 17);
+  update public.site_ai_caption_uses set created_at = now() - interval '10 hours' where id in (select id from public.site_ai_caption_uses where user_id = ann order by id limit 6);
+  perform tests.assert_eq('the 20th of the day is allowed, with none left', tests.f(ann, a_e, 'public.ai_caption_begin()', '{left}'), '0');
+  perform tests.assert_eq('the 21st is not', tests.q(ann, a_e, 'public.ai_caption_begin()'), 'ERROR: You have used all of today''s caption ideas. Try again tomorrow.');
+  perform tests.assert_eq('...and is not counted', (select count(*) from public.site_ai_caption_uses where user_id = ann)::int, 20);
+  perform tests.assert_eq('someone else is not slowed by it', tests.f(bob, b_e, 'public.ai_caption_begin()', '{left}'), '19');
+  update public.site_ai_caption_uses set created_at = now() - interval '36 hours' where user_id = ann;
+  perform tests.assert_eq('requests from yesterday do not count', tests.f(ann, a_e, 'public.ai_caption_begin()', '{left}'), '19');
+  perform tests.login(admin_u, 'admin@test.example'); perform public.cms_set_feature('ai_captions', false); perform tests.logout();
+  perform tests.login(admin_u, 'admin@test.example'); perform public.cms_set_feature('ai_captions', true); perform public.cms_set_feature('social', false); perform tests.logout();
+  perform tests.assert_eq('with the social switch off, caption ideas are closed too', tests.q(ann, a_e, 'public.ai_caption_begin()'), 'ERROR: Caption ideas are not open yet.');
+  perform tests.login(admin_u, 'admin@test.example'); perform public.cms_set_feature('social', true); perform public.cms_set_feature('ai_captions', false); perform tests.logout();
+  perform tests.assert_eq('switched off again, it stops at once', tests.q(ann, a_e, 'public.ai_caption_begin()'), 'ERROR: Caption ideas are not open yet.');
+  perform tests.login(bob, b_e);
+  perform tests.assert_raises('the list of requests is closed', $q$select * from public.site_ai_caption_uses$q$, 'permission denied');
+  perform tests.logout();
+  delete from auth.users where id = '00000000-0000-0000-0000-0000000005f9';
+
   ---------------------------------------------------------------- the community rules text, from the CMS
   perform tests.login_anon();
   perform tests.assert_eq('before BottlesUp publishes anything the rules are version 1 with no text, and anyone may ask', (public.rules_current())::text, '{"body": null, "version": 1}');
