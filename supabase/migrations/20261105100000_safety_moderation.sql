@@ -1,6 +1,6 @@
 -- Safety and moderation (customer app completion plan, M5; the stores require reporting, blocking and removal of user content).
 --
---   * REPORTING: a person reports a post, a story, a comment, a profile, a message or a review they can SEE, with a reason and optional words. One report from one profile for
+--   * REPORTING: a person reports a post, a story, a comment, a profile, a message, a review or a job listing they can SEE, with a reason and optional words. One report from one profile for
 --     one thing (a second one is the same report, said back as "already"); 20 reports a day from one profile; never your own. The words the reported thing said are
 --     copied into the report, so BottlesUp can still read it after it is deleted. Reporting never asks for the community rules, and the person is never told what happened.
 --   * THE QUEUE is for BottlesUp admins (cms_admins) only: reports are grouped by the thing reported, oldest first, with how many people reported it and why. Reporters are
@@ -16,7 +16,7 @@ create table public.site_reports (
   id uuid primary key default gen_random_uuid(),
   -- The profile that reported; kept as null if that account is deleted, so the report survives.
   reporter uuid references public.site_profiles (id) on delete set null,
-  kind text not null check (kind in ('post', 'comment', 'profile', 'message', 'review')),
+  kind text not null check (kind in ('post', 'comment', 'profile', 'message', 'review', 'job')),
   target uuid not null,
   -- Whose content it is (or the profile itself); null once that account is deleted.
   target_profile uuid references public.site_profiles (id) on delete set null,
@@ -57,7 +57,7 @@ declare
 begin
   perform public.profile_require_actor(p_actor);
   if not public.feature_enabled('social') then raise exception 'Reporting is not open yet.'; end if;
-  if p_kind is null or p_kind not in ('post', 'comment', 'profile', 'message', 'review') then raise exception 'Say what you are reporting.'; end if;
+  if p_kind is null or p_kind not in ('post', 'comment', 'profile', 'message', 'review', 'job') then raise exception 'Say what you are reporting.'; end if;
   if p_reason is null or p_reason not in ('spam', 'harassment', 'hate', 'sexual', 'violence', 'scam', 'impersonation', 'self_harm', 'other') then raise exception 'Choose a reason.'; end if;
   if v_details is not null and char_length(v_details) > 500 then raise exception 'Keep it to 500 characters.'; end if;
   if p_target is null then raise exception 'This isn''t available.'; end if;
@@ -79,6 +79,10 @@ begin
     select m.sender, left(case when m.kind = 'text' then m.body else '[shared ' || m.kind || '] ' || coalesce(m.body, '') end, 500) into v_owner, v_excerpt
     from public.site_dm_messages m
     where m.id = p_target and m.deleted_at is null and public.dm_is_member(p_actor, m.conversation);
+  elsif p_kind = 'job' then
+    select j.poster, left(j.title || ': ' || j.description, 500) into v_owner, v_excerpt
+    from public.site_jobs j
+    where j.id = p_target and public.job_visible(p_actor, j.id);
   else
     select r.author, left('Rating ' || r.rating || '/5: ' || coalesce(r.body, ''), 500) into v_owner, v_excerpt
     from public.site_reviews r
@@ -149,6 +153,7 @@ begin
             when 'comment' then coalesce((select c.status from public.site_comments c where c.id = x.target), 'gone')
             when 'review' then coalesce((select r.status from public.site_reviews r where r.id = x.target), 'gone')
             when 'message' then coalesce((select case when m.deleted_at is null then 'active' else 'removed' end from public.site_dm_messages m where m.id = x.target), 'gone')
+            when 'job' then coalesce((select case when j.status = 'removed' then 'removed' else 'active' end from public.site_jobs j where j.id = x.target), 'gone')
             else coalesce((select case when s.status = 'active' then 'active' else 'suspended' end from public.site_profiles s where s.id = x.target), 'gone')
           end
         ) as item
@@ -208,7 +213,7 @@ declare
   v_at timestamptz := clock_timestamp();
 begin
   if auth.uid() is null or not public.is_cms_admin() then raise exception 'Only a BottlesUp admin can change this.'; end if;
-  if p_kind is null or p_kind not in ('post', 'comment', 'profile', 'message', 'review') or p_target is null then raise exception 'Say what was reported.'; end if;
+  if p_kind is null or p_kind not in ('post', 'comment', 'profile', 'message', 'review', 'job') or p_target is null then raise exception 'Say what was reported.'; end if;
   if p_action is null or p_action not in ('dismiss', 'remove', 'suspend', 'restore') then raise exception 'Choose dismiss, remove, suspend or restore.'; end if;
   if v_note is not null and char_length(v_note) > 500 then raise exception 'Keep the note to 500 characters.'; end if;
 
@@ -223,6 +228,7 @@ begin
     if p_kind = 'post' then update public.site_posts set status = 'removed' where id = p_target;
     elsif p_kind = 'comment' then update public.site_comments set status = 'removed' where id = p_target;
     elsif p_kind = 'review' then update public.site_reviews set status = 'removed' where id = p_target;
+    elsif p_kind = 'job' then update public.site_jobs set status = 'removed', closed_at = coalesce(closed_at, now()) where id = p_target;
     else update public.site_dm_messages set deleted_at = coalesce(deleted_at, now()) where id = p_target;
     end if;
   elsif p_action = 'suspend' then
@@ -232,6 +238,7 @@ begin
     if p_kind = 'post' then update public.site_posts set status = 'active' where id = p_target;
     elsif p_kind = 'comment' then update public.site_comments set status = 'active' where id = p_target;
     elsif p_kind = 'review' then update public.site_reviews set status = 'active' where id = p_target;
+    elsif p_kind = 'job' then update public.site_jobs set status = 'closed' where id = p_target and status = 'removed';
     elsif p_kind = 'message' then update public.site_dm_messages set deleted_at = null where id = p_target;
     end if;
     -- What was done to the person behind it is undone as well, whatever was reported.
@@ -319,7 +326,7 @@ $$;
 -- 3. Daily housekeeping (a scheduled job, as the service role)
 -- ---------------------------------------------------------------------------
 -- Stories that expired more than p_story_days ago are deleted (they are hidden from everyone the moment they expire; this frees the rows, and their files become unused and are
--- removed by sweep-social-media); read notifications older than p_notification_days (never fewer than 7); caption-idea requests older than two days (they only count a day).
+-- removed by sweep-social-media); read notifications older than p_notification_days (never fewer than 7); caption-idea requests older than two days (they only count a day). The delivery address of a plaque that arrived 90 days ago is wiped.
 -- Posts, comments, messages and reports are never touched here: reports are the evidence BottlesUp keeps.
 create function public.social_housekeeping(p_story_days int default 7, p_notification_days int default 90)
 returns jsonb
@@ -331,13 +338,15 @@ declare
   v_stories int;
   v_notifications int;
   v_uses int;
+  v_plaques int;
 begin
   delete from public.site_posts where kind = 'story' and expires_at < now() - make_interval(days => greatest(coalesce(p_story_days, 7), 1));
   get diagnostics v_stories = row_count;
   v_notifications := public.notifications_purge(coalesce(p_notification_days, 90));
   delete from public.site_ai_caption_uses where created_at < now() - interval '2 days';
   get diagnostics v_uses = row_count;
-  return jsonb_build_object('stories', v_stories, 'notifications', v_notifications, 'caption_uses', v_uses);
+  v_plaques := public.plaque_addresses_wipe();
+  return jsonb_build_object('stories', v_stories, 'notifications', v_notifications, 'caption_uses', v_uses, 'plaque_addresses', v_plaques);
 end;
 $$;
 

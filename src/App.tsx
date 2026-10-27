@@ -33,6 +33,7 @@ import CmsModeration from "./cms/pages/Moderation";
 import CmsSocialSettings from "./cms/pages/SocialSettings";
 import CmsMarketplace from "./cms/pages/Marketplace";
 import CmsBilling from "./cms/pages/Billing";
+import CmsRecognition from "./cms/pages/Recognition";
 import BookingSuccess from "./pages/BookingSuccess";
 import BookingCancel from "./pages/BookingCancel";
 import SplitShareThanks from "./pages/SplitShareThanks";
@@ -184,6 +185,7 @@ const App = () => {
               <Route path="social-settings" element={<CmsSocialSettings />} />
               <Route path="marketplace" element={<CmsMarketplace />} />
               <Route path="billing" element={<CmsBilling />} />
+              <Route path="recognition" element={<CmsRecognition />} />
               <Route path="promo-codes" element={<CmsPromoCodes />} />
               {ACCOUNT_ONBOARDING_ENABLED && <Route path="verifications" element={<CmsVerifications />} />}
               <Route path="vip-list" element={<CmsVipList />} />

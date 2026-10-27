@@ -277,7 +277,8 @@ as $$
     'display_name', case p.kind when 'personal' then coalesce(nullif(btrim(pr.name), ''), pr.username) else p.display_name end,
     'category', p.category,
     'avatar_url', case p.kind when 'personal' then pr.avatar_url else p.avatar_url end,
-    'verified', p.org_id is not null and exists (select 1 from public.site_verifications v where v.org_id = p.org_id and v.state = 'verified'),
+    'verified', (public.profile_badge(p.id) ->> 'verified')::boolean,
+    'rank', public.profile_badge(p.id) -> 'rank',
     'privacy', p.privacy
   )
   from public.site_profiles p

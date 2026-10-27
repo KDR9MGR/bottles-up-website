@@ -331,13 +331,13 @@ begin
   perform tests.assert_raises('housekeeping is not for people, not even an admin', $q$select public.social_housekeeping()$q$, 'permission denied');
   perform tests.logout();
   r1 := public.social_housekeeping()::text;
-  perform tests.assert_eq('it says what it removed, each count under its own name', r1, '{"stories": 2, "caption_uses": 2, "notifications": 1}');
+  perform tests.assert_eq('it says what it removed, each count under its own name', r1, '{"stories": 2, "caption_uses": 2, "notifications": 1, "plaque_addresses": 0}');
   perform tests.assert_eq('stories that expired more than a week ago are gone, the others are not', (select string_agg(caption, ',' order by caption) from public.site_posts where kind = 'story' and caption in ('long gone', 'eight days', 'six days', 'just expired')), 'just expired,six days');
   perform tests.assert_eq('a post is never touched, however old', (select count(*)::int from public.site_posts where caption = 'old but a post'), 1);
   perform tests.assert_eq('only a read notification that is more than 90 days old goes', (select string_agg(dedupe_key, ',' order by dedupe_key) from public.site_notifications where dedupe_key in ('old-read', 'old-unread', 'mid-read', 'new-read')), 'mid-read,new-read,old-unread');
   perform tests.assert_eq('a caption request from 30 hours ago stays; from three days ago goes', (select count(*)::int from public.site_ai_caption_uses where user_id = dee), 1);
-  perform tests.assert_eq('running it again removes nothing more', public.social_housekeeping()::text, '{"stories": 0, "caption_uses": 0, "notifications": 0}');
-  perform tests.assert_eq('a longer wait for stories keeps yesterday''s and the week-old ones', public.social_housekeeping(30, 90)::text, '{"stories": 0, "caption_uses": 0, "notifications": 0}');
+  perform tests.assert_eq('running it again removes nothing more', public.social_housekeeping()::text, '{"stories": 0, "caption_uses": 0, "notifications": 0, "plaque_addresses": 0}');
+  perform tests.assert_eq('a longer wait for stories keeps yesterday''s and the week-old ones', public.social_housekeeping(30, 90)::text, '{"stories": 0, "caption_uses": 0, "notifications": 0, "plaque_addresses": 0}');
   perform tests.assert_eq('a story day count under one is treated as one day: it takes the six-day-old story and not the one from yesterday', (public.social_housekeeping(0, 90) ->> 'stories')::int || '/' || (select count(*)::int from public.site_posts where caption = 'just expired'), '1/1');
   update public.site_posts set expires_at = now() - interval '3 days' where id = hk2;
   perform tests.assert_eq('...and 3 days is not enough for the default week but is for a day', (public.social_housekeeping(7, 90) ->> 'stories') || '/' || (public.social_housekeeping(1, 90) ->> 'stories'), '0/1');
@@ -346,7 +346,7 @@ begin
   insert into public.site_notifications (recipient, kind, actor, dedupe_key, created_at, read_at) values
     (p_olly, 'follow', p_dee, 'null-old-read', now() - interval '100 days', now() - interval '99 days'),
     (p_olly, 'follow', p_dee, 'null-mid-read', now() - interval '85 days', now() - interval '80 days');
-  perform tests.assert_eq('with no limits given it uses a week and 90 days', public.social_housekeeping(null, null)::text, '{"stories": 1, "caption_uses": 0, "notifications": 1}');
+  perform tests.assert_eq('with no limits given it uses a week and 90 days', public.social_housekeeping(null, null)::text, '{"stories": 1, "caption_uses": 0, "notifications": 1, "plaque_addresses": 0}');
   perform tests.assert_eq('...so the six-day-old story and the 80-day-old read notification stay', (select string_agg(caption, ',') from public.site_posts where caption in ('null six', 'null eight')) || '/' || (select string_agg(dedupe_key, ',') from public.site_notifications where dedupe_key in ('null-old-read', 'null-mid-read')), 'null six/null-mid-read');
 
   ---------------------------------------------------------------- deleting a reporter's account keeps the report

@@ -306,6 +306,24 @@ as $$
      )
 $$;
 
+-- The badge on a profile: whether it is verified and which rank it holds (the name of a rank, or null). Here a profile is verified when its business account is; the recognition
+-- migration (20261110100000) replaces this with the full answer (a person's own verification, and the ranks that were awarded). profile_card and profile_mini only ever ask this.
+create function public.profile_badge(p_id uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'verified', v.verified,
+    'rank', case when v.verified then 'verified' else null end)
+  from (
+    select exists (select 1 from public.site_profiles p where p.id = p_id and p.org_id is not null
+                    and exists (select 1 from public.site_verifications x where x.org_id = p.org_id and x.state = 'verified')) as verified
+  ) v
+$$;
+
 -- What the app shows about one profile, as seen by p_viewer. Does not check that the viewer may see it: the callers do.
 create function public.profile_card(p_viewer uuid, p_id uuid)
 returns jsonb
@@ -350,7 +368,8 @@ begin
     'social_links', case p.kind when 'personal' then pr.social_links else p.social_links end,
     'privacy', p.privacy,
     'status', p.status,
-    'verified', p.org_id is not null and exists (select 1 from public.site_verifications v where v.org_id = p.org_id and v.state = 'verified'),
+    'verified', (public.profile_badge(p.id) ->> 'verified')::boolean,
+    'rank', public.profile_badge(p.id) -> 'rank',
     'interests', case when v_mine then to_jsonb(p.interests) else '[]'::jsonb end,
     'followers', (select count(*) from public.site_follows f join public.site_profiles s on s.id = f.follower
                   where f.followed = p.id and f.status = 'active' and s.status = 'active'),
@@ -896,7 +915,7 @@ $$;
 -- ---------------------------------------------------------------------------
 revoke all on function
   public.handle_reserved(text), public.profile_is_owner(uuid), public.profile_is_mine(uuid), public.profile_has_permission(uuid, text), public.profile_can_act_as(uuid), public.profile_key(uuid), public.profile_blocked_between(uuid, uuid),
-  public.profile_visible(uuid, uuid), public.profile_content_visible(uuid, uuid), public.profile_card(uuid, uuid), public.profile_require_actor(uuid), public.profile_require_permission(uuid, text),
+  public.profile_visible(uuid, uuid), public.profile_content_visible(uuid, uuid), public.profile_badge(uuid), public.profile_card(uuid, uuid), public.profile_require_actor(uuid), public.profile_require_permission(uuid, text),
   public.profile_clean_interests(text[]), public.profile_my_ids(),
   public.site_handles_follow_profile(),
   public.handle_available(text), public.profile_save_personal(text, text[]),
