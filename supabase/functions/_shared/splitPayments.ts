@@ -35,9 +35,9 @@ export const SESSION_MINUTES = 31;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The id of the request or split named in a body, or null. The sentence is what the app shows. */
-export function parseId(body: unknown, key: 'share_id' | 'split_id'): { ok: true; id: string } | { ok: false; error: string } {
+export function parseId(body: unknown, key: 'share_id' | 'split_id' | 'booking_id'): { ok: true; id: string } | { ok: false; error: string } {
   const value = typeof body === 'object' && body !== null ? (body as Record<string, unknown>)[key] : undefined;
-  if (typeof value !== 'string' || !UUID.test(value)) return { ok: false, error: key === 'share_id' ? 'Choose a request to pay.' : 'Choose a split.' };
+  if (typeof value !== 'string' || !UUID.test(value)) return { ok: false, error: key === 'share_id' ? 'Choose a request to pay.' : key === 'booking_id' ? 'Choose a booking.' : 'Choose a split.' };
   return { ok: true, id: value.toLowerCase() };
 }
 

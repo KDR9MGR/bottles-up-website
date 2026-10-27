@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, Ticket, Users, Settings, LogOut, ScanLine, CheckCircle2, ScrollText, Building2, Wine, HelpCircle, Crown, Tag, ClipboardCheck, BadgeCheck, RotateCcw, Percent, Landmark, ShieldAlert, SlidersHorizontal } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Ticket, Users, Settings, LogOut, ScanLine, CheckCircle2, ScrollText, Building2, Wine, HelpCircle, Crown, Tag, ClipboardCheck, BadgeCheck, RotateCcw, Percent, Landmark, ShieldAlert, SlidersHorizontal, Handshake } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -29,6 +29,7 @@ const navItems = [
   { to: '/cms/payouts', label: 'Payouts', icon: Landmark },
   { to: '/cms/moderation', label: 'Moderation', icon: ShieldAlert },
   { to: '/cms/social-settings', label: 'Social settings', icon: SlidersHorizontal },
+  { to: '/cms/marketplace', label: 'Hiring professionals', icon: Handshake },
   { to: '/cms/promo-codes', label: 'Promo Codes', icon: Tag },
   ...(ACCOUNT_ONBOARDING_ENABLED ? [{ to: '/cms/verifications', label: 'Verification', icon: BadgeCheck }] : []),
   { to: '/cms/vip-list', label: 'VIP List', icon: Users },

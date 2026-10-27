@@ -2,6 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { fulfillTicketOrder, fulfillTableBooking, fulfillBottleAddon } from '../_shared/fulfillment.ts';
 import { fulfillSplitShare, type DbLike, type StripeLike } from '../_shared/splitPayments.ts';
+import { fulfillProPayment } from '../_shared/proPayments.ts';
 
 const cryptoProvider = Stripe.createSubtleCryptoProvider();
 
@@ -72,6 +73,12 @@ Deno.serve(async (req: Request) => {
       (typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id) ?? null;
 
     // A friend's share of a table's bill (the split_payments switch): the money is recorded against the booking by the database, and paid back here if it could not be used.
+    // A deposit or balance for a professional's booking (the marketplace switch): counted against the booking by the database, and paid back here if it could not be used.
+    if (session.metadata?.kind === 'pro_payment') {
+      await fulfillProPayment(supabase as unknown as DbLike, stripe as unknown as StripeLike, session.id, paymentIntentId, session.amount_total ?? 0);
+      return new Response('ok', { status: 200 });
+    }
+
     if (session.metadata?.kind === 'split_share') {
       await fulfillSplitShare(supabase as unknown as DbLike, stripe as unknown as StripeLike, session.id, paymentIntentId, session.amount_total ?? 0);
       return new Response('ok', { status: 200 });

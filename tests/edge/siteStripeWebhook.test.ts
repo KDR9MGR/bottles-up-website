@@ -16,6 +16,12 @@ vi.mock('../../supabase/functions/_shared/splitPayments.ts', () => ({
 }));
 import * as splitPayments from '../../supabase/functions/_shared/splitPayments.ts';
 
+// A deposit or balance for a professional goes to its own function too.
+vi.mock('../../supabase/functions/_shared/proPayments.ts', () => ({
+  fulfillProPayment: vi.fn(async () => ({ result: 'applied', refundCents: 0 })),
+}));
+import * as proPayments from '../../supabase/functions/_shared/proPayments.ts';
+
 const TEST_SECRET = 'whsec_test_secret';
 const LIVE_SECRET = 'whsec_live_secret';
 
@@ -204,5 +210,32 @@ describe('site-stripe-webhook: a friend\'s share of a table', () => {
     await handler(signedRequest(sessionEvent({ payment_intent: 'pi_b', metadata: { booking_id: 'bk_1' } })));
     expect(fulfillment.fulfillTableBooking).toHaveBeenCalledTimes(1);
     expect(splitPayments.fulfillSplitShare).not.toHaveBeenCalled();
+  });
+});
+
+describe('site-stripe-webhook: a professional\'s booking payment', () => {
+  it('goes to fulfillProPayment with the session, the payment and what Stripe took, and to nothing else', async () => {
+    const res = await handler(signedRequest(sessionEvent({ id: 'cs_pro', payment_intent: 'pi_pro', amount_total: 30000, metadata: { kind: 'pro_payment', payment_id: 'pay_1' } })));
+    expect(res.status).toBe(200);
+    expect(proPayments.fulfillProPayment).toHaveBeenCalledTimes(1);
+    const args = (proPayments.fulfillProPayment as any).mock.calls[0];
+    expect([args[2], args[3], args[4]]).toEqual(['cs_pro', 'pi_pro', 30000]);
+    expect(splitPayments.fulfillSplitShare).not.toHaveBeenCalled();
+    none();
+  });
+
+  it('is never mistaken for a booking, an order or a split share, even if it carries their ids', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_pro2', amount_total: 100, metadata: { kind: 'pro_payment', booking_id: 'b1', order_id: 'o1' } })));
+    expect(proPayments.fulfillProPayment).toHaveBeenCalledTimes(1);
+    expect(splitPayments.fulfillSplitShare).not.toHaveBeenCalled();
+    none();
+  });
+
+  it('a payment intent that is an object is read, no intent is null, and no amount is nothing', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_p3', payment_intent: { id: 'pi_obj' }, amount_total: 300, metadata: { kind: 'pro_payment' } })));
+    await handler(signedRequest(sessionEvent({ id: 'cs_p4', metadata: { kind: 'pro_payment' } })));
+    const calls = (proPayments.fulfillProPayment as any).mock.calls;
+    expect(calls[0][3]).toBe('pi_obj');
+    expect([calls[1][3], calls[1][4]]).toEqual([null, 0]);
   });
 });
