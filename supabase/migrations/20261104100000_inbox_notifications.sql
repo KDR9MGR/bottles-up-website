@@ -9,7 +9,7 @@
 --     a retried send with the same client key is one message. Sending needs the community rules accepted and the `inbox` switch on; text goes through the banned-terms check.
 --   * NOTIFICATIONS in the app: someone followed, asked to follow, accepted your request, liked or commented on your post, replied to your comment, tagged you, answered your review.
 --     Written by triggers on those events (never for yourself, never between a blocked pair, a tag only when the tagged profile can see the post); a notification is read through the
---     profile it is for, so a business's team sees the business's. Push delivery is a separate step that needs the owner's Firebase account.
+--     profile it is for, so a business's team sees the business's. A profile can switch off any kind (notification_prefs_set), and none is written for it afterwards. Push delivery is a separate step that needs the owner's Firebase account.
 --
 -- Reached only through the functions below; no table can be read or written by a client. Plain CREATE, never CREATE OR REPLACE.
 
@@ -78,11 +78,19 @@ create table public.site_notifications (
 create index site_notifications_recipient_idx on public.site_notifications (recipient, created_at desc, id desc);
 create index site_notifications_unread_idx on public.site_notifications (recipient) where read_at is null;
 
+-- A kind of notification a profile has switched off. Every kind is on until a row says otherwise.
+create table public.site_notification_opt_outs (
+  profile uuid not null references public.site_profiles (id) on delete cascade,
+  kind text not null check (kind in ('follow', 'follow_request', 'follow_accepted', 'like', 'comment', 'reply', 'tag', 'review_reply')),
+  primary key (profile, kind)
+);
+
 alter table public.site_dm_conversations enable row level security;
 alter table public.site_dm_members enable row level security;
 alter table public.site_dm_messages enable row level security;
 alter table public.site_notifications enable row level security;
-revoke all on table public.site_dm_conversations, public.site_dm_members, public.site_dm_messages, public.site_notifications from public, anon, authenticated;
+alter table public.site_notification_opt_outs enable row level security;
+revoke all on table public.site_dm_conversations, public.site_dm_members, public.site_dm_messages, public.site_notifications, public.site_notification_opt_outs from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 2. Internal helpers (the app cannot call these)
@@ -191,6 +199,7 @@ begin
   if p_recipient is null or p_actor is null or p_recipient = p_actor then return; end if;
   if public.profile_blocked_between(p_recipient, p_actor) then return; end if;
   if not exists (select 1 from public.site_profiles s where s.id = p_recipient and s.status = 'active') then return; end if;
+  if exists (select 1 from public.site_notification_opt_outs o where o.profile = p_recipient and o.kind = p_kind) then return; end if;
   insert into public.site_notifications (recipient, kind, actor, post, comment, review, dedupe_key)
   values (p_recipient, p_kind, p_actor, p_post, p_comment, p_review,
           p_kind || ':' || p_actor::text || ':' || coalesce(p_post::text, '') || ':' || coalesce(p_comment::text, '') || ':' || coalesce(p_review::text, ''))
@@ -822,6 +831,46 @@ begin
 end;
 $$;
 
+-- Which kinds of notification the profile gets: {"like": true, "comment": false, ...} for every kind.
+create function public.notification_prefs(p_actor uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  perform public.profile_require_actor(p_actor);
+  return (
+    select jsonb_object_agg(k.kind, not exists (select 1 from public.site_notification_opt_outs o where o.profile = p_actor and o.kind = k.kind))
+    from unnest(array['follow', 'follow_request', 'follow_accepted', 'like', 'comment', 'reply', 'tag', 'review_reply']) as k(kind)
+  );
+end;
+$$;
+
+-- Switch some kinds on or off for the profile (it is the profile's own choice, and each profile has its own). Answers all of them as they now stand.
+create function public.notification_prefs_set(p_actor uuid, p_kinds text[], p_enabled boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.profile_require_actor(p_actor);
+  if p_enabled is null then raise exception 'Choose on or off.'; end if;
+  if p_kinds is null or cardinality(p_kinds) < 1 or cardinality(p_kinds) > 8
+     or not (p_kinds <@ array['follow', 'follow_request', 'follow_accepted', 'like', 'comment', 'reply', 'tag', 'review_reply']) then
+    raise exception 'Choose what to change.';
+  end if;
+  if p_enabled then
+    delete from public.site_notification_opt_outs where profile = p_actor and kind = any(p_kinds);
+  else
+    insert into public.site_notification_opt_outs (profile, kind) select p_actor, k from unnest(p_kinds) as k on conflict do nothing;
+  end if;
+  return public.notification_prefs(p_actor);
+end;
+$$;
+
 -- Old read notifications are deleted by a scheduled job running as the service role (nothing in the database runs it on a timer yet).
 create function public.notifications_purge(p_days int default 90)
 returns int
@@ -850,7 +899,8 @@ revoke all on function
   public.dm_send(uuid, uuid, text, text, text, uuid), public.dm_messages(uuid, uuid, int, timestamptz, uuid), public.dm_inbox(uuid, text, int, timestamptz, uuid),
   public.dm_mark_read(uuid, uuid), public.dm_mute(uuid, uuid, boolean), public.dm_answer_request(uuid, uuid, boolean), public.dm_delete_message(uuid, uuid),
   public.dm_people(uuid, uuid), public.dm_unread(uuid), public.dm_conversation_json(uuid, uuid), public.dm_conversation(uuid, uuid),
-  public.notifications_list(uuid, int, timestamptz, uuid), public.notifications_unread(uuid), public.notifications_read(uuid, timestamptz), public.notifications_purge(int)
+  public.notifications_list(uuid, int, timestamptz, uuid), public.notifications_unread(uuid), public.notifications_read(uuid, timestamptz), public.notifications_purge(int),
+  public.notification_prefs(uuid), public.notification_prefs_set(uuid, text[], boolean)
 from public, anon, authenticated;
 grant execute on function
   public.dm_start_direct(uuid, uuid), public.dm_start_group(uuid, text, uuid[]), public.dm_group_add(uuid, uuid, uuid), public.dm_group_remove(uuid, uuid, uuid),
@@ -858,6 +908,7 @@ grant execute on function
   public.dm_send(uuid, uuid, text, text, text, uuid), public.dm_messages(uuid, uuid, int, timestamptz, uuid), public.dm_inbox(uuid, text, int, timestamptz, uuid),
   public.dm_mark_read(uuid, uuid), public.dm_mute(uuid, uuid, boolean), public.dm_answer_request(uuid, uuid, boolean), public.dm_delete_message(uuid, uuid),
   public.dm_people(uuid, uuid), public.dm_unread(uuid), public.dm_conversation(uuid, uuid),
-  public.notifications_list(uuid, int, timestamptz, uuid), public.notifications_unread(uuid), public.notifications_read(uuid, timestamptz)
+  public.notifications_list(uuid, int, timestamptz, uuid), public.notifications_unread(uuid), public.notifications_read(uuid, timestamptz),
+  public.notification_prefs(uuid), public.notification_prefs_set(uuid, text[], boolean)
 to authenticated, service_role;
 grant execute on function public.notifications_purge(int) to service_role;

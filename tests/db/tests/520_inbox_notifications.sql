@@ -450,8 +450,54 @@ begin
   perform tests.assert_eq('...and is not counted once the writer is suspended', (tests.f(rando, r_e, format($q$public.dm_unread(%L)$q$, p_rando), '{requests}'))::int, n - 1);
   update public.site_profiles set status = 'active' where id = p_olly;
 
+  ---------------------------------------------------------------- choosing what to be told about
+  insert into public.site_posts (author, kind, caption, audience) values (p_ann, 'post', 'pref one', 'public') returning id into post_f;
+  perform tests.assert_eq('every kind is on to begin with', tests.q(ann, a_e, format($q$(select count(*) from jsonb_each_text(public.notification_prefs(%L)) where value = 'true')$q$, p_ann)), '8');
+  perform tests.assert_eq('switching likes off says so', tests.f(ann, a_e, format($q$public.notification_prefs_set(%L, array['like'], false)$q$, p_ann), '{like}'), 'false');
+  perform tests.assert_eq('...and the others are still on', tests.q(ann, a_e, format($q$(select count(*) from jsonb_each_text(public.notification_prefs(%L)) where value = 'true')$q$, p_ann)), '7');
+  n := (select count(*) from public.site_notifications where recipient = p_ann and kind = 'like');
+  insert into public.site_post_likes (post, profile) values (post_f, p_bob);
+  perform tests.assert_eq('a like is no longer written for her', (select count(*) from public.site_notifications where recipient = p_ann and kind = 'like')::int, n);
+  insert into public.site_comments (post, author, body) values (post_f, p_bob, 'still told about this');
+  perform tests.assert_eq('...but a comment still is', (select count(*) from public.site_notifications where recipient = p_ann and kind = 'comment' and comment in (select id from public.site_comments where body = 'still told about this'))::int, 1);
+  perform tests.assert_eq('what was written before stays in her list', (select count(*) from public.site_notifications where recipient = p_ann and kind = 'like')::int, n);
+  insert into public.site_posts (author, kind, caption, audience) values (p_bob, 'post', 'bobs pref post', 'public') returning id into post_f;
+  insert into public.site_post_likes (post, profile) values (post_f, p_cy);
+  perform tests.assert_eq('someone else is still told of a like while she has them off', (select count(*) from public.site_notifications where recipient = p_bob and kind = 'like' and post = post_f)::int, 1);
+  perform tests.assert_eq('it is her own choice: bob''s are untouched', tests.f(bob, b_e, format($q$public.notification_prefs(%L)$q$, p_bob), '{like}'), 'true');
+  perform tests.q(bob, b_e, format($q$public.notification_prefs_set(%L, array['like'], false)$q$, p_bob));
+  perform tests.assert_eq('switching it back on', tests.f(ann, a_e, format($q$public.notification_prefs_set(%L, array['like'], true)$q$, p_ann), '{like}'), 'true');
+  perform tests.assert_eq('...does not touch what bob chose', tests.f(bob, b_e, format($q$public.notification_prefs(%L)$q$, p_bob), '{like}'), 'false');
+  perform tests.q(bob, b_e, format($q$public.notification_prefs_set(%L, array['like'], true)$q$, p_bob));
+  perform tests.q(bob, b_e, format($q$public.notification_prefs_set(%L, array['tag'], false)$q$, p_bob));
+  insert into public.site_posts (author, kind, caption, audience) values (p_ann, 'post', 'pref two', 'public') returning id into post_f;
+  insert into public.site_post_likes (post, profile) values (post_f, p_bob);
+  perform tests.assert_eq('...and likes are written again', (select count(*) from public.site_notifications where recipient = p_ann and kind = 'like')::int, n + 1);
+  perform tests.assert_eq('several kinds at once', tests.f(ann, a_e, format($q$public.notification_prefs_set(%L, array['follow', 'follow_request', 'follow_accepted'], false)$q$, p_ann), '{follow_request}'), 'false');
+  n := (select count(*) from public.site_notifications where recipient = p_ann and kind = 'follow');
+  perform tests.q(bob, b_e, format($q$public.follow_set(%L, %L, false)$q$, p_bob, p_ann));
+  perform tests.q(bob, b_e, format($q$public.follow_set(%L, %L, true)$q$, p_bob, p_ann));
+  perform tests.assert_eq('...a new follow is not written', (select count(*) from public.site_notifications where recipient = p_ann and kind = 'follow')::int, n);
+  perform tests.q(ann, a_e, format($q$public.notification_prefs_set(%L, array['follow', 'follow_request', 'follow_accepted'], true)$q$, p_ann));
+  perform tests.assert_eq('a choice must name something real', tests.q(ann, a_e, format($q$public.notification_prefs_set(%L, array['like', 'poke'], false)$q$, p_ann)), 'ERROR: Choose what to change.');
+  perform tests.assert_eq('...at least one', tests.q(ann, a_e, format($q$public.notification_prefs_set(%L, array[]::text[], false)$q$, p_ann)), 'ERROR: Choose what to change.');
+  perform tests.assert_eq('...not nothing at all', tests.q(ann, a_e, format($q$public.notification_prefs_set(%L, null, false)$q$, p_ann)), 'ERROR: Choose what to change.');
+  perform tests.assert_eq('...and no more than there are', tests.q(ann, a_e, format($q$public.notification_prefs_set(%L, array['follow', 'follow_request', 'follow_accepted', 'like', 'comment', 'reply', 'tag', 'review_reply', 'like'], false)$q$, p_ann)), 'ERROR: Choose what to change.');
+  perform tests.assert_eq('...and on or off', tests.q(ann, a_e, format($q$public.notification_prefs_set(%L, array['like'], null)$q$, p_ann)), 'ERROR: Choose on or off.');
+  perform tests.assert_eq('only as a profile you can act as', tests.q(bob, b_e, format($q$public.notification_prefs_set(%L, array['like'], false)$q$, p_ann)), 'ERROR: You cannot act as this profile.');
+  perform tests.assert_eq('...checked before anything else', tests.q(bob, b_e, format($q$public.notification_prefs_set(%L, array['poke'], false)$q$, p_ann)), 'ERROR: You cannot act as this profile.');
+  perform tests.assert_eq('...to read them too', tests.q(bob, b_e, format($q$public.notification_prefs(%L)$q$, p_ann)), 'ERROR: You cannot act as this profile.');
+  perform tests.login(bob, b_e);
+  perform tests.assert_raises('the table of choices is closed', $q$select * from public.site_notification_opt_outs$q$, 'permission denied');
+  perform tests.logout();
+  perform tests.login_anon();
+  perform tests.assert_raises('a visitor cannot choose', format($q$select public.notification_prefs_set(%L, array['like'], false)$q$, p_ann), 'permission denied');
+  perform tests.logout();
+
   ---------------------------------------------------------------- deleting an account
+  perform tests.assert_eq('bob has chosen something before his account goes', (select count(*) from public.site_notification_opt_outs where profile = p_bob)::int, 1);
   delete from auth.users where id = bob;
+  perform tests.assert_eq('deleting an account removes what that profile chose', (select count(*) from public.site_notification_opt_outs where profile = p_bob)::int, 0);
   perform tests.assert_eq('deleting an account removes her messages, memberships and notifications', (select count(*) from public.site_dm_messages where sender = p_bob)::int + (select count(*) from public.site_dm_members where profile = p_bob)::int + (select count(*) from public.site_notifications where recipient = p_bob or actor = p_bob)::int, 0);
   perform tests.assert_eq('a conversation survives for the people who remain', (select count(*) from public.site_dm_conversations where id = cg)::int, 1);
   delete from public.site_table_bookings where id = bk;
