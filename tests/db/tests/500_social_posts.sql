@@ -671,6 +671,31 @@ begin
   perform tests.assert_raises('...nor the rules status', $q$select public.rules_status()$q$, 'permission denied');
   perform tests.logout();
 
+  ---------------------------------------------------------------- the community rules text, from the CMS
+  perform tests.login_anon();
+  perform tests.assert_eq('before BottlesUp publishes anything the rules are version 1 with no text, and anyone may ask', (public.rules_current())::text, '{"body": null, "version": 1}');
+  perform tests.assert_raises('...but the table itself is closed', $q$select * from public.site_community_rules$q$, 'permission denied');
+  perform tests.logout();
+  perform tests.assert_eq('only a BottlesUp admin can publish rules', tests.q(ann, a_e, $q$public.cms_publish_rules('Be kind to people. No spam. No hate. Respect each other.')$q$), 'ERROR: Only a BottlesUp admin can change this.');
+  perform tests.assert_eq('...not too short', tests.q(admin_u, 'admin@test.example', $q$public.cms_publish_rules('Be kind')$q$), 'ERROR: The rules need between 20 and 8000 characters.');
+  perform tests.assert_eq('...nor empty', tests.q(admin_u, 'admin@test.example', $q$public.cms_publish_rules(null)$q$), 'ERROR: The rules need between 20 and 8000 characters.');
+  perform tests.assert_eq('...nor too long', tests.q(admin_u, 'admin@test.example', $q$public.cms_publish_rules(repeat('a', 8001))$q$), 'ERROR: The rules need between 20 and 8000 characters.');
+  perform tests.assert_eq('...19 characters is still too short', tests.q(admin_u, 'admin@test.example', $q$public.cms_publish_rules(repeat('a', 19))$q$), 'ERROR: The rules need between 20 and 8000 characters.');
+  perform tests.assert_eq('...exactly 20 is the first version BottlesUp publishes (version 2: everyone accepts the real text, not the draft)', tests.f(admin_u, 'admin@test.example', $q$public.cms_publish_rules(repeat('a', 20))$q$, '{version}'), '2');
+  perform tests.assert_eq('...exactly 8000 is fine, and is the next version', tests.f(admin_u, 'admin@test.example', $q$public.cms_publish_rules(repeat('a', 8000))$q$, '{version}'), '3');
+  perform tests.assert_eq('publishing again makes the next version, and trims the text', tests.f(admin_u, 'admin@test.example', $q$public.cms_publish_rules('  Be kind to people. No spam. No hate.  ')$q$, '{version}'), '4');
+  perform tests.assert_eq('...the text is what a person reads', tests.f(ann, a_e, 'public.rules_current()', '{body}'), 'Be kind to people. No spam. No hate.');
+  perform tests.assert_eq('...and a visitor reads it too', (select (public.rules_current())->>'version'), '4');
+  perform tests.assert_eq('...everyone must accept again', tests.f(ann, a_e, 'public.rules_status()', '{accepted}') || '/' || tests.f(ann, a_e, 'public.rules_status()', '{version}'), 'false/4');
+  perform tests.assert_eq('...a comment waits for it', tests.q(ann, a_e, format($q$public.comment_add(%L, %L, 'after the rules changed')$q$, p_ann, post1::uuid)), 'ERROR: Read and accept the community rules first.');
+  perform tests.assert_eq('...the old version can no longer be accepted', tests.q(ann, a_e, 'public.rules_accept(1)'), 'ERROR: The community rules have changed. Read them again.');
+  perform tests.assert_eq('...the new one can', tests.f(ann, a_e, 'public.rules_accept(4)', '{accepted}'), 'true');
+  perform tests.assert_eq('...and then the comment goes through', tests.f(ann, a_e, format($q$public.comment_add(%L, %L, 'after the rules changed')$q$, p_ann, post1::uuid), '{body}'), 'after the rules changed');
+  perform tests.assert_eq('every version is kept', (select count(*) from public.site_community_rules)::int, 3);
+  perform tests.assert_eq('...with who published it', (select count(*) from public.site_community_rules where published_by = admin_u)::int, 3);
+  perform tests.assert_eq('...and each publication is in the audit log, with its version', (select string_agg(entity_id || ':' || (details ->> 'version') || ':' || (details ->> 'characters'), ',' order by entity_id) from public.audit_log where action = 'rules_published'), '2:2:20,3:3:8000,4:4:36');
+  perform tests.q(bob, b_e, 'public.rules_accept(4)');
+
   ---------------------------------------------------------------- deleting an account
   select count(*) into n from public.site_posts where author = p_ann;
   perform tests.assert_true('ann has posts and a Members Only list before', n > 0 and (select count(*) from public.site_member_lists where owner = p_ann) > 0);

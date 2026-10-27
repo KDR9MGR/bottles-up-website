@@ -28,7 +28,7 @@ VIS = "post_visible"
 # Known equivalent changes (nothing in the database can tell them apart), kept out on purpose:
 #   suggest-public: post_visible already hides every non-public post of a profile the viewer does not follow, and suggestions are only from those.
 #   rail-expiry: post_visible already hides an expired story.  members-blocked: blocking removes the follow, so 'They need to follow you first.' answers first.
-#   rules-status: there is one version of the rules.  media-signed-out: the storage policies are for signed-in callers only.
+#   media-signed-out: the storage policies are for signed-in callers only.
 MUTANTS = [
     # who sees a post
     M('vis-private-author', VIS, "(p.audience = 'public' and public.profile_content_visible(p_viewer, p.author))", "(p.audience = 'public')"),
@@ -150,8 +150,8 @@ MUTANTS = [
     ),
     (
         'tables-open', FILE,
-        "  public.site_posts, public.site_post_media, public.site_post_tags, public.site_post_likes, public.site_post_saves, public.site_comments,\n  public.site_member_lists, public.site_story_views, public.site_banned_terms, public.site_rules_acceptance\nfrom public, anon, authenticated;",
-        "  public.site_posts, public.site_post_media, public.site_post_tags, public.site_post_likes, public.site_post_saves, public.site_comments,\n  public.site_story_views, public.site_banned_terms, public.site_rules_acceptance\nfrom public, anon, authenticated;",
+        "  public.site_posts, public.site_post_media, public.site_post_tags, public.site_post_likes, public.site_post_saves, public.site_comments,\n  public.site_member_lists, public.site_story_views, public.site_banned_terms, public.site_community_rules, public.site_rules_acceptance\nfrom public, anon, authenticated;",
+        "  public.site_posts, public.site_post_media, public.site_post_tags, public.site_post_likes, public.site_post_saves, public.site_comments,\n  public.site_story_views, public.site_banned_terms, public.site_community_rules, public.site_rules_acceptance\nfrom public, anon, authenticated;",
     ),
     (
         'media-policy-read', FILE,
@@ -169,4 +169,25 @@ MUTANTS = [
         "using (bucket_id = 'social-media');",
     ),
     ('cascade-author', FILE, "author uuid not null references public.site_profiles (id) on delete cascade,\n  kind text not null check (kind in ('post', 'reel', 'story')),", "author uuid not null references public.site_profiles (id),\n  kind text not null check (kind in ('post', 'reel', 'story')),"),
+    # the community rules text, from the CMS
+    M('rules-version-max', 'social_rules_version', "select coalesce((select max(r.version) from public.site_community_rules r), 1)", "select coalesce((select min(r.version) from public.site_community_rules r), 1)"),
+    M('rules-version-default', 'social_rules_version', "r), 1)", "r), 0)"),
+    M('rules-current-latest', 'rules_current', "order by r.version desc limit 1", "order by r.version limit 1"),
+    M('rules-publish-admin', 'cms_publish_rules', "if auth.uid() is null or not public.is_cms_admin() then raise exception 'Only a BottlesUp admin can change this.'; end if;", "if auth.uid() is null then raise exception 'Only a BottlesUp admin can change this.'; end if;"),
+    M('rules-publish-min', 'cms_publish_rules', "if char_length(v_body) < 20 or", "if char_length(v_body) < 19 or"),
+    M('rules-publish-min-up', 'cms_publish_rules', "if char_length(v_body) < 20 or", "if char_length(v_body) < 21 or"),
+    M('rules-publish-max', 'cms_publish_rules', "or char_length(v_body) > 8000 then", "or char_length(v_body) > 8001 then"),
+    M('rules-publish-max-down', 'cms_publish_rules', "or char_length(v_body) > 8000 then", "or char_length(v_body) > 7999 then"),
+    M('rules-publish-trim', 'cms_publish_rules', "v_body text := btrim(coalesce(p_body, ''));", "v_body text := coalesce(p_body, '');"),
+    M('rules-publish-next', 'cms_publish_rules', "v_version := public.social_rules_version() + 1;", "v_version := public.social_rules_version() + 2;"),
+    M('rules-publish-by', 'cms_publish_rules', "values (v_version, v_body, auth.uid());", "values (v_version, v_body, null);"),
+    M('rules-publish-audit', 'cms_publish_rules', "'rules_published', 'community_rules', v_version::text,", "'rules_published', 'community_rules', 'x',"),
+    M('rules-publish-audit-detail', 'cms_publish_rules', "jsonb_build_object('version', v_version, 'characters', char_length(v_body)));", "jsonb_build_object('version', v_version));"),
+    M('rules-require-version', 'social_require_rules', "a.version >= public.social_rules_version()", "a.version >= 1"),
+    M('rules-status-accepted', 'rules_status', "a.version >= public.social_rules_version())", "a.version >= 1)"),
+    M('rules-accept-version', 'rules_accept', "if p_version is distinct from public.social_rules_version() then", "if false then"),
+    M('rules-accept-upsert', 'rules_accept', "on conflict (user_id) do update set version = excluded.version, accepted_at = now();", "on conflict (user_id) do nothing;"),
+    ('rules-table-open', FILE, "public.site_banned_terms, public.site_community_rules, public.site_rules_acceptance\nfrom public, anon, authenticated;", "public.site_banned_terms, public.site_rules_acceptance\nfrom public, anon, authenticated;"),
+    ('rules-current-anon', FILE, "grant execute on function public.rules_current() to anon, authenticated, service_role;", "grant execute on function public.rules_current() to authenticated, service_role;"),
+    ('rules-publish-open', FILE, "public.rules_status(), public.rules_accept(int), public.cms_publish_rules(text), public.cms_set_banned_term(text, boolean), public.cms_list_banned_terms(),\n  public.post_create(uuid, text, text, text, jsonb, jsonb, boolean), public.post_edit(uuid, uuid, text, text, boolean), public.post_delete(uuid, uuid),\n  public.post_get(uuid, uuid), public.post_untag(uuid, uuid),\n  public.profile_posts", "public.rules_status(), public.rules_accept(int), public.cms_set_banned_term(text, boolean), public.cms_list_banned_terms(),\n  public.post_create(uuid, text, text, text, jsonb, jsonb, boolean), public.post_edit(uuid, uuid, text, text, boolean), public.post_delete(uuid, uuid),\n  public.post_get(uuid, uuid), public.post_untag(uuid, uuid),\n  public.profile_posts"),
 ]

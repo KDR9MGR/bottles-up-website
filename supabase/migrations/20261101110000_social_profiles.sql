@@ -13,8 +13,10 @@
 --   * PRIVATE profiles (personal only): anyone may see the header and the counts; the followers, following and (later) posts only the profile's owner
 --     and approved followers see. A follow of a private profile waits as a request until the owner accepts. Turning a private profile public accepts
 --     the waiting requests. Turning a public profile private keeps the people who follow already.
---   * BLOCKING hides two profiles from each other both ways (search, profile page, lists), removes the follows between them and refuses a new one. The
---     refusal says "This profile isn't available." and so never tells someone they were blocked. A block is between two profiles, not two logins.
+--   * BLOCKING hides two PEOPLE from each other both ways (search, profile page, lists), removes the follows between them and refuses a new one. The
+--     refusal says "This profile isn't available." and so never tells someone they were blocked. A person is the login behind a personal profile and the
+--     professional profiles it owns (a DJ's, a photographer's): blocking any of them blocks all of them, and unblocking any lifts it. A venue's or an event
+--     group's profile is run by a team, so it is blocked, and blocks, on its own.
 --   * Following is slowed: at most 200 new follows an hour from one profile.
 --   * Everything that CREATES or CHANGES something social (a profile, a follow) refuses with "Profiles are not open yet." until BottlesUp switches the `social`
 --     feature on (20261101100000), so a dark launch is dark on the server too, not only in the app. Reading, unfollowing and blocking always work.
@@ -88,14 +90,21 @@ create table public.site_follows (
 create index site_follows_followed_idx on public.site_follows (followed, status, created_at desc);
 create index site_follows_follower_idx on public.site_follows (follower, status, created_at desc);
 
+-- A block holds between PEOPLE, so switching to another of their profiles does not get round it. blocker_key / blocked_key say who each side is: the login behind a personal
+-- or professional profile, or the profile itself for a venue's or an event group's (those are run by a team, not one person). See profile_key().
 create table public.site_blocks (
   blocker uuid not null references public.site_profiles (id) on delete cascade,
   blocked uuid not null references public.site_profiles (id) on delete cascade,
+  blocker_key uuid not null,
+  blocked_key uuid not null,
   created_at timestamptz not null default clock_timestamp(),
   primary key (blocker, blocked),
-  check (blocker <> blocked)
+  check (blocker <> blocked),
+  check (blocker_key <> blocked_key)
 );
 create index site_blocks_blocked_idx on public.site_blocks (blocked);
+create index site_blocks_keys_idx on public.site_blocks (blocker_key, blocked_key);
+create index site_blocks_blocked_key_idx on public.site_blocks (blocked_key);
 
 alter table public.site_profiles enable row level security;
 alter table public.site_handles enable row level security;
@@ -196,6 +205,18 @@ as $$
      and exists (select 1 from public.site_profiles p where p.id = p_profile and p.status = 'active')
 $$;
 
+-- WHO a profile is, for blocking: the login behind a personal profile or a professional's business profile, the profile itself for a venue's or an event group's.
+create function public.profile_key(p_profile uuid)
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(p.user_id, p.id) from public.site_profiles p where p.id = p_profile
+$$;
+
+-- Has either person blocked the other? (Any of a person's profiles counts as the person.)
 create function public.profile_blocked_between(p_a uuid, p_b uuid)
 returns boolean
 language sql
@@ -205,7 +226,8 @@ set search_path = public
 as $$
   select exists (
     select 1 from public.site_blocks b
-    where (b.blocker = p_a and b.blocked = p_b) or (b.blocker = p_b and b.blocked = p_a)
+    where (b.blocker_key = public.profile_key(p_a) and b.blocked_key = public.profile_key(p_b))
+       or (b.blocker_key = public.profile_key(p_b) and b.blocked_key = public.profile_key(p_a))
   )
 $$;
 
@@ -264,7 +286,7 @@ begin
     select f.status into v_follow from public.site_follows f where f.follower = p_viewer and f.followed = p_id;
     v_follow := coalesce(v_follow, 'none');
     v_follows_me := exists (select 1 from public.site_follows f where f.follower = p_id and f.followed = p_viewer and f.status = 'active');
-    v_blocked := exists (select 1 from public.site_blocks b where b.blocker = p_viewer and b.blocked = p_id);
+    v_blocked := exists (select 1 from public.site_blocks b where b.blocker_key = public.profile_key(p_viewer) and b.blocked_key = public.profile_key(p_id));
   end if;
   v_content := p.privacy = 'public' or v_mine or v_follow = 'active';
 
@@ -756,18 +778,27 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_ka uuid;
+  v_kb uuid;
 begin
   perform public.profile_require_actor(p_actor);
   if p_target is null or p_blocked is null then raise exception 'Say which profile.'; end if;
   if p_target = p_actor or public.profile_is_mine(p_target) then raise exception 'You cannot block your own profile.'; end if;
   if not exists (select 1 from public.site_profiles s where s.id = p_target) then raise exception 'This profile isn''t available.'; end if;
 
+  v_ka := public.profile_key(p_actor);
+  v_kb := public.profile_key(p_target);
   if p_blocked then
-    insert into public.site_blocks (blocker, blocked) values (p_actor, p_target) on conflict do nothing;
-    delete from public.site_follows
-    where (follower = p_actor and followed = p_target) or (follower = p_target and followed = p_actor);
+    insert into public.site_blocks (blocker, blocked, blocker_key, blocked_key) values (p_actor, p_target, v_ka, v_kb) on conflict do nothing;
+    -- Every follow between the two PEOPLE goes, whichever of their profiles it was made with.
+    delete from public.site_follows f
+    where (f.follower in (select s.id from public.site_profiles s where s.id = v_ka or s.user_id = v_ka)
+           and f.followed in (select s.id from public.site_profiles s where s.id = v_kb or s.user_id = v_kb))
+       or (f.follower in (select s.id from public.site_profiles s where s.id = v_kb or s.user_id = v_kb)
+           and f.followed in (select s.id from public.site_profiles s where s.id = v_ka or s.user_id = v_ka));
   else
-    delete from public.site_blocks where blocker = p_actor and blocked = p_target;
+    delete from public.site_blocks where blocker_key = v_ka and blocked_key = v_kb;
   end if;
   return jsonb_build_object('blocked', p_blocked);
 end;
@@ -785,7 +816,14 @@ begin
   perform public.profile_require_actor(p_actor);
   return coalesce((
     select jsonb_agg(public.profile_card(p_actor, b.blocked) || jsonb_build_object('blocked_at', b.created_at) order by b.created_at desc)
-    from (select x.blocked, x.created_at from public.site_blocks x where x.blocker = p_actor order by x.created_at desc limit 200) b
+    from (
+      -- One row for each blocked PERSON, whichever of the actor's profiles blocked them: the profile blocked first, so the list does not change when another of their profiles
+      -- is blocked as well.
+      select d.blocked, d.created_at
+      from (select distinct on (x.blocked_key) x.blocked, x.created_at from public.site_blocks x
+            where x.blocker_key = public.profile_key(p_actor) order by x.blocked_key, x.created_at) d
+      order by d.created_at desc limit 200
+    ) b
   ), '[]'::jsonb);
 end;
 $$;
@@ -794,7 +832,7 @@ $$;
 -- 8. Who may call what
 -- ---------------------------------------------------------------------------
 revoke all on function
-  public.handle_reserved(text), public.profile_is_mine(uuid), public.profile_can_act_as(uuid), public.profile_blocked_between(uuid, uuid),
+  public.handle_reserved(text), public.profile_is_mine(uuid), public.profile_can_act_as(uuid), public.profile_key(uuid), public.profile_blocked_between(uuid, uuid),
   public.profile_visible(uuid, uuid), public.profile_content_visible(uuid, uuid), public.profile_card(uuid, uuid), public.profile_require_actor(uuid),
   public.profile_clean_interests(text[]), public.profile_my_ids(),
   public.site_handles_follow_profile(),

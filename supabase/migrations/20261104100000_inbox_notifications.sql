@@ -99,6 +99,24 @@ as $$
      and exists (select 1 from public.site_dm_members m where m.conversation = p_conversation and m.profile = p_actor and m.status in ('active', 'request'))
 $$;
 
+-- Is this a one-to-one conversation with someone who is blocked either way or suspended? Such a conversation is gone: not listed, not counted, not readable, not written to.
+create function public.dm_direct_closed(p_actor uuid, p_conversation uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.site_dm_conversations c
+    join public.site_dm_members o on o.conversation = c.id and o.profile <> p_actor
+    join public.site_profiles s on s.id = o.profile
+    where c.id = p_conversation and c.kind = 'direct'
+      and (s.status <> 'active' or public.profile_blocked_between(p_actor, o.profile))
+  )
+$$;
+
 -- How a new member is received: straight into the inbox when they follow the person adding them, otherwise as a request.
 create function public.dm_new_member_status(p_inviter uuid, p_member uuid)
 returns text
@@ -481,9 +499,7 @@ begin
   select * into v_conv from public.site_dm_conversations where id = p_conversation;
   if not found or not public.dm_is_member(p_actor, p_conversation) then raise exception 'This conversation isn''t available.'; end if;
   select m.status into v_my_status from public.site_dm_members m where m.conversation = p_conversation and m.profile = p_actor;
-  if v_conv.kind = 'direct' and exists (
-    select 1 from public.site_dm_members m where m.conversation = p_conversation and m.profile <> p_actor and public.profile_blocked_between(p_actor, m.profile)
-  ) then
+  if public.dm_direct_closed(p_actor, p_conversation) then
     raise exception 'This conversation isn''t available.';
   end if;
 
@@ -540,7 +556,7 @@ declare
   v_limit int := least(greatest(coalesce(p_limit, 30), 1), 50);
 begin
   perform public.profile_require_actor(p_actor);
-  if not public.dm_is_member(p_actor, p_conversation) then raise exception 'This conversation isn''t available.'; end if;
+  if not public.dm_is_member(p_actor, p_conversation) or public.dm_direct_closed(p_actor, p_conversation) then raise exception 'This conversation isn''t available.'; end if;
   return coalesce((
     select jsonb_agg(public.dm_message_card(p_actor, x.id) order by x.created_at desc, x.id desc)
     from (
@@ -598,7 +614,7 @@ set search_path = public
 as $$
 begin
   perform public.profile_require_actor(p_actor);
-  if not public.dm_is_member(p_actor, p_conversation) then raise exception 'This conversation isn''t available.'; end if;
+  if not public.dm_is_member(p_actor, p_conversation) or public.dm_direct_closed(p_actor, p_conversation) then raise exception 'This conversation isn''t available.'; end if;
   return public.dm_conversation_json(p_actor, p_conversation);
 end;
 $$;
@@ -626,7 +642,7 @@ begin
       where m.profile = p_actor
         and ((v_box = 'main' and m.status = 'active') or (v_box = 'requests' and m.status = 'request'))
         and (p_before is null or (c.last_message_at, c.id) < (p_before, coalesce(p_before_id, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
-        and not (c.kind = 'direct' and exists (select 1 from public.site_dm_members o where o.conversation = c.id and o.profile <> p_actor and public.profile_blocked_between(p_actor, o.profile)))
+        and not public.dm_direct_closed(p_actor, c.id)
       order by c.last_message_at desc, c.id desc
       limit v_limit
     ) x
@@ -730,10 +746,10 @@ begin
   perform public.profile_require_actor(p_actor);
   return jsonb_build_object(
     'conversations', (select count(*) from public.site_dm_members m
-                      where m.profile = p_actor and m.status = 'active' and not m.muted
+                      where m.profile = p_actor and m.status = 'active' and not m.muted and not public.dm_direct_closed(p_actor, m.conversation)
                         and exists (select 1 from public.site_dm_messages um where um.conversation = m.conversation and um.deleted_at is null and um.sender <> p_actor
                                     and um.created_at > m.last_read_at and um.created_at >= m.joined_at)),
-    'requests', (select count(*) from public.site_dm_members m where m.profile = p_actor and m.status = 'request')
+    'requests', (select count(*) from public.site_dm_members m where m.profile = p_actor and m.status = 'request' and not public.dm_direct_closed(p_actor, m.conversation))
   );
 end;
 $$;
@@ -826,7 +842,7 @@ $$;
 -- 7. Who may call what
 -- ---------------------------------------------------------------------------
 revoke all on function
-  public.dm_is_member(uuid, uuid), public.dm_new_member_status(uuid, uuid), public.dm_ref_card(uuid, text, uuid), public.dm_message_card(uuid, uuid),
+  public.dm_is_member(uuid, uuid), public.dm_direct_closed(uuid, uuid), public.dm_new_member_status(uuid, uuid), public.dm_ref_card(uuid, text, uuid), public.dm_message_card(uuid, uuid),
   public.notify_profile(uuid, text, uuid, uuid, uuid, uuid), public.notify_on_follow(), public.notify_on_like(), public.notify_on_comment(), public.notify_on_tag(),
   public.notify_on_review_reply(), public.dm_require_inbox(),
   public.dm_start_direct(uuid, uuid), public.dm_start_group(uuid, text, uuid[]), public.dm_group_add(uuid, uuid, uuid), public.dm_group_remove(uuid, uuid, uuid),

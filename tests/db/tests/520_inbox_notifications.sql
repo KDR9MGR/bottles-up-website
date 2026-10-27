@@ -425,6 +425,31 @@ begin
   perform tests.assert_raises('...or notifications', format($q$select public.notifications_list(%L)$q$, p_bob), 'permission denied');
   perform tests.logout();
 
+  ---------------------------------------------------------------- a one-to-one conversation with a suspended person is gone
+  perform tests.q(dee, d_e, format($q$public.follow_set(%L, %L, true)$q$, p_dee, p_cy));
+  c1 := (tests.f(cy, c_e, format($q$public.dm_start_direct(%L, %L)$q$, p_cy, p_dee), '{id}'))::uuid;
+  perform tests.say(cy, c_e, p_cy, c1, 'are you there');
+  n := (tests.f(dee, d_e, format($q$public.dm_unread(%L)$q$, p_dee), '{conversations}'))::int;
+  perform tests.assert_eq('before: dee has the conversation, can read it, and it counts as new', tests.names(dee, d_e, format($q$public.dm_inbox(%L)$q$, p_dee)) like '%' || c1::text || '%' and tests.f(dee, d_e, format($q$public.dm_conversation(%L, %L)$q$, p_dee, c1), '{id}') = c1::text and n >= 1, true);
+  cg := (tests.f(dee, d_e, format($q$public.dm_start_group(%L, 'Crew', array[%L, %L]::uuid[])$q$, p_dee, p_cy, p_bob), '{id}'))::uuid;
+  update public.site_profiles set status = 'suspended' where id = p_cy;
+  perform tests.assert_eq('after cy is suspended it is not in the inbox', tests.names(dee, d_e, format($q$public.dm_inbox(%L)$q$, p_dee)) like '%' || c1::text || '%', false);
+  perform tests.assert_eq('...it is no longer counted as new', (tests.f(dee, d_e, format($q$public.dm_unread(%L)$q$, p_dee), '{conversations}'))::int, n - 1);
+  perform tests.assert_eq('...it cannot be read by its address', tests.q(dee, d_e, format($q$public.dm_messages(%L, %L)$q$, p_dee, c1)), 'ERROR: This conversation isn''t available.');
+  perform tests.assert_eq('...nor its head', tests.q(dee, d_e, format($q$public.dm_conversation(%L, %L)$q$, p_dee, c1)), 'ERROR: This conversation isn''t available.');
+  perform tests.assert_eq('...nor written to', tests.say(dee, d_e, p_dee, c1, 'hello?'), 'ERROR: This conversation isn''t available.');
+  perform tests.assert_eq('a group that person is in goes on without them', tests.f(dee, d_e, format($q$public.dm_conversation(%L, %L)$q$, p_dee, cg), '{id}'), cg::text);
+  update public.site_profiles set status = 'active' where id = p_cy;
+  perform tests.assert_eq('once restored it is all back', tests.names(dee, d_e, format($q$public.dm_inbox(%L)$q$, p_dee)) like '%' || c1::text || '%' and tests.f(dee, d_e, format($q$public.dm_conversation(%L, %L)$q$, p_dee, c1), '{id}') = c1::text, true);
+  -- and a request from a suspended person is not counted
+  c2 := (tests.f(olly, o_e, format($q$public.dm_start_direct(%L, %L)$q$, p_olly, p_rando), '{id}'))::uuid;
+  perform tests.say(olly, o_e, p_olly, c2, 'hello stranger');
+  n := (tests.f(rando, r_e, format($q$public.dm_unread(%L)$q$, p_rando), '{requests}'))::int;
+  perform tests.assert_eq('a request waiting is counted', n >= 1, true);
+  update public.site_profiles set status = 'suspended' where id = p_olly;
+  perform tests.assert_eq('...and is not counted once the writer is suspended', (tests.f(rando, r_e, format($q$public.dm_unread(%L)$q$, p_rando), '{requests}'))::int, n - 1);
+  update public.site_profiles set status = 'active' where id = p_olly;
+
   ---------------------------------------------------------------- deleting an account
   delete from auth.users where id = bob;
   perform tests.assert_eq('deleting an account removes her messages, memberships and notifications', (select count(*) from public.site_dm_messages where sender = p_bob)::int + (select count(*) from public.site_dm_members where profile = p_bob)::int + (select count(*) from public.site_notifications where recipient = p_bob or actor = p_bob)::int, 0);

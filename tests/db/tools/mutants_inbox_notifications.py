@@ -24,6 +24,8 @@ def M(mid, fn, old, new):
     return (mid, FILE, ctx + old, ctx + new)
 
 
+# Known equivalent (so it survives, by design): closed-other-only. dm_direct_closed joins the conversation's members without excluding the actor, but the actor is always in
+# good standing here (profile_require_actor) and never blocks themselves, so including them changes nothing.
 # Known equivalent changes (nothing in the database can tell them apart), kept out on purpose: every caller checks the profile is in good standing before asking whether it
 # is a member (member-acts), and a tag on an event or venue has no profile to tell, so notify_profile returns at once (tag-profile-only).
 MUTANTS = [
@@ -64,7 +66,7 @@ MUTANTS = [
     M('send-rules', 'dm_send', "perform public.social_require_rules();\n", ""),
     M('send-flag', 'dm_send', "perform public.dm_require_inbox();\n", ""),
     M('send-member', 'dm_send', "if not found or not public.dm_is_member(p_actor, p_conversation) then", "if not found then"),
-    M('send-blocked', 'dm_send', "if v_conv.kind = 'direct' and exists (", "if false and exists ("),
+    M('send-closed', 'dm_send', "if public.dm_direct_closed(p_actor, p_conversation) then", "if false then"),
     M('send-retry', 'dm_send', "if v_id is not null then return public.dm_message_card(p_actor, v_id); end if;", ""),
     M('send-empty', 'dm_send', "if v_body is null then raise exception 'Write something first.'; end if;", ""),
     M('send-post-visible', 'dm_send', "if v_kind = 'post' and not public.post_visible(p_actor, p_ref_id) then raise exception 'You cannot share that post.'; end if;", ""),
@@ -78,7 +80,8 @@ MUTANTS = [
     M('send-accept', 'dm_send', "update public.site_dm_members set status = 'active', last_read_at = clock_timestamp() where conversation = p_conversation and profile = p_actor;", "update public.site_dm_members set last_read_at = clock_timestamp() where conversation = p_conversation and profile = p_actor;"),
     M('send-touch', 'dm_send', "update public.site_dm_conversations set last_message_at = clock_timestamp() where id = p_conversation;", ""),
     # reading
-    M('read-member', 'dm_messages', "if not public.dm_is_member(p_actor, p_conversation) then raise exception 'This conversation isn''t available.'; end if;\n  return coalesce((\n    select jsonb_agg(public.dm_message_card", "return coalesce((\n    select jsonb_agg(public.dm_message_card"),
+    M('read-member', 'dm_messages', "if not public.dm_is_member(p_actor, p_conversation) or public.dm_direct_closed(p_actor, p_conversation) then raise exception 'This conversation isn''t available.'; end if;\n  return coalesce((\n    select jsonb_agg(public.dm_message_card", "return coalesce((\n    select jsonb_agg(public.dm_message_card"),
+    M('read-closed', 'dm_messages', "if not public.dm_is_member(p_actor, p_conversation) or public.dm_direct_closed(p_actor, p_conversation) then", "if not public.dm_is_member(p_actor, p_conversation) then"),
     M('read-joined', 'dm_messages', "and m.created_at >= (select mm.joined_at from public.site_dm_members mm where mm.conversation = p_conversation and mm.profile = p_actor)", ""),
     M('read-paging', 'dm_messages', "(m.created_at, m.id) < (p_before,", "(m.created_at, m.id) > (p_before,"),
     M('card-removed', 'dm_message_card', "'body', case when m.deleted_at is null then m.body end,", "'body', m.body,"),
@@ -87,11 +90,17 @@ MUTANTS = [
     M('ref-event', 'dm_ref_card', "from public.site_events e where e.id = p_ref and e.status = 'published'", "from public.site_events e where e.id = p_ref"),
     M('ref-booking-code', 'dm_ref_card', "'status', b.status)", "'status', b.status, 'code', b.confirmation_code, 'paid', b.amount_paid_cents)"),
     M('inbox-box', 'dm_inbox', "((v_box = 'main' and m.status = 'active') or (v_box = 'requests' and m.status = 'request'))", "(m.status in ('active', 'request'))"),
-    M('inbox-blocked', 'dm_inbox', "and not (c.kind = 'direct' and exists", "and not (false and exists"),
+    M('inbox-closed', 'dm_inbox', "and not public.dm_direct_closed(p_actor, c.id)", ""),
     M('inbox-unread-own', 'dm_conversation_json', "um.deleted_at is null and um.sender <> p_actor and um.created_at > m.last_read_at", "um.deleted_at is null and um.created_at > m.last_read_at"),
     M('inbox-unread-deleted', 'dm_conversation_json', "um.conversation = c.id and um.deleted_at is null and um.sender <> p_actor", "um.conversation = c.id and um.sender <> p_actor"),
     M('inbox-order', 'dm_inbox', "order by x.last_message_at desc, x.id desc)", "order by x.last_message_at, x.id)"),
-    M('conversation-member', 'dm_conversation', "if not public.dm_is_member(p_actor, p_conversation) then raise exception 'This conversation isn''t available.'; end if;\n  return public.dm_conversation_json", "return public.dm_conversation_json"),
+    M('conversation-member', 'dm_conversation', "if not public.dm_is_member(p_actor, p_conversation) or public.dm_direct_closed(p_actor, p_conversation) then raise exception 'This conversation isn''t available.'; end if;\n  return public.dm_conversation_json", "return public.dm_conversation_json"),
+    M('conversation-closed', 'dm_conversation', "if not public.dm_is_member(p_actor, p_conversation) or public.dm_direct_closed(p_actor, p_conversation) then", "if not public.dm_is_member(p_actor, p_conversation) then"),
+    # a direct conversation is closed for a person who is suspended or blocked either way, and only a direct one
+    M('closed-suspended', 'dm_direct_closed', "(s.status <> 'active' or public.profile_blocked_between(p_actor, o.profile))", "(public.profile_blocked_between(p_actor, o.profile))"),
+    M('closed-blocked', 'dm_direct_closed', "(s.status <> 'active' or public.profile_blocked_between(p_actor, o.profile))", "(s.status <> 'active')"),
+    M('closed-direct-only', 'dm_direct_closed', "where c.id = p_conversation and c.kind = 'direct'", "where c.id = p_conversation"),
+    M('closed-other-only', 'dm_direct_closed', "join public.site_dm_members o on o.conversation = c.id and o.profile <> p_actor", "join public.site_dm_members o on o.conversation = c.id"),
     M('inbox-paging', 'dm_inbox', "(c.last_message_at, c.id) < (p_before,", "(c.last_message_at, c.id) > (p_before,"),
     M('inbox-box-check', 'dm_inbox', "if v_box not in ('main', 'requests') then raise exception 'Choose main or requests.'; end if;", ""),
     M('read-mark-member', 'dm_mark_read', "if not public.dm_is_member(p_actor, p_conversation) then raise exception 'This conversation isn''t available.'; end if;\n  update", "update"),
@@ -100,8 +109,10 @@ MUTANTS = [
     M('answer-decline', 'dm_answer_request', "set status = case when p_accept then 'active' else 'left' end", "set status = 'active'"),
     M('delete-own', 'dm_delete_message', "if v_sender is null or v_sender <> p_actor or not public.dm_is_member(p_actor, v_conv) then", "if v_sender is null then"),
     M('people-member', 'dm_people', "if not public.dm_is_member(p_actor, p_conversation) then raise exception 'This conversation isn''t available.'; end if;\n  return coalesce((\n    select jsonb_agg(public.profile_mini(m.profile)", "return coalesce((\n    select jsonb_agg(public.profile_mini(m.profile)"),
-    M('unread-muted', 'dm_unread', "where m.profile = p_actor and m.status = 'active' and not m.muted", "where m.profile = p_actor and m.status = 'active'"),
-    M('unread-requests', 'dm_unread', "where m.profile = p_actor and m.status = 'request')", "where m.profile = p_actor and m.status = 'active')"),
+    M('unread-muted', 'dm_unread', "where m.profile = p_actor and m.status = 'active' and not m.muted and not public.dm_direct_closed(p_actor, m.conversation)", "where m.profile = p_actor and m.status = 'active' and not public.dm_direct_closed(p_actor, m.conversation)"),
+    M('unread-closed', 'dm_unread', "and not m.muted and not public.dm_direct_closed(p_actor, m.conversation)", "and not m.muted"),
+    M('unread-requests-closed', 'dm_unread', "m.status = 'request' and not public.dm_direct_closed(p_actor, m.conversation)", "m.status = 'request'"),
+    M('unread-requests', 'dm_unread', "where m.profile = p_actor and m.status = 'request' and", "where m.profile = p_actor and m.status = 'active' and"),
     # notifications
     M('notify-self', 'notify_profile', "if p_recipient is null or p_actor is null or p_recipient = p_actor then return; end if;", "if p_recipient is null or p_actor is null then return; end if;"),
     M('notify-blocked', 'notify_profile', "if public.profile_blocked_between(p_recipient, p_actor) then return; end if;", ""),

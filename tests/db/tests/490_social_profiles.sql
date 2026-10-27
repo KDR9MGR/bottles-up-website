@@ -351,7 +351,7 @@ begin
   perform tests.assert_eq('the blocked cannot follow', tests.q(ann, a_e, format($q$public.follow_set(%L, %L, true)$q$, p_ann, p_bob)), 'ERROR: This profile isn''t available.');
   perform tests.assert_eq('...nor can the blocker', tests.q(bob, b_e, format($q$public.follow_set(%L, %L, true)$q$, p_bob, p_ann)), 'ERROR: This profile isn''t available.');
   perform tests.assert_eq('a profile bob blocked disappears from a list of somebody else''s followers too', tests.hs(bob, b_e, format($q$public.follow_list(%L, %L, 'followers')$q$, p_bob, p_va)) like '%annie%', false);
-  perform tests.assert_eq('...while the club''s other followers are still there', tests.hs(bob, b_e, format($q$public.follow_list(%L, %L, 'followers')$q$, p_bob, p_va)), 'bob,djann');
+  perform tests.assert_eq('...while the club''s other followers are still there (annie''s DJ profile went with her: it is the same person)', tests.hs(bob, b_e, format($q$public.follow_list(%L, %L, 'followers')$q$, p_bob, p_va)), 'bob');
   perform tests.assert_eq('the blocked is not shown in the blocker''s view of a list', tests.hs(owner_u, o_e, format($q$public.follow_list(%L, %L, 'followers')$q$, p_owner, p_ann)), 'olly.owner,cyrus');
   perform tests.assert_eq('...and the blocker''s own following list does not show the blocked (only the club bob still follows)', tests.hs(bob, b_e, format($q$public.follow_list(%L, %L, 'following')$q$, p_bob, p_bob)), 'clubaclub');
   perform tests.assert_eq('the blocker can list who they blocked', tests.hs(bob, b_e, format($q$public.block_list(%L)$q$, p_bob)), 'annie');
@@ -364,6 +364,37 @@ begin
   perform tests.assert_eq('unblocking', tests.q(bob, b_e, format($q$public.block_set(%L, %L, false)$q$, p_bob, p_ann)), '{"blocked": false}');
   perform tests.assert_eq('...makes them visible again', tests.hs(bob, b_e, format($q$public.profile_search(%L, 'ann')$q$, p_bob)), 'annie');
   perform tests.assert_eq('...but does not bring the follows back', tests.f(bob, b_e, format($q$public.profile_get(%L, 'annie')$q$, p_bob), '{relation,follow}'), 'none');
+
+  ---------------------------------------------------------------- a block holds between people, not between single profiles
+  perform tests.f(bob, b_e, format($q$public.follow_set(%L, %L, true)$q$, p_bob, p_dj), '{id}');
+  perform tests.f(ann, a_e, format($q$public.follow_set(%L, %L, true)$q$, p_dj, p_bob), '{id}');
+  perform tests.f(ann, a_e, format($q$public.follow_set(%L, %L, true)$q$, p_ann, p_bar), '{id}');
+  perform tests.assert_eq('before the block bob''s two profiles and annie''s two follow each other in places', (select count(*) from public.site_follows where follower in (p_bob, p_bar, p_ann, p_dj) and followed in (p_bob, p_bar, p_ann, p_dj))::int, 3);
+  perform tests.assert_eq('bob blocks annie', tests.q(bob, b_e, format($q$public.block_set(%L, %L, true)$q$, p_bob, p_ann)), '{"blocked": true}');
+  perform tests.assert_eq('...every follow between the two people is gone, whichever of their profiles made it', (select count(*) from public.site_follows where follower in (p_bob, p_bar, p_ann, p_dj) and followed in (p_bob, p_bar, p_ann, p_dj))::int, 0);
+  perform tests.assert_eq('...her DJ profile is hidden from bob', tests.q(bob, b_e, format($q$public.profile_get(%L, 'djann')$q$, p_bob)), 'ERROR: This profile isn''t available.');
+  perform tests.assert_eq('...bob''s other profile is hidden from annie, as her DJ profile', tests.q(ann, a_e, format($q$public.profile_get(%L, 'a_bar')$q$, p_dj)), 'ERROR: This profile isn''t available.');
+  perform tests.assert_eq('...acting as his other profile does not get round it', tests.q(bob, b_e, format($q$public.profile_get(%L, 'annie')$q$, p_bar)), 'ERROR: This profile isn''t available.');
+  perform tests.assert_eq('...nor can that profile follow her DJ profile', tests.q(bob, b_e, format($q$public.follow_set(%L, %L, true)$q$, p_bar, p_dj)), 'ERROR: This profile isn''t available.');
+  perform tests.assert_eq('...and her DJ profile does not find his other profile', tests.hs(ann, a_e, format($q$public.profile_search(%L, 'a_bar')$q$, p_dj)), '(none)');
+  perform tests.assert_eq('the list of blocked people from his other profile shows annie, once', tests.hs(bob, b_e, format($q$public.block_list(%L)$q$, p_bar)), 'annie');
+  perform tests.assert_eq('...marked as blocked', tests.f(bob, b_e, format($q$public.block_list(%L)$q$, p_bar), '{0,relation,blocked}'), 'true');
+  perform tests.assert_eq('blocking her DJ profile too adds no second person to the list', tests.q(bob, b_e, format($q$public.block_set(%L, %L, true)$q$, p_bar, p_dj)) || '/' || tests.hs(bob, b_e, format($q$public.block_list(%L)$q$, p_bob)), '{"blocked": true}/annie');
+  perform tests.assert_eq('unblocking from his other profile lifts the block on all of her profiles', tests.q(bob, b_e, format($q$public.block_set(%L, %L, false)$q$, p_bar, p_dj)), '{"blocked": false}');
+  perform tests.assert_eq('...annie is visible again', tests.f(bob, b_e, format($q$public.profile_get(%L, 'annie')$q$, p_bob), '{handle}'), 'annie');
+  perform tests.assert_eq('...and so is her DJ profile', tests.f(bob, b_e, format($q$public.profile_get(%L, 'djann')$q$, p_bob), '{handle}'), 'djann');
+  perform tests.assert_eq('...the list is empty', tests.hs(bob, b_e, format($q$public.block_list(%L)$q$, p_bob)), '(none)');
+  -- A venue's profile is run by a team, so it is blocked (and blocks) on its own.
+  perform tests.assert_eq('blocking a venue''s profile', tests.q(bob, b_e, format($q$public.block_set(%L, %L, true)$q$, p_bob, p_va)), '{"blocked": true}');
+  perform tests.assert_eq('...hides the venue', tests.q(bob, b_e, format($q$public.profile_get(%L, 'clubaclub')$q$, p_bob)), 'ERROR: This profile isn''t available.');
+  perform tests.assert_eq('...but not the owner of the business behind it', tests.f(bob, b_e, format($q$public.profile_get(%L, 'olly.owner')$q$, p_bob), '{handle}'), 'olly.owner');
+  perform tests.assert_eq('unblocking it', tests.q(bob, b_e, format($q$public.block_set(%L, %L, false)$q$, p_bob, p_va)), '{"blocked": false}');
+  perform tests.assert_eq('a block placed AS the venue hides bob from the venue', tests.q(owner_u, o_e, format($q$public.block_set(%L, %L, true)$q$, p_va, p_bob)), '{"blocked": true}');
+  perform tests.assert_eq('...and the venue from bob', tests.q(bob, b_e, format($q$public.profile_get(%L, 'clubaclub')$q$, p_bob)), 'ERROR: This profile isn''t available.');
+  perform tests.assert_eq('...but the owner''s own profile can still see bob', tests.f(owner_u, o_e, format($q$public.profile_get(%L, 'bob')$q$, p_owner), '{handle}'), 'bob');
+  perform tests.assert_eq('lifting it from the venue', tests.q(owner_u, o_e, format($q$public.block_set(%L, %L, false)$q$, p_va, p_bob)), '{"blocked": false}');
+  perform tests.assert_eq('...the venue is visible again', tests.f(bob, b_e, format($q$public.profile_get(%L, 'clubaclub')$q$, p_bob), '{handle}'), 'clubaclub');
+  perform tests.assert_eq('the keys are the person behind the profile, or the profile itself for a venue', (select count(*) from public.site_blocks)::int, 0);
   perform tests.f(bob, b_e, format($q$public.follow_set(%L, %L, true)$q$, p_bob, p_cy), '{id}');
   perform tests.f(cy, c_e, $q$public.profile_save_personal('private')$q$, '{id}');
   perform tests.logout();
@@ -378,6 +409,7 @@ begin
   perform tests.assert_raises('...nor the list of who one may act as', $q$select public.profile_my_ids()$q$, 'permission denied');
   perform tests.assert_raises('...nor the card builder', format($q$select public.profile_card(%L, %L)$q$, p_bob, p_ann), 'permission denied');
   perform tests.assert_raises('...nor the block check', format($q$select public.profile_blocked_between(%L, %L)$q$, p_bob, p_ann), 'permission denied');
+  perform tests.assert_raises('...nor the lookup of who a profile is for blocking', format($q$select public.profile_key(%L)$q$, p_ann), 'permission denied');
   perform tests.assert_raises('...nor the content check', format($q$select public.profile_content_visible(%L, %L)$q$, p_bob, p_ann), 'permission denied');
   perform tests.assert_raises('...nor the trigger function', $q$select public.site_handles_follow_profile()$q$, 'permission denied');
   perform tests.assert_raises('the profiles table cannot be read', $q$select * from public.site_profiles$q$, 'permission denied');

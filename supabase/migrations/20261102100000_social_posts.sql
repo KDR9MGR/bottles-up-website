@@ -12,7 +12,7 @@
 --     the profile posting (`<profile id>/<name>`), BEFORE the post is made; post_create then checks each file really exists, is an image or a video as said,
 --     and is within the size limits: images 10 MB, videos 100 MB (the bucket itself refuses more). Video length (60 s) is as the phone reports it: nothing here
 --     opens the file. A file that never got a post is listed by social_media_orphans() for a clean-up job; deleting a post returns the files to remove.
---   * RULES AND SAFETY come first: nobody posts or comments before accepting the community rules (the text itself is the client's, shown from the CMS), text is
+--   * RULES AND SAFETY come first: nobody posts or comments before accepting the community rules (the text is written by BottlesUp in the CMS, and publishing a new version makes everyone accept again), text is
 --     checked against a list of banned terms BottlesUp keeps, posting is slowed (20 an hour), commenting is slowed (20 a minute), and stories, reels and Members
 --     Only each refuse until their feature switch (20261101100000) is on.
 --   * Counts (likes, comments) are counted when read, from rows that still belong to active profiles.
@@ -184,6 +184,15 @@ create table public.site_banned_terms (
   term text primary key check (term ~ '^[a-z0-9 ]{2,40}$')
 );
 
+-- The community rules, one row for each version BottlesUp has published (the text is written in the CMS). Until a first one is published the current version is 1 and
+-- there is no text: the app shows its own draft. Publishing a new version makes everyone accept again before they post.
+create table public.site_community_rules (
+  version int primary key check (version >= 2),
+  body text not null check (char_length(btrim(body)) between 20 and 8000),
+  published_at timestamptz not null default now(),
+  published_by uuid references auth.users (id) on delete set null
+);
+
 -- Who has accepted which version of the community rules.
 create table public.site_rules_acceptance (
   user_id uuid primary key references auth.users (id) on delete cascade,
@@ -200,10 +209,11 @@ alter table public.site_comments enable row level security;
 alter table public.site_member_lists enable row level security;
 alter table public.site_story_views enable row level security;
 alter table public.site_banned_terms enable row level security;
+alter table public.site_community_rules enable row level security;
 alter table public.site_rules_acceptance enable row level security;
 revoke all on table
   public.site_posts, public.site_post_media, public.site_post_tags, public.site_post_likes, public.site_post_saves, public.site_comments,
-  public.site_member_lists, public.site_story_views, public.site_banned_terms, public.site_rules_acceptance
+  public.site_member_lists, public.site_story_views, public.site_banned_terms, public.site_community_rules, public.site_rules_acceptance
 from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -325,9 +335,10 @@ $$;
 create function public.social_rules_version()
 returns int
 language sql
-immutable
+stable
+security definer
 set search_path = public
-as $$ select 1 $$;
+as $$ select coalesce((select max(r.version) from public.site_community_rules r), 1) $$;
 
 create function public.social_require_rules()
 returns void
@@ -398,6 +409,42 @@ begin
   insert into public.site_rules_acceptance (user_id, version) values (auth.uid(), p_version)
   on conflict (user_id) do update set version = excluded.version, accepted_at = now();
   return public.rules_status();
+end;
+$$;
+
+-- The rules as they stand: the version everyone must have accepted and the text (null until BottlesUp has published one). Anyone may read them, signed in or not.
+create function public.rules_current()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'version', public.social_rules_version(),
+    'body', (select r.body from public.site_community_rules r order by r.version desc limit 1)
+  )
+$$;
+
+-- A BottlesUp admin publishes new rules. It becomes the next version, so everyone accepts again before they post, comment or send.
+create function public.cms_publish_rules(p_body text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_body text := btrim(coalesce(p_body, ''));
+  v_version int;
+begin
+  if auth.uid() is null or not public.is_cms_admin() then raise exception 'Only a BottlesUp admin can change this.'; end if;
+  if char_length(v_body) < 20 or char_length(v_body) > 8000 then raise exception 'The rules need between 20 and 8000 characters.'; end if;
+  v_version := public.social_rules_version() + 1;
+  insert into public.site_community_rules (version, body, published_by) values (v_version, v_body, auth.uid());
+  insert into public.audit_log (actor_id, actor_email, action, entity_type, entity_id, details)
+  values (auth.uid(), coalesce(nullif(auth.jwt() ->> 'email', ''), 'unknown'), 'rules_published', 'community_rules', v_version::text,
+          jsonb_build_object('version', v_version, 'characters', char_length(v_body)));
+  return public.rules_current();
 end;
 $$;
 
@@ -1119,7 +1166,7 @@ revoke all on function
   public.social_media_profile(text), public.social_media_can_add(text), public.social_media_visible(text),
   public.post_visible(uuid, uuid), public.profile_mini(uuid), public.post_card(uuid, uuid), public.social_rules_version(), public.social_require_rules(),
   public.social_text_ok(text), public.social_json_int(jsonb, text), public.comment_card(uuid, uuid),
-  public.rules_status(), public.rules_accept(int), public.cms_set_banned_term(text, boolean), public.cms_list_banned_terms(),
+  public.rules_status(), public.rules_accept(int), public.rules_current(), public.cms_publish_rules(text), public.cms_set_banned_term(text, boolean), public.cms_list_banned_terms(),
   public.post_create(uuid, text, text, text, jsonb, jsonb, boolean), public.post_edit(uuid, uuid, text, text, boolean), public.post_delete(uuid, uuid),
   public.post_get(uuid, uuid), public.post_untag(uuid, uuid),
   public.profile_posts(uuid, uuid, text, int, timestamptz, uuid), public.feed_home(uuid, int, timestamptz, uuid), public.feed_suggested(uuid, int),
@@ -1133,7 +1180,7 @@ from public, anon, authenticated;
 grant execute on function public.social_media_can_add(text), public.social_media_visible(text) to authenticated;
 
 grant execute on function
-  public.rules_status(), public.rules_accept(int), public.cms_set_banned_term(text, boolean), public.cms_list_banned_terms(),
+  public.rules_status(), public.rules_accept(int), public.cms_publish_rules(text), public.cms_set_banned_term(text, boolean), public.cms_list_banned_terms(),
   public.post_create(uuid, text, text, text, jsonb, jsonb, boolean), public.post_edit(uuid, uuid, text, text, boolean), public.post_delete(uuid, uuid),
   public.post_get(uuid, uuid), public.post_untag(uuid, uuid),
   public.profile_posts(uuid, uuid, text, int, timestamptz, uuid), public.feed_home(uuid, int, timestamptz, uuid), public.feed_suggested(uuid, int),
@@ -1143,3 +1190,5 @@ grant execute on function
   public.members_list(uuid, int, timestamptz), public.members_set(uuid, uuid, boolean)
 to authenticated, service_role;
 grant execute on function public.social_media_orphans() to service_role;
+-- The rules are public: a guest can read them before signing up.
+grant execute on function public.rules_current() to anon, authenticated, service_role;
