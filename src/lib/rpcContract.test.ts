@@ -59,7 +59,7 @@ function callsIn(file: string): Call[] {
 }
 
 const defined = definedFunctions(migrations);
-const FILES = ['src/lib/account.ts', 'src/lib/venueSetupApi.ts', 'src/lib/venueBookingsApi.ts', 'src/lib/organizerEventsApi.ts', 'src/lib/moderation.ts', 'src/lib/marketplace.ts', 'supabase/functions/_shared/teamInvitation.ts'];
+const FILES = ['src/lib/account.ts', 'src/lib/venueSetupApi.ts', 'src/lib/venueBookingsApi.ts', 'src/lib/organizerEventsApi.ts', 'src/lib/moderation.ts', 'src/lib/marketplace.ts', 'src/lib/billing.ts', 'supabase/functions/_shared/teamInvitation.ts'];
 const calls = FILES.flatMap(callsIn);
 
 describe('the app and the database agree on every function call', () => {

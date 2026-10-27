@@ -22,14 +22,15 @@ declare
   olly constant uuid := '00000000-0000-0000-0000-0000000009a4';
   admin_u constant uuid := '00000000-0000-0000-0000-0000000000a2';
   a_e constant text := 'ann@gone.example'; b_e constant text := 'bob@gone.example'; c_e constant text := 'cy@gone.example'; o_e constant text := 'olly@gone.example';
-  rq_a uuid; rq_b uuid; q_a uuid; q_b uuid; pbk_a uuid; pbk_b uuid;
+  hr_a uuid; hr_b uuid; p_club uuid; p_bobdj uuid; rq_a uuid; rq_b uuid; q_a uuid; q_b uuid; pbk_a uuid; pbk_b uuid;
   t_s uuid; slot_s uuid; bk_s1 uuid; bk_s2 uuid; sp_s1 uuid; sp_s2 uuid;
   p_ann uuid; p_dj uuid; p_bob uuid; p_cy uuid; post_a uuid; post_b uuid; story_b uuid; cm_a uuid; cm_b uuid; rv_a uuid; rv_b uuid; conv uuid; grp uuid; org uuid; va uuid;
   social constant text[] := array[
     'site_profiles', 'site_handles', 'site_follows', 'site_blocks', 'site_posts', 'site_post_media', 'site_post_tags', 'site_post_likes', 'site_post_saves', 'site_comments',
     'site_member_lists', 'site_story_views', 'site_banned_terms', 'site_community_rules', 'site_rules_acceptance', 'site_ai_caption_uses', 'site_reviews', 'site_review_replies',
     'site_dm_conversations', 'site_dm_members', 'site_dm_messages', 'site_notifications', 'site_notification_opt_outs', 'site_reports', 'site_feature_flags', 'site_splits', 'site_split_shares',
-    'site_pro_settings', 'site_pro_services', 'site_pro_busy', 'site_pro_requests', 'site_pro_quotes', 'site_pro_bookings', 'site_pro_payments', 'site_pro_disputes', 'site_pro_payouts'];
+    'site_pro_settings', 'site_pro_services', 'site_pro_busy', 'site_pro_requests', 'site_pro_quotes', 'site_pro_bookings', 'site_pro_payments', 'site_pro_disputes', 'site_pro_payouts',
+    'site_profile_team', 'site_hires', 'site_hire_offers', 'site_hire_items', 'site_hire_bookings', 'site_chat_links'];
   -- made by BottlesUp staff, not by her: nothing of hers is expected in them
   staff_only constant text[] := array['site_community_rules', 'site_feature_flags', 'site_banned_terms', 'site_pro_settings', 'site_pro_quotes', 'site_pro_payments'];
   r record; t record; n bigint; ids uuid[]; before_total bigint := 0;
@@ -42,12 +43,15 @@ begin
   perform tests.login(ann, a_e); perform public.save_my_profile('Ann Lee', 'annie', 'Toronto'); perform public.profile_save_personal('public');
   perform public.profile_create_business('dj', 'DJ Ann', 'djann'); perform public.rules_accept(2); perform public.ai_caption_begin();
   perform tests.login(bob, b_e); perform public.save_my_profile('Bob Ray', 'bob', 'Toronto'); perform public.profile_save_personal('public'); perform public.rules_accept(2);
+  perform public.profile_create_business('dj', 'DJ Bob', 'djbob');
   perform tests.login(cy, c_e); perform public.save_my_profile('Cy Rus', 'cyrus', 'Toronto'); perform public.profile_save_personal('public');
   perform tests.login(olly, o_e); perform public.save_my_profile('Olly Owner', 'olly', 'Toronto'); perform public.profile_save_personal('public');
   org := public.create_organization('Club Co', 'venue_owner'); va := public.create_org_venue(org, 'Club A');
+  perform public.profile_create_business('venue', 'Club A', 'cluba', null, null, null, va);
   perform tests.logout();
   select id into p_ann from public.site_profiles where user_id = ann and kind = 'personal'; select id into p_dj from public.site_profiles where handle = 'djann';
   select id into p_bob from public.site_profiles where user_id = bob and kind = 'personal'; select id into p_cy from public.site_profiles where user_id = cy and kind = 'personal';
+  select id into p_club from public.site_profiles where handle = 'cluba'; select id into p_bobdj from public.site_profiles where handle = 'djbob';
 
   -- follows both ways, from both of her profiles; blocks both ways
   insert into public.site_follows (follower, followed) values (p_ann, p_bob), (p_bob, p_ann), (p_dj, p_bob), (p_bob, p_dj);
@@ -102,6 +106,14 @@ begin
   insert into public.site_pro_payouts (booking, provider, gross_cents, commission_cents, net_cents, status, reference, paid_at, paid_by)
     values (pbk_a, p_dj, 30000, 1500, 28500, 'paid', 'etransfer 1', now(), ann);
   update public.site_pro_settings set updated_by = ann where id = 1;
+  -- teams, hiring a venue, the workspace and the chats, both ways: bob is on her DJ profile's team and she is on his; she asked the club for a night and bob did too
+  insert into public.site_profile_team (profile, member, role, permissions, status, invited_by) values (p_dj, bob, 'manager', '{bookings,content,finance}', 'active', ann), (p_bobdj, ann, 'booking_agent', '{bookings}', 'active', bob);
+  insert into public.site_hires (organizer, venue_profile, requested_by, event_date, event_type) values (p_dj, p_club, ann, current_date + 60, 'Her night') returning id into hr_a;
+  insert into public.site_hires (organizer, venue_profile, requested_by, event_date, event_type) values (p_bobdj, p_club, bob, current_date + 61, 'His night') returning id into hr_b;
+  insert into public.site_hire_offers (hire, rental_cents, deposit_cents, control, valid_until) values (hr_a, 100000, 20000, 'venue', now() + interval '3 days'), (hr_b, 100000, 20000, 'venue', now() + interval '3 days');
+  insert into public.site_hire_items (hire, kind, title, side, created_by) values (hr_a, 'task', 'Her task', 'organizer', ann), (hr_b, 'task', 'His task', 'organizer', bob);
+  insert into public.site_hire_bookings (hire, booking, attached_by) values (hr_a, pbk_a, ann);
+  insert into public.site_chat_links (conversation, kind, ref) values (grp, 'team', p_dj);
   -- notifications both ways, choices, reports both ways and one about her DJ profile
   insert into public.site_notifications (recipient, kind, actor, post, dedupe_key) values (p_bob, 'like', p_ann, post_b, 'k1'), (p_ann, 'comment', p_bob, post_a, 'k2');
   insert into public.site_notification_opt_outs (profile, kind) values (p_ann, 'tag'), (p_dj, 'follow');
@@ -148,6 +160,10 @@ begin
   perform tests.assert_eq('...her messages, but not what the others said', (select count(*) from public.site_dm_messages where conversation in (conv, grp) and sender = p_bob)::int, 2);
   perform tests.assert_eq('...her split goes without a host (the table is still there), and the share she was asked for has nobody on it', (select count(*) from public.site_splits where id = sp_s1 and host is null)::int + (select count(*) from public.site_split_shares where split_id = sp_s2 and payer is null)::int, 2);
   perform tests.assert_eq('...what she sold and was hired for stays as a record, with nobody on it: the two bookings, the payout and the dispute', (select count(*) from public.site_pro_bookings where client is null or provider is null)::int + (select count(*) from public.site_pro_payouts where provider is null and paid_by is null)::int + (select count(*) from public.site_pro_disputes where opened_by is null)::int, 4);
+  perform tests.assert_eq('...the night she asked the club for stays as a record for the club, with nobody on it, and its offer, task and attached booking with it', (select count(*) from public.site_hires where id = hr_a and organizer is null and requested_by is null)::int + (select count(*) from public.site_hire_offers where hire = hr_a)::int + (select count(*) from public.site_hire_items where hire = hr_a and created_by is null)::int + (select count(*) from public.site_hire_bookings where hire = hr_a)::int, 4);
+  perform tests.assert_eq('...bob''s night is untouched', (select count(*) from public.site_hires where id = hr_b and organizer = p_bobdj and requested_by = bob)::int, 1);
+  perform tests.assert_eq('...his team has lost her, and her team has gone with her profile', (select count(*) from public.site_profile_team where member = ann or profile = p_dj)::int, 0);
+  perform tests.assert_eq('...and the team chat stays for the people still in it (its link only names a profile that is gone)', (select count(*) from public.site_chat_links where kind = 'team' and ref = p_dj)::int + (select count(*) from public.site_dm_conversations where id = grp)::int, 2);
   perform tests.assert_eq('what other people made stays: bob''s post, his story and his review', (select count(*) from public.site_posts where id in (post_b, story_b))::int + (select count(*) from public.site_reviews where id = rv_b)::int, 3);
   perform tests.assert_eq('...the group, with its other two people', (select count(*) from public.site_dm_members where conversation = grp)::int, 2);
   perform tests.assert_eq('...a report she made stays for BottlesUp to read, without her', (select count(*) from public.site_reports where kind = 'post' and target = post_b and reporter is null)::int, 1);

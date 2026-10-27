@@ -32,10 +32,13 @@ import CmsPayouts from "./cms/pages/Payouts";
 import CmsModeration from "./cms/pages/Moderation";
 import CmsSocialSettings from "./cms/pages/SocialSettings";
 import CmsMarketplace from "./cms/pages/Marketplace";
+import CmsBilling from "./cms/pages/Billing";
 import BookingSuccess from "./pages/BookingSuccess";
 import BookingCancel from "./pages/BookingCancel";
 import SplitShareThanks from "./pages/SplitShareThanks";
 import ProPaymentThanks from "./pages/ProPaymentThanks";
+import SubscriptionThanks from "./pages/SubscriptionThanks";
+import TipThanks from "./pages/TipThanks";
 import ClubPaymentConfirm from "./pages/ClubPaymentConfirm";
 import OrderByCode from "./pages/OrderByCode";
 import BookingByCode from "./pages/BookingByCode";
@@ -114,6 +117,8 @@ const App = () => {
             <Route path="/booking/cancel" element={<BookingCancel />} />
             <Route path="/pay/share-thanks" element={<SplitShareThanks />} />
             <Route path="/pay/booking-thanks" element={<ProPaymentThanks />} />
+            <Route path="/pay/subscription-thanks" element={<SubscriptionThanks />} />
+            <Route path="/pay/tip-thanks" element={<TipThanks />} />
             <Route path="/club-payment/confirm/:token" element={<ClubPaymentConfirm />} />
             <Route path="/bottle-substitution/confirm/:token" element={<BottleSubstitutionConfirm />} />
             <Route path="/order/:code" element={<OrderByCode />} />
@@ -178,6 +183,7 @@ const App = () => {
               <Route path="moderation" element={<CmsModeration />} />
               <Route path="social-settings" element={<CmsSocialSettings />} />
               <Route path="marketplace" element={<CmsMarketplace />} />
+              <Route path="billing" element={<CmsBilling />} />
               <Route path="promo-codes" element={<CmsPromoCodes />} />
               {ACCOUNT_ONBOARDING_ENABLED && <Route path="verifications" element={<CmsVerifications />} />}
               <Route path="vip-list" element={<CmsVipList />} />

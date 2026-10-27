@@ -3,6 +3,7 @@ import Stripe from 'npm:stripe@17';
 import { fulfillTicketOrder, fulfillTableBooking, fulfillBottleAddon } from '../_shared/fulfillment.ts';
 import { fulfillSplitShare, type DbLike, type StripeLike } from '../_shared/splitPayments.ts';
 import { fulfillProPayment } from '../_shared/proPayments.ts';
+import { applySubscription, fulfillSubscriptionCheckout, fulfillTip, type StripeSubscriptionLike } from '../_shared/billing.ts';
 
 const cryptoProvider = Stripe.createSubtleCryptoProvider();
 
@@ -79,6 +80,18 @@ Deno.serve(async (req: Request) => {
       return new Response('ok', { status: 200 });
     }
 
+    // A subscription for a professional's profile (the subscriptions switch): Stripe made the subscription, the database writes it.
+    if (session.metadata?.kind === 'subscription') {
+      await fulfillSubscriptionCheckout(supabase as unknown as DbLike, stripe as unknown as { subscriptions: { retrieve(id: string): Promise<StripeSubscriptionLike> } }, session as unknown as { id: string; subscription?: string | { id: string } | null; metadata?: Record<string, string> | null });
+      return new Response('ok', { status: 200 });
+    }
+
+    // A tip for a creator (the creator_earnings switch).
+    if (session.metadata?.kind === 'tip') {
+      await fulfillTip(supabase as unknown as DbLike, session.id, paymentIntentId, session.amount_total ?? 0);
+      return new Response('ok', { status: 200 });
+    }
+
     if (session.metadata?.kind === 'split_share') {
       await fulfillSplitShare(supabase as unknown as DbLike, stripe as unknown as StripeLike, session.id, paymentIntentId, session.amount_total ?? 0);
       return new Response('ok', { status: 200 });
@@ -96,6 +109,11 @@ Deno.serve(async (req: Request) => {
     } else if (orderId) {
       await fulfillTicketOrder(supabase, orderId, paymentIntentId);
     }
+  }
+
+  // A subscription changed or ended in Stripe (renewed, a payment failed, the card was changed, it was cancelled): the database writes what Stripe says.
+  if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+    await applySubscription(supabase as unknown as DbLike, event.data.object as unknown as StripeSubscriptionLike);
   }
 
   return new Response('ok', { status: 200 });

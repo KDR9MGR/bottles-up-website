@@ -22,6 +22,14 @@ vi.mock('../../supabase/functions/_shared/proPayments.ts', () => ({
 }));
 import * as proPayments from '../../supabase/functions/_shared/proPayments.ts';
 
+// A subscription's page, a change to a subscription and a tip go to their own functions (tested in billing.test.ts).
+vi.mock('../../supabase/functions/_shared/billing.ts', () => ({
+  fulfillSubscriptionCheckout: vi.fn(async () => ({ result: 'applied' })),
+  applySubscription: vi.fn(async () => ({ result: 'applied' })),
+  fulfillTip: vi.fn(async () => ({ result: 'applied' })),
+}));
+import * as billing from '../../supabase/functions/_shared/billing.ts';
+
 const TEST_SECRET = 'whsec_test_secret';
 const LIVE_SECRET = 'whsec_live_secret';
 
@@ -237,5 +245,64 @@ describe('site-stripe-webhook: a professional\'s booking payment', () => {
     const calls = (proPayments.fulfillProPayment as any).mock.calls;
     expect(calls[0][3]).toBe('pi_obj');
     expect([calls[1][3], calls[1][4]]).toEqual([null, 0]);
+  });
+});
+
+describe('site-stripe-webhook: a subscription', () => {
+  it('a completed subscription page goes to fulfillSubscriptionCheckout with the session, and to nothing else', async () => {
+    const res = await handler(signedRequest(sessionEvent({ id: 'cs_sub', mode: 'subscription', subscription: 'sub_1', metadata: { kind: 'subscription', subscription_id: 'ours-1' } })));
+    expect(res.status).toBe(200);
+    expect(billing.fulfillSubscriptionCheckout).toHaveBeenCalledTimes(1);
+    const args = (billing.fulfillSubscriptionCheckout as any).mock.calls[0];
+    expect(args[2]).toMatchObject({ id: 'cs_sub', subscription: 'sub_1', metadata: { subscription_id: 'ours-1' } });
+    expect(typeof args[1].subscriptions.retrieve).toBe('function');
+    expect(billing.fulfillTip).not.toHaveBeenCalled();
+    expect(proPayments.fulfillProPayment).not.toHaveBeenCalled();
+    none();
+  });
+
+  it('is never mistaken for a booking or an order, even if it carries their ids', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_sub2', metadata: { kind: 'subscription', booking_id: 'b1', order_id: 'o1' } })));
+    expect(billing.fulfillSubscriptionCheckout).toHaveBeenCalledTimes(1);
+    none();
+  });
+
+  it('a change to a subscription in Stripe is written as Stripe says it', async () => {
+    const sub = { id: 'sub_1', object: 'subscription', status: 'past_due', customer: 'cus_1', current_period_end: 1_800_000_000, cancel_at_period_end: false, metadata: { subscription_id: 'ours-1' } };
+    for (const type of ['customer.subscription.updated', 'customer.subscription.deleted']) {
+      const res = await handler(signedRequest(JSON.stringify({ id: 'evt_s', object: 'event', type, data: { object: sub } })));
+      expect(res.status).toBe(200);
+    }
+    const calls = (billing.applySubscription as any).mock.calls;
+    expect(calls.length).toBe(2);
+    expect(calls[0][1]).toMatchObject({ id: 'sub_1', status: 'past_due' });
+    none();
+  });
+
+  it('other subscription events are acknowledged and ignored', async () => {
+    const res = await handler(signedRequest(JSON.stringify({ id: 'evt_s2', object: 'event', type: 'customer.subscription.created', data: { object: { id: 'sub_1' } } })));
+    expect(res.status).toBe(200);
+    expect(billing.applySubscription).not.toHaveBeenCalled();
+  });
+});
+
+describe('site-stripe-webhook: a tip', () => {
+  it('goes to fulfillTip with the session, the payment and what Stripe took, and to nothing else', async () => {
+    const res = await handler(signedRequest(sessionEvent({ id: 'cs_tip', payment_intent: 'pi_tip', amount_total: 500, metadata: { kind: 'tip', tip_id: 't1' } })));
+    expect(res.status).toBe(200);
+    expect(billing.fulfillTip).toHaveBeenCalledTimes(1);
+    const args = (billing.fulfillTip as any).mock.calls[0];
+    expect([args[1], args[2], args[3]]).toEqual(['cs_tip', 'pi_tip', 500]);
+    expect(billing.fulfillSubscriptionCheckout).not.toHaveBeenCalled();
+    none();
+  });
+
+  it('a payment intent that is an object is read, no intent is null, and no amount is nothing', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_t2', payment_intent: { id: 'pi_obj' }, amount_total: 300, metadata: { kind: 'tip' } })));
+    await handler(signedRequest(sessionEvent({ id: 'cs_t3', metadata: { kind: 'tip' } })));
+    const calls = (billing.fulfillTip as any).mock.calls;
+    expect(calls[0][2]).toBe('pi_obj');
+    expect([calls[1][2], calls[1][3]]).toEqual([null, 0]);
+    none();
   });
 });
