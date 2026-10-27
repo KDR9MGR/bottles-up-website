@@ -557,6 +557,52 @@ begin
 end;
 $$;
 
+-- One conversation as the app lists it, for the profile p_actor (who must be in it).
+create function public.dm_conversation_json(p_actor uuid, p_conversation uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'id', c.id,
+    'kind', c.kind,
+    'title', c.title,
+    'booking_id', c.booking_id,
+    'status', m.status,
+    'muted', m.muted,
+    'last_message_at', c.last_message_at,
+    'member_count', (select count(*) from public.site_dm_members mm where mm.conversation = c.id and mm.status <> 'left'),
+    'others', coalesce((select jsonb_agg(public.profile_mini(o.profile) order by o.joined_at)
+                        from (select mm.profile, mm.joined_at from public.site_dm_members mm
+                              where mm.conversation = c.id and mm.profile <> p_actor and mm.status <> 'left' order by mm.joined_at limit 3) o), '[]'::jsonb),
+    'last', (select jsonb_build_object('kind', lm.kind, 'body', case when lm.deleted_at is null then left(lm.body, 120) end, 'removed', lm.deleted_at is not null,
+                                       'created_at', lm.created_at, 'sender', public.profile_mini(lm.sender), 'is_mine', public.profile_is_mine(lm.sender))
+             from public.site_dm_messages lm where lm.conversation = c.id order by lm.created_at desc, lm.id desc limit 1),
+    'unread', (select count(*) from public.site_dm_messages um
+               where um.conversation = c.id and um.deleted_at is null and um.sender <> p_actor and um.created_at > m.last_read_at and um.created_at >= m.joined_at)
+  )
+  from public.site_dm_members m
+  join public.site_dm_conversations c on c.id = m.conversation
+  where m.conversation = p_conversation and m.profile = p_actor
+$$;
+
+-- One conversation the profile is in (its title, who is in it), for the top of the conversation screen.
+create function public.dm_conversation(p_actor uuid, p_conversation uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  perform public.profile_require_actor(p_actor);
+  if not public.dm_is_member(p_actor, p_conversation) then raise exception 'This conversation isn''t available.'; end if;
+  return public.dm_conversation_json(p_actor, p_conversation);
+end;
+$$;
+
 -- The inbox: p_box 'main' (conversations you are in) or 'requests' (people you do not follow, waiting). Newest activity first.
 create function public.dm_inbox(p_actor uuid, p_box text default 'main', p_limit int default 30, p_before timestamptz default null, p_before_id uuid default null)
 returns jsonb
@@ -572,27 +618,9 @@ begin
   perform public.profile_require_actor(p_actor);
   if v_box not in ('main', 'requests') then raise exception 'Choose main or requests.'; end if;
   return coalesce((
-    select jsonb_agg(jsonb_build_object(
-      'id', x.id,
-      'kind', x.kind,
-      'title', x.title,
-      'booking_id', x.booking_id,
-      'status', x.status,
-      'muted', x.muted,
-      'last_message_at', x.last_message_at,
-      'member_count', (select count(*) from public.site_dm_members mm where mm.conversation = x.id and mm.status <> 'left'),
-      'others', coalesce((select jsonb_agg(public.profile_mini(o.profile) order by o.joined_at)
-                          from (select mm.profile, mm.joined_at from public.site_dm_members mm
-                                where mm.conversation = x.id and mm.profile <> p_actor and mm.status <> 'left' order by mm.joined_at limit 3) o), '[]'::jsonb),
-      'last', (select jsonb_build_object('kind', lm.kind, 'body', case when lm.deleted_at is null then left(lm.body, 120) end, 'removed', lm.deleted_at is not null,
-                                         'created_at', lm.created_at, 'sender', public.profile_mini(lm.sender), 'is_mine', public.profile_is_mine(lm.sender))
-               from public.site_dm_messages lm where lm.conversation = x.id order by lm.created_at desc, lm.id desc limit 1),
-      'unread', (select count(*) from public.site_dm_messages um
-                 where um.conversation = x.id and um.deleted_at is null and um.sender <> p_actor and um.created_at > x.last_read_at
-                   and um.created_at >= x.joined_at)
-    ) order by x.last_message_at desc, x.id desc)
+    select jsonb_agg(public.dm_conversation_json(p_actor, x.id) order by x.last_message_at desc, x.id desc)
     from (
-      select c.id, c.kind, c.title, c.booking_id, c.last_message_at, m.status, m.muted, m.last_read_at, m.joined_at
+      select c.id, c.last_message_at
       from public.site_dm_members m
       join public.site_dm_conversations c on c.id = m.conversation
       where m.profile = p_actor
@@ -805,7 +833,7 @@ revoke all on function
   public.dm_group_rename(uuid, uuid, text), public.dm_leave(uuid, uuid), public.dm_start_booking(uuid, uuid),
   public.dm_send(uuid, uuid, text, text, text, uuid), public.dm_messages(uuid, uuid, int, timestamptz, uuid), public.dm_inbox(uuid, text, int, timestamptz, uuid),
   public.dm_mark_read(uuid, uuid), public.dm_mute(uuid, uuid, boolean), public.dm_answer_request(uuid, uuid, boolean), public.dm_delete_message(uuid, uuid),
-  public.dm_people(uuid, uuid), public.dm_unread(uuid),
+  public.dm_people(uuid, uuid), public.dm_unread(uuid), public.dm_conversation_json(uuid, uuid), public.dm_conversation(uuid, uuid),
   public.notifications_list(uuid, int, timestamptz, uuid), public.notifications_unread(uuid), public.notifications_read(uuid, timestamptz), public.notifications_purge(int)
 from public, anon, authenticated;
 grant execute on function
@@ -813,7 +841,7 @@ grant execute on function
   public.dm_group_rename(uuid, uuid, text), public.dm_leave(uuid, uuid), public.dm_start_booking(uuid, uuid),
   public.dm_send(uuid, uuid, text, text, text, uuid), public.dm_messages(uuid, uuid, int, timestamptz, uuid), public.dm_inbox(uuid, text, int, timestamptz, uuid),
   public.dm_mark_read(uuid, uuid), public.dm_mute(uuid, uuid, boolean), public.dm_answer_request(uuid, uuid, boolean), public.dm_delete_message(uuid, uuid),
-  public.dm_people(uuid, uuid), public.dm_unread(uuid),
+  public.dm_people(uuid, uuid), public.dm_unread(uuid), public.dm_conversation(uuid, uuid),
   public.notifications_list(uuid, int, timestamptz, uuid), public.notifications_unread(uuid), public.notifications_read(uuid, timestamptz)
 to authenticated, service_role;
 grant execute on function public.notifications_purge(int) to service_role;

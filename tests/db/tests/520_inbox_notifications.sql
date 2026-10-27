@@ -308,6 +308,9 @@ begin
   perform tests.assert_eq('the next page starts after the last one seen', tests.names(ann, a_e, format($q$public.dm_inbox(%L, 'main', 1, %L::timestamptz, %L)$q$, p_ann,
     tests.f(ann, a_e, format($q$(public.dm_inbox(%L, 'main', 1)) -> 0$q$, p_ann), '{last_message_at}'), tests.f(ann, a_e, format($q$(public.dm_inbox(%L, 'main', 1)) -> 0$q$, p_ann), '{id}')::uuid)) like split_part(txt, ',', 2) || '%', true);
   perform tests.assert_eq('in a booking conversation only the venue''s reply is new to the customer, not her own booking card', tests.q(ann, a_e, format($q$(select e ->> 'unread' from jsonb_array_elements(public.dm_inbox(%L)) e where e ->> 'id' = %L)$q$, p_ann, cb)), '1');
+  perform tests.assert_eq('one conversation can be read on its own, with its title', tests.f(bob, b_e, format($q$public.dm_conversation(%L, %L)$q$, p_bob, cg), '{title}'), 'Saturday crew');
+  perform tests.assert_eq('...only by someone in it', tests.q(rando, r_e, format($q$public.dm_conversation(%L, %L)$q$, p_rando, c1)), 'ERROR: This conversation isn''t available.');
+  perform tests.assert_eq('...and it says the same as the inbox does', tests.f(bob, b_e, format($q$public.dm_conversation(%L, %L)$q$, p_bob, c1), '{member_count}'), '2');
   perform tests.assert_eq('a made-up box is refused', tests.q(ann, a_e, format($q$public.dm_inbox(%L, 'archive')$q$, p_ann)), 'ERROR: Choose main or requests.');
   txt := tests.names(ann, a_e, format($q$public.dm_messages(%L, %L, 5)$q$, p_ann, c1), 'id');
   perform tests.assert_eq('the next page of messages starts after the last one seen', tests.names(ann, a_e, format($q$public.dm_messages(%L, %L, 1, %L::timestamptz, %L)$q$, p_ann, c1,
@@ -410,6 +413,7 @@ begin
   perform tests.login(bob, b_e);
   perform tests.assert_raises('the member check cannot be called by the app', format($q$select public.dm_is_member(%L, %L)$q$, p_bob, c1), 'permission denied');
   perform tests.assert_raises('...nor the card builders', format($q$select public.dm_message_card(%L, %L)$q$, p_bob, gen_random_uuid()), 'permission denied');
+  perform tests.assert_raises('...nor the row builder', format($q$select public.dm_conversation_json(%L, %L)$q$, p_bob, c1), 'permission denied');
   perform tests.assert_raises('...nor the notifier', format($q$select public.notify_profile(%L, 'like', %L)$q$, p_bob, p_ann), 'permission denied');
   perform tests.assert_raises('...nor the reference card', format($q$select public.dm_ref_card(%L, 'booking', %L)$q$, p_bob, bk), 'permission denied');
   perform tests.assert_raises('the conversations table cannot be read', $q$select * from public.site_dm_conversations$q$, 'permission denied');
