@@ -555,7 +555,7 @@ declare
   v_tag_text text;
   v_seen text[] := '{}';
 begin
-  perform public.profile_require_actor(p_actor);
+  perform public.profile_require_permission(p_actor, 'content');
   perform public.social_require_rules();
   if v_kind not in ('post', 'reel', 'story') then raise exception 'Choose post, reel or story.'; end if;
   if not public.feature_enabled('social') then raise exception 'Posting is not open yet.'; end if;

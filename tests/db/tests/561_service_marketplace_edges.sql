@@ -370,6 +370,17 @@ begin
   delete from auth.users where id = bob;
   j := tests.svc('public.market_housekeeping()')::jsonb;
   perform tests.assert_eq('a customer whose account closed three days before the job: the deposit is kept like any late cancel', (select status || '/' || cancelled_by from public.site_pro_bookings where id = bk) || '/' || (select gross_cents from public.site_pro_payouts where booking = bk), 'cancelled/client/30000');
+
+  ---------------------------------------------------------------- a different commission for a while
+  perform tests.assert_eq('the commission is the standard one to begin with', public.market_commission_bps(p_gus), 500);
+  insert into public.site_commission_overrides (profile, commission_bps, until, source) values (p_gus, 0, now() + interval '30 days', 'subscription');
+  perform tests.assert_eq('a subscription''s override replaces it', public.market_commission_bps(p_gus), 0);
+  perform tests.assert_eq('...for that professional only', public.market_commission_bps(p_grp), 500);
+  update public.site_commission_overrides set until = now() - interval '1 second' where profile = p_gus;
+  perform tests.assert_eq('...and not once it has run out', public.market_commission_bps(p_gus), 500);
+  update public.site_commission_overrides set until = now() + interval '1 day', commission_bps = 250, source = 'staff' where profile = p_gus;
+  perform tests.assert_eq('staff can set another figure', public.market_commission_bps(p_gus), 250);
+  delete from public.site_commission_overrides;
 end $$;
 
 rollback;

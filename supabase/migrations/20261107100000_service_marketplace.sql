@@ -31,6 +31,15 @@ create table public.site_pro_settings (
 );
 insert into public.site_pro_settings (id) values (1);
 
+-- A different commission for one professional for a while: a subscription's (written by 20261109100000) or one BottlesUp staff set. The function that fixes a booking's commission reads it.
+create table public.site_commission_overrides (
+  profile uuid primary key references public.site_profiles (id) on delete cascade,
+  commission_bps int not null check (commission_bps between 0 and 5000),
+  until timestamptz not null,
+  source text not null check (source in ('subscription', 'staff')),
+  updated_at timestamptz not null default clock_timestamp()
+);
+
 create table public.site_pro_services (
   id uuid primary key default gen_random_uuid(),
   profile uuid not null references public.site_profiles (id) on delete cascade,
@@ -167,6 +176,7 @@ create table public.site_pro_payouts (
 create index site_pro_payouts_status_idx on public.site_pro_payouts (status, created_at);
 
 alter table public.site_pro_settings enable row level security;
+alter table public.site_commission_overrides enable row level security;
 alter table public.site_pro_services enable row level security;
 alter table public.site_pro_busy enable row level security;
 alter table public.site_pro_requests enable row level security;
@@ -175,7 +185,7 @@ alter table public.site_pro_bookings enable row level security;
 alter table public.site_pro_payments enable row level security;
 alter table public.site_pro_disputes enable row level security;
 alter table public.site_pro_payouts enable row level security;
-revoke all on table public.site_pro_settings, public.site_pro_services, public.site_pro_busy, public.site_pro_requests, public.site_pro_quotes, public.site_pro_bookings,
+revoke all on table public.site_pro_settings, public.site_commission_overrides, public.site_pro_services, public.site_pro_busy, public.site_pro_requests, public.site_pro_quotes, public.site_pro_bookings,
   public.site_pro_payments, public.site_pro_disputes, public.site_pro_payouts from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -205,6 +215,17 @@ as $$
   select exists (select 1 from public.site_profiles p where p.id = p_profile and p.kind = 'business' and p.status = 'active' and p.category not in ('venue', 'event_group'))
 $$;
 
+-- May the caller act for this professional on bookings: acting as the profile (in good standing) and allowed the 'bookings' kind of work by their role?
+create function public.market_acts(p_provider uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.profile_can_act_as(p_provider) and public.profile_has_permission(p_provider, 'bookings')
+$$;
+
 -- The professional's side of a request or booking: the actor must be a professional the caller may act as.
 create function public.market_require_provider(p_actor uuid)
 returns void
@@ -216,6 +237,7 @@ as $$
 begin
   perform public.market_require_on();
   if p_actor is null or not public.profile_can_act_as(p_actor) then raise exception 'You cannot act as this profile.'; end if;
+  if not public.profile_has_permission(p_actor, 'bookings') then raise exception 'Your role on this profile does not allow this.'; end if;
   if not public.market_is_provider(p_actor) then raise exception 'Only a professional profile can do this.'; end if;
 end;
 $$;
@@ -227,7 +249,9 @@ stable
 security definer
 set search_path = public
 as $$
-  select s.commission_bps from public.site_pro_settings s where s.id = 1
+  select coalesce(
+    (select o.commission_bps from public.site_commission_overrides o where o.profile = p_provider and o.until > now()),
+    (select s.commission_bps from public.site_pro_settings s where s.id = 1))
 $$;
 
 -- Is the day taken? Set by hand, or held by a booking that is waiting for its deposit (still inside its 24 hours), confirmed, done or in dispute.
@@ -516,7 +540,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select case when r.client = auth.uid() then 'client' when r.provider is not null and public.profile_can_act_as(r.provider) then 'provider' else null end
+  select case when r.client = auth.uid() then 'client' when r.provider is not null and public.market_acts(r.provider) then 'provider' else null end
     from public.site_pro_requests r where r.id = p_request
 $$;
 
@@ -736,7 +760,7 @@ begin
   perform public.market_require_on();
   select * into b from public.site_pro_bookings where id = p_booking;
   if not found then raise exception 'This booking is not available.'; end if;
-  v_side := case when b.client = auth.uid() then 'client' when b.provider is not null and public.profile_can_act_as(b.provider) then 'provider' end;
+  v_side := case when b.client = auth.uid() then 'client' when b.provider is not null and public.market_acts(b.provider) then 'provider' end;
   if v_side is null then raise exception 'This booking is not available.'; end if;
   return public.market_booking_json(p_booking, v_side);
 end;
@@ -963,7 +987,7 @@ begin
   perform public.market_require_on();
   select * into b from public.site_pro_bookings where id = p_booking for update;
   if not found then raise exception 'This booking is not available.'; end if;
-  v_by := case when b.client = auth.uid() then 'client' when b.provider is not null and public.profile_can_act_as(b.provider) then 'provider' end;
+  v_by := case when b.client = auth.uid() then 'client' when b.provider is not null and public.market_acts(b.provider) then 'provider' end;
   if v_by is null then raise exception 'This booking is not available.'; end if;
   if b.status in ('cancelled', 'completed') then raise exception 'This booking is already closed.'; end if;
   if b.status = 'disputed' then raise exception 'This booking is in dispute: BottlesUp will decide it.'; end if;
@@ -1239,7 +1263,7 @@ $$;
 -- 11. Who may call what
 -- ---------------------------------------------------------------------------
 revoke all on function
-  public.market_require_on(), public.market_is_provider(uuid), public.market_require_provider(uuid), public.market_commission_bps(uuid), public.market_day_busy(uuid, date, uuid),
+  public.market_require_on(), public.market_is_provider(uuid), public.market_acts(uuid), public.market_require_provider(uuid), public.market_commission_bps(uuid), public.market_day_busy(uuid, date, uuid),
   public.market_booking_state(uuid), public.market_money(int), public.market_person(uuid), public.market_quote_json(uuid), public.market_booking_json(uuid, text),
   public.pro_service_save(uuid, uuid, text, text, int, text, boolean), public.pro_service_remove(uuid, uuid), public.pro_services_of(uuid), public.pro_busy_set(uuid, date, boolean),
   public.pro_busy_days(uuid, date, int), public.pro_request_create(uuid, uuid, date, text, text, int, text, int), public.pro_request_json(uuid, text), public.market_side(uuid),

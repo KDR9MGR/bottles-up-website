@@ -106,11 +106,29 @@ create index site_blocks_blocked_idx on public.site_blocks (blocked);
 create index site_blocks_keys_idx on public.site_blocks (blocker_key, blocked_key);
 create index site_blocks_blocked_key_idx on public.site_blocks (blocked_key);
 
+-- The people an owner has let act as a business profile of their own (a DJ, a photographer...), each with a role and the permissions that go with it. Only a row that is 'active' counts:
+-- revoking, leaving or being declined ends access at once. A profile run by a venue business is run by that business's own roles instead (see profile_is_owner). Managed by the
+-- functions in 20261108100000 (invite, answer, revoke, change a role); the access checks below read it.
+create table public.site_profile_team (
+  id uuid primary key default gen_random_uuid(),
+  profile uuid not null references public.site_profiles (id) on delete cascade,
+  member uuid not null references auth.users (id) on delete cascade,
+  role text not null check (role in ('manager', 'booking_agent', 'content_manager', 'finance_assistant', 'door_staff', 'custom')),
+  permissions text[] not null default '{}' check (permissions <@ array['bookings', 'content', 'finance']::text[]),
+  status text not null default 'invited' check (status in ('invited', 'active', 'declined', 'revoked', 'left')),
+  invited_by uuid references auth.users (id) on delete set null,
+  invited_at timestamptz not null default clock_timestamp(),
+  answered_at timestamptz,
+  unique (profile, member)
+);
+create index site_profile_team_member_idx on public.site_profile_team (member, status);
+
 alter table public.site_profiles enable row level security;
 alter table public.site_handles enable row level security;
 alter table public.site_follows enable row level security;
 alter table public.site_blocks enable row level security;
-revoke all on table public.site_profiles, public.site_handles, public.site_follows, public.site_blocks from public, anon, authenticated;
+alter table public.site_profile_team enable row level security;
+revoke all on table public.site_profiles, public.site_handles, public.site_follows, public.site_blocks, public.site_profile_team from public, anon, authenticated;
 
 -- Every username already in use goes on the one list (the profiles table keeps them unique, so nothing can clash here), and from now on the
 -- list follows profiles.username.
@@ -155,8 +173,8 @@ as $$
   )
 $$;
 
--- Is the caller one of the people who may act as this profile (ignoring whether it is suspended)?
-create function public.profile_is_mine(p_profile uuid)
+-- Does the caller OWN this profile: the login behind a professional's own profile, or the owner or organizer of the business behind a venue's or an event group's (and a venue's manager)?
+create function public.profile_is_owner(p_profile uuid)
 returns boolean
 language sql
 stable
@@ -176,6 +194,33 @@ as $$
   )
 $$;
 
+-- Is the caller one of the people who may act as this profile (ignoring whether it is suspended): its owner, or somebody the owner has let in who has accepted?
+create function public.profile_is_mine(p_profile uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.profile_is_owner(p_profile)
+      or (auth.uid() is not null and exists (select 1 from public.site_profile_team t where t.profile = p_profile and t.member = auth.uid() and t.status = 'active'))
+$$;
+
+-- May the caller do this KIND of thing as the profile ('bookings': services, requests, quotes, hires; 'content': posts and the profile's own details; 'finance': earnings)? The owner
+-- may do everything; a team member only what their role carries. This says nothing about the profile being in good standing: use it after profile_require_actor.
+create function public.profile_has_permission(p_profile uuid, p_permission text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.profile_is_owner(p_profile)
+      or (auth.uid() is not null and exists (
+            select 1 from public.site_profile_team t
+            where t.profile = p_profile and t.member = auth.uid() and t.status = 'active' and p_permission = any (t.permissions)))
+$$;
+
 -- Every profile the caller may act as (suspended ones included), found through the indexes instead of by asking about every profile. Must say the same as profile_is_mine:
 -- a test compares the two.
 create function public.profile_my_ids()
@@ -191,6 +236,8 @@ as $$
   from public.active_memberships() m
   join public.site_profiles p on p.org_id = m.org_id
   where m.role in ('owner', 'organizer') or (m.role = 'manager' and p.venue_id is not null and m.venue_id = p.venue_id)
+  union
+  select t.profile from public.site_profile_team t where auth.uid() is not null and t.member = auth.uid() and t.status = 'active'
 $$;
 
 -- ...and is that profile in good standing?
@@ -328,6 +375,22 @@ begin
   if auth.uid() is null then raise exception 'Sign in first.'; end if;
   if p_actor is null or not public.profile_can_act_as(p_actor) then
     raise exception 'You cannot act as this profile.';
+  end if;
+end;
+$$;
+
+-- Acting as the profile AND allowed this kind of thing by the role (see profile_has_permission).
+create function public.profile_require_permission(p_actor uuid, p_permission text)
+returns void
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  perform public.profile_require_actor(p_actor);
+  if not public.profile_has_permission(p_actor, p_permission) then
+    raise exception 'Your role on this profile does not allow this.';
   end if;
 end;
 $$;
@@ -520,7 +583,7 @@ declare
   v_bio text := nullif(btrim(coalesce(p_bio, '')), '');
   v_city text := nullif(btrim(coalesce(p_city, '')), '');
 begin
-  perform public.profile_require_actor(p_profile);
+  perform public.profile_require_permission(p_profile, 'content');
   if not exists (select 1 from public.site_profiles s where s.id = p_profile and s.kind = 'business') then
     raise exception 'Edit your own details in your profile settings.';
   end if;
@@ -832,8 +895,8 @@ $$;
 -- 8. Who may call what
 -- ---------------------------------------------------------------------------
 revoke all on function
-  public.handle_reserved(text), public.profile_is_mine(uuid), public.profile_can_act_as(uuid), public.profile_key(uuid), public.profile_blocked_between(uuid, uuid),
-  public.profile_visible(uuid, uuid), public.profile_content_visible(uuid, uuid), public.profile_card(uuid, uuid), public.profile_require_actor(uuid),
+  public.handle_reserved(text), public.profile_is_owner(uuid), public.profile_is_mine(uuid), public.profile_has_permission(uuid, text), public.profile_can_act_as(uuid), public.profile_key(uuid), public.profile_blocked_between(uuid, uuid),
+  public.profile_visible(uuid, uuid), public.profile_content_visible(uuid, uuid), public.profile_card(uuid, uuid), public.profile_require_actor(uuid), public.profile_require_permission(uuid, text),
   public.profile_clean_interests(text[]), public.profile_my_ids(),
   public.site_handles_follow_profile(),
   public.handle_available(text), public.profile_save_personal(text, text[]),

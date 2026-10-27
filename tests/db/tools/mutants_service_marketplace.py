@@ -151,6 +151,10 @@ MUTANTS = [
     M('acc-busy', 'pro_quote_accept', "if public.market_day_busy(r.provider, r.event_date) then raise exception 'This professional is no longer free on that day.'; end if;", ""),
     M('acc-commission', 'pro_quote_accept', "public.market_commission_bps(r.provider), s.free_cancel_days, now() + interval '24 hours')", "0, s.free_cancel_days, now() + interval '24 hours')"),
     M('acc-cancel-days', 'pro_quote_accept', "public.market_commission_bps(r.provider), s.free_cancel_days, now() + interval '24 hours')", "public.market_commission_bps(r.provider), 7, now() + interval '24 hours')"),
+    M('comm-override', 'market_commission_bps', "(select o.commission_bps from public.site_commission_overrides o where o.profile = p_provider and o.until > now()),", "null,"),
+    M('comm-override-who', 'market_commission_bps', "where o.profile = p_provider and o.until > now()", "where o.until > now()"),
+    M('comm-override-until', 'market_commission_bps', "where o.profile = p_provider and o.until > now()", "where o.profile = p_provider"),
+    M('comm-standard', 'market_commission_bps', "(select s.commission_bps from public.site_pro_settings s where s.id = 1))", "0)"),
     M('acc-payby', 'pro_quote_accept', "now() + interval '24 hours')\n  returning id into v_id;", "now() + interval '48 hours')\n  returning id into v_id;"),
     M('acc-quote-status', 'pro_quote_accept', "update public.site_pro_quotes set status = 'accepted' where id = q.id;", ""),
     M('acc-request-status', 'pro_quote_accept', "update public.site_pro_requests set status = 'accepted', updated_at = clock_timestamp() where id = r.id;", ""),
@@ -205,7 +209,7 @@ MUTANTS = [
     M('cancel-refund', 'market_cancel', "perform public.market_refund_mark(p_booking, b.paid_cents - v_keep);", ""),
     M('cancel-payout', 'market_cancel', "if v_keep > 0 then perform public.market_payout_make(p_booking, v_keep, 'releasable'); end if;", ""),
     M('cancel-closed', 'market_cancel', "if b.status in ('cancelled', 'completed') then return; end if;", ""),
-    M('cancel-by', 'pro_booking_cancel', "v_by := case when b.client = auth.uid() then 'client' when b.provider is not null and public.profile_can_act_as(b.provider) then 'provider' end;", "v_by := 'client';"),
+    M('cancel-by', 'pro_booking_cancel', "v_by := case when b.client = auth.uid() then 'client' when b.provider is not null and public.market_acts(b.provider) then 'provider' end;", "v_by := 'client';"),
     M('cancel-who', 'pro_booking_cancel', "if v_by is null then raise exception 'This booking is not available.'; end if;", ""),
     M('cancel-closed-msg', 'pro_booking_cancel', "if b.status in ('cancelled', 'completed') then raise exception 'This booking is already closed.'; end if;", ""),
     M('cancel-disputed', 'pro_booking_cancel', "if b.status = 'disputed' then raise exception 'This booking is in dispute: BottlesUp will decide it.'; end if;", ""),
@@ -272,7 +276,7 @@ MUTANTS = [
     M('cms-paid-audit', 'cms_pro_payout_paid', "'service.payout_paid'", "'service.payout_padi'"),
     # who may call what
     ('grant-paid-open', FILE, "public.pro_payment_attach(uuid, text, timestamptz), public.pro_payment_paid(text, text, int), public.pro_refunds_due(), public.pro_payment_refunded(uuid, text, int),\n  public.market_housekeeping()\nto service_role;", "public.pro_payment_attach(uuid, text, timestamptz), public.pro_payment_paid(text, text, int), public.pro_refunds_due(), public.pro_payment_refunded(uuid, text, int),\n  public.market_housekeeping()\nto service_role, authenticated;"),
-    ('grant-tables-open', FILE, "revoke all on table public.site_pro_settings, public.site_pro_services,", "revoke all on table public.site_pro_services,"),
+    ('grant-tables-open', FILE, "revoke all on table public.site_pro_settings, public.site_commission_overrides, public.site_pro_services,", "revoke all on table public.site_pro_settings, public.site_pro_services,"),
     ('grant-visitor', FILE, "public.cms_pro_payouts(text), public.cms_pro_payout_paid(uuid, text)\nto authenticated;", "public.cms_pro_payouts(text), public.cms_pro_payout_paid(uuid, text)\nto authenticated, anon;"),
 ]
 
