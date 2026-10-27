@@ -52,6 +52,8 @@ MUTANTS = [
     M('elig-visit', 'review_eligibility', "if not public.review_visited(p_kind, p_target) then", "if false then"),
     M('elig-kind', 'review_eligibility', "if p_kind not in ('venue', 'event') or p_target is null then raise exception 'Choose a venue or an event.'; end if;", ""),
     # writing
+    M('save-rules', 'review_save', "perform public.social_require_rules();\n", ""),
+    M('reply-rules', 'review_reply', "perform public.social_require_rules();\n", ""),
     M('save-rating', 'review_save', "if p_rating is null or p_rating not between 1 and 5 then raise exception 'Choose 1 to 5 stars.'; end if;", ""),
     M('save-length', 'review_save', "if v_body is not null and char_length(v_body) > 1000 then raise exception 'A review can be 1000 characters at most.'; end if;", ""),
     M('save-words', 'review_save', "if not public.social_text_ok(v_body) then raise exception 'That text goes against our community rules.'; end if;", ""),

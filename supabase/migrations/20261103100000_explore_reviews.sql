@@ -193,6 +193,7 @@ declare
   v_id uuid;
 begin
   perform public.profile_require_actor(p_actor);
+  perform public.social_require_rules();
   v_elig := public.review_eligibility(p_actor, p_kind, p_target);
   if (v_elig ->> 'eligible')::boolean is not true then raise exception '%', v_elig ->> 'reason'; end if;
   if p_rating is null or p_rating not between 1 and 5 then raise exception 'Choose 1 to 5 stars.'; end if;
@@ -260,6 +261,7 @@ declare
   v_body text := btrim(coalesce(p_body, ''));
 begin
   perform public.profile_require_actor(p_actor);
+  perform public.social_require_rules();
   if not public.feature_enabled('reviews') then raise exception 'Reviews are not open yet.'; end if;
   if not public.review_can_reply(p_actor, p_review) then raise exception 'Only the venue or the organizer it is about can reply.'; end if;
   if char_length(v_body) < 1 then raise exception 'Write something first.'; end if;

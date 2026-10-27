@@ -142,6 +142,14 @@ begin
   perform tests.q(olly, o_e, format($q$public.save_venue_facts(%L, '{}', '', null, false, '', '', '')$q$, va));
   perform tests.assert_eq('an empty field clears it', (select parking_info is null and last_entry is null and menu_url is null and min_age is null from public.site_venues where id = va), true);
 
+  ---------------------------------------------------------------- the community rules come first
+  perform tests.login(admin_u, 'admin@test.example'); perform public.cms_set_feature('reviews', true); perform tests.logout();
+  perform tests.assert_eq('nobody writes a review before accepting the rules', tests.q(ann, a_e, format($q$public.review_save(%L, 'venue', %L, 5, 'hi')$q$, p_ann, va)), 'ERROR: Read and accept the community rules first.');
+  perform tests.assert_eq('...nor answers one', tests.q(olly, o_e, format($q$public.review_reply(%L, %L, 'hi')$q$, p_clubA, gen_random_uuid())), 'ERROR: Read and accept the community rules first.');
+  perform tests.q(ann, a_e, 'public.rules_accept(1)'); perform tests.q(bob, b_e, 'public.rules_accept(1)'); perform tests.q(dee, d_e, 'public.rules_accept(1)'); perform tests.q(olly, o_e, 'public.rules_accept(1)');
+  perform tests.q(mia, m_e, 'public.rules_accept(1)'); perform tests.q(eve, e_e, 'public.rules_accept(1)'); perform tests.q(rando, r_e, 'public.rules_accept(1)'); perform tests.q(cy, c_e, 'public.rules_accept(1)'); perform tests.q(max, x_e, 'public.rules_accept(1)');
+  perform tests.login(admin_u, 'admin@test.example'); perform public.cms_set_feature('reviews', false); perform tests.logout();
+
   ---------------------------------------------------------------- who may review
   perform tests.assert_eq('reviews are off at first', tests.f(ann, a_e, format($q$public.review_eligibility(%L, 'venue', %L)$q$, p_ann, va), '{reason}'), 'Reviews are not open yet.');
   perform tests.login(admin_u, 'admin@test.example'); perform public.cms_set_feature('reviews', true); perform tests.logout();
