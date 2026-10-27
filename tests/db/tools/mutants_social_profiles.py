@@ -43,7 +43,7 @@ MUTANTS = [
     ('sp-escape-underscore', SP, "replace(replace(replace(v_q, '\\', '\\\\'), '%', '\\%'), '_', '\\_')", "replace(replace(v_q, '\\', '\\\\'), '%', '\\%')"),
     ('sp-limit-floor', SP, "least(greatest(coalesce(p_limit, 20), 1), 30)", "least(coalesce(p_limit, 20), 30)"),
     ('sp-search-self', SP, "        and s.id <> p_actor\n", ""),
-    ('sp-search-blocked', SP, "        and not public.profile_blocked_between(p_actor, s.id)\n        and (\n          coalesce", "        and (\n          coalesce"),
+    ('sp-search-blocked', SP, "        and not public.profile_blocked_between(p_actor, s.id)\n      order by (coalesce(s.handle, pr.username) = v_q) desc", "      order by (coalesce(s.handle, pr.username) = v_q) desc"),
     # following
     ('sp-private-immediate', SP, "case when v_private then 'pending' else 'active' end", "'active'"),
     ('sp-rate-limit', SP, ">= 200 then", ">= 201 then"),
@@ -59,6 +59,10 @@ MUTANTS = [
     ('sp-block-one-direction', SP, "where (follower = p_actor and followed = p_target) or (follower = p_target and followed = p_actor);", "where (follower = p_actor and followed = p_target);"),
     ('sp-block-self', SP, "if p_target = p_actor or public.profile_is_mine(p_target) then raise exception 'You cannot block your own profile.'; end if;", "if p_target = p_actor then raise exception 'You cannot block your own profile.'; end if;"),
     ('sp-block-reveals', SP, "if not public.profile_visible(p_actor, p_target) then raise exception 'This profile isn''t available.'; end if;", "if not public.profile_visible(p_actor, p_target) then raise exception 'You are blocked.'; end if;"),
+    ('sp-my-ids-manager', SP, "where m.role in ('owner', 'organizer') or (m.role = 'manager'", "where m.role in ('owner') or (m.role = 'manager'"),
+    ('sp-flag-follow', SP, "    if not public.feature_enabled('social') then raise exception 'Profiles are not open yet.'; end if;\n    if not public.profile_visible(p_actor, p_target)", "    if not public.profile_visible(p_actor, p_target)"),
+    ('sp-flag-create', SP, "  if not public.feature_enabled('social') then raise exception 'Profiles are not open yet.'; end if;\n  if v_category not in (", "  if v_category not in ("),
+    ('sp-flag-personal', SP, "  if not public.feature_enabled('social') then raise exception 'Profiles are not open yet.'; end if;\n  if v_privacy not in", "  if v_privacy not in"),
     # surface
     ('sp-helper-grant', SP, "public.block_set(uuid, uuid, boolean), public.block_list(uuid)\nto authenticated, service_role;", "public.block_set(uuid, uuid, boolean), public.block_list(uuid), public.profile_can_act_as(uuid)\nto authenticated, service_role;"),
     ('sp-tables-open', SP, "revoke all on table public.site_profiles, public.site_handles, public.site_follows, public.site_blocks from public, anon, authenticated;", "revoke all on table public.site_profiles, public.site_handles, public.site_follows from public, anon, authenticated;"),

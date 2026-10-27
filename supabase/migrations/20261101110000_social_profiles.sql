@@ -16,6 +16,8 @@
 --   * BLOCKING hides two profiles from each other both ways (search, profile page, lists), removes the follows between them and refuses a new one. The
 --     refusal says "This profile isn't available." and so never tells someone they were blocked. A block is between two profiles, not two logins.
 --   * Following is slowed: at most 200 new follows an hour from one profile.
+--   * Everything that CREATES or CHANGES something social (a profile, a follow) refuses with "Profiles are not open yet." until BottlesUp switches the `social`
+--     feature on (20261101100000), so a dark launch is dark on the server too, not only in the app. Reading, unfollowing and blocking always work.
 --
 -- Reached only through the functions below; no table can be read or written by a client. Plain CREATE, never CREATE OR REPLACE.
 
@@ -163,6 +165,23 @@ as $$
         ))
       )
   )
+$$;
+
+-- Every profile the caller may act as (suspended ones included), found through the indexes instead of by asking about every profile. Must say the same as profile_is_mine:
+-- a test compares the two.
+create function public.profile_my_ids()
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select p.id from public.site_profiles p where auth.uid() is not null and p.user_id = auth.uid()
+  union
+  select p.id
+  from public.active_memberships() m
+  join public.site_profiles p on p.org_id = m.org_id
+  where m.role in ('owner', 'organizer') or (m.role = 'manager' and p.venue_id is not null and m.venue_id = p.venue_id)
 $$;
 
 -- ...and is that profile in good standing?
@@ -352,6 +371,7 @@ declare
   v_id uuid;
 begin
   if v_uid is null then raise exception 'Sign in first.'; end if;
+  if not public.feature_enabled('social') then raise exception 'Profiles are not open yet.'; end if;
   if v_privacy not in ('public', 'private') then raise exception 'Choose public or private.'; end if;
   if not exists (select 1 from public.profiles p where p.id = v_uid and p.username is not null and p.profile_completed_at is not null) then
     raise exception 'Finish your name and username first.';
@@ -406,6 +426,7 @@ declare
   v_id uuid;
 begin
   if v_uid is null then raise exception 'Sign in first.'; end if;
+  if not public.feature_enabled('social') then raise exception 'Profiles are not open yet.'; end if;
   if v_category not in ('venue', 'event_group', 'dj', 'mc', 'artist', 'instrumentalist', 'photographer', 'videographer', 'influencer', 'promoter', 'other') then
     raise exception 'Choose what kind of profile this is.';
   end if;
@@ -516,7 +537,7 @@ begin
   return coalesce((
     select jsonb_agg(public.profile_card(p.id, p.id) order by (p.kind = 'personal') desc, p.created_at, p.id)
     from public.site_profiles p
-    where public.profile_is_mine(p.id)
+    where p.id in (select public.profile_my_ids())
   ), '[]'::jsonb);
 end;
 $$;
@@ -576,15 +597,19 @@ begin
              (coalesce(s.handle, pr.username) = v_q) as exact,
              (select count(*) from public.site_follows f where f.followed = s.id and f.status = 'active') as followers,
              lower(coalesce(s.display_name, pr.name, pr.username)) as sort_name
-      from public.site_profiles s
+      from (
+        select b.id from public.site_profiles b
+        where b.kind = 'business' and (b.handle like v_like or lower(b.display_name) like v_like)
+        union
+        select x.id from public.profiles u
+        join public.site_profiles x on x.user_id = u.id and x.kind = 'personal'
+        where u.username like v_like or lower(u.name) like v_like
+      ) c
+      join public.site_profiles s on s.id = c.id
       left join public.profiles pr on pr.id = s.user_id and s.kind = 'personal'
       where s.status = 'active'
         and s.id <> p_actor
         and not public.profile_blocked_between(p_actor, s.id)
-        and (
-          coalesce(s.handle, pr.username) like v_like
-          or lower(coalesce(s.display_name, pr.name, '')) like v_like
-        )
       order by (coalesce(s.handle, pr.username) = v_q) desc, lower(coalesce(s.display_name, pr.name, pr.username))
       limit v_limit
     ) m
@@ -610,6 +635,7 @@ begin
   if p_target = p_actor or public.profile_is_mine(p_target) then raise exception 'You cannot follow your own profile.'; end if;
 
   if p_follow then
+    if not public.feature_enabled('social') then raise exception 'Profiles are not open yet.'; end if;
     if not public.profile_visible(p_actor, p_target) then raise exception 'This profile isn''t available.'; end if;
     if exists (select 1 from public.site_follows f where f.follower = p_actor and f.followed = p_target) then
       return public.profile_card(p_actor, p_target);
@@ -770,7 +796,7 @@ $$;
 revoke all on function
   public.handle_reserved(text), public.profile_is_mine(uuid), public.profile_can_act_as(uuid), public.profile_blocked_between(uuid, uuid),
   public.profile_visible(uuid, uuid), public.profile_content_visible(uuid, uuid), public.profile_card(uuid, uuid), public.profile_require_actor(uuid),
-  public.profile_clean_interests(text[]),
+  public.profile_clean_interests(text[]), public.profile_my_ids(),
   public.site_handles_follow_profile(),
   public.handle_available(text), public.profile_save_personal(text, text[]),
   public.profile_create_business(text, text, text, text, text, uuid, uuid, text),

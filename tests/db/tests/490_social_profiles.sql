@@ -13,6 +13,16 @@ begin
   perform tests.login(p_user, p_email);
   perform public.accept_invitation(tok);
 end $$;
+-- Does profile_my_ids() list exactly the profiles profile_is_mine() accepts, for this person?
+create function tests.same_mine(p_user uuid, p_email text, p_all uuid[]) returns boolean language plpgsql as $$
+declare ok boolean;
+begin
+  -- The claims only (no role change), because the check being compared is internal and the app cannot call it.
+  perform set_config('request.jwt.claims', json_build_object('sub', p_user, 'role', 'authenticated', 'email', p_email)::text, true);
+  select not exists (select 1 from unnest(p_all) a(id) where (a.id in (select public.profile_my_ids())) is distinct from public.profile_is_mine(a.id)) into ok;
+  perform tests.logout();
+  return ok;
+end $$;
 -- Runs one expression as a person and returns it as text, or 'ERROR: <sentence>'.
 create function tests.q(p_user uuid, p_email text, p_expr text) returns text language plpgsql as $$
 declare r text;
@@ -58,6 +68,7 @@ declare
   owner_u constant uuid := '00000000-0000-0000-0000-0000000004a4';
   mgr constant uuid := '00000000-0000-0000-0000-0000000004a5';
   mgr2 constant uuid := '00000000-0000-0000-0000-0000000004a6';
+  admin_u constant uuid := '00000000-0000-0000-0000-0000000000a2';
   rando constant uuid := '00000000-0000-0000-0000-0000000004a7';   -- signed in, never finished a profile
   org_u constant uuid := '00000000-0000-0000-0000-0000000004a8';
   a_e constant text := 'ann@soc.example';
@@ -113,6 +124,9 @@ begin
   perform tests.assert_eq('...and takes the new one', tests.q(bob, b_e, $q$public.handle_available('annie')$q$), 'false');
 
   ---------------------------------------------------------------- personal profiles
+  perform tests.assert_eq('while social is switched off nothing social can be created',
+    tests.q(ann, a_e, $q$public.profile_save_personal('public')$q$), 'ERROR: Profiles are not open yet.');
+  perform tests.login(admin_u, 'admin@test.example'); perform public.cms_set_feature('social', true); perform tests.logout();
   perform tests.assert_eq('someone who has not finished their profile cannot make a social one',
     tests.q(rando, r_e, $q$public.profile_save_personal('public')$q$), 'ERROR: Finish your name and username first.');
   perform tests.assert_eq('a made-up privacy is refused', tests.q(ann, a_e, $q$public.profile_save_personal('maybe')$q$), 'ERROR: Choose public or private.');
@@ -200,6 +214,9 @@ begin
   perform tests.assert_eq('the owner of the business acts as each of its venues and themselves', tests.hs(owner_u, o_e, 'public.profile_my_profiles()'), 'olly.owner,clubaclub,clubbclub');
   perform tests.assert_eq('the venue''s manager acts as that venue', tests.hs(mgr, m_e, 'public.profile_my_profiles()'), 'mia.mgr,clubaclub');
   perform tests.assert_eq('...the other club''s manager as the other club', tests.hs(mgr2, m2_e, 'public.profile_my_profiles()'), 'mgr.two,clubbclub');
+  perform tests.logout();
+  perform tests.assert_true('the fast list of who someone may act as says what the single check says, for everyone',
+    (select bool_and(tests.same_mine(u.id, u.email, (select array_agg(s.id) from public.site_profiles s))) from auth.users u where u.id in (ann, bob, cy, owner_u, mgr, mgr2, rando, org_u)));
   perform tests.assert_eq('a professional has all their profiles, own first', tests.hs(ann, a_e, 'public.profile_my_profiles()'), 'annie,djann,djann2,djann3,djann4,djann5');
   perform tests.assert_eq('an organizer acts as their group', tests.hs(org_u, g_e, 'public.profile_my_profiles()'), 'olive.org,nightcrew');
 
@@ -358,6 +375,7 @@ begin
   ---------------------------------------------------------------- the rest of the surface
   perform tests.login(bob, b_e);
   perform tests.assert_raises('the access check cannot be called by the app', format($q$select public.profile_can_act_as(%L)$q$, p_ann), 'permission denied');
+  perform tests.assert_raises('...nor the list of who one may act as', $q$select public.profile_my_ids()$q$, 'permission denied');
   perform tests.assert_raises('...nor the card builder', format($q$select public.profile_card(%L, %L)$q$, p_bob, p_ann), 'permission denied');
   perform tests.assert_raises('...nor the block check', format($q$select public.profile_blocked_between(%L, %L)$q$, p_bob, p_ann), 'permission denied');
   perform tests.assert_raises('...nor the content check', format($q$select public.profile_content_visible(%L, %L)$q$, p_bob, p_ann), 'permission denied');
@@ -368,6 +386,15 @@ begin
   perform tests.assert_raises('...nor the list of names', $q$select * from public.site_handles$q$, 'permission denied');
   perform tests.assert_raises('...nor written', $q$insert into public.site_follows (follower, followed) values (gen_random_uuid(), gen_random_uuid())$q$, 'permission denied');
   perform tests.logout();
+
+  ---------------------------------------------------------------- switched off again
+  perform tests.login(admin_u, 'admin@test.example'); perform public.cms_set_feature('social', false); perform tests.logout();
+  perform tests.assert_eq('with social switched off a new follow is refused', tests.q(bob, b_e, format($q$public.follow_set(%L, %L, true)$q$, p_bob, p_owner)), 'ERROR: Profiles are not open yet.');
+  perform tests.assert_eq('...and a new business profile', tests.q(bob, b_e, $q$public.profile_create_business('dj', 'Again', 'bobagain')$q$), 'ERROR: Profiles are not open yet.');
+  perform tests.assert_eq('...and a change to the profile', tests.q(bob, b_e, $q$public.profile_save_personal('private')$q$), 'ERROR: Profiles are not open yet.');
+  perform tests.assert_eq('but unfollowing still works', tests.f(bob, b_e, format($q$public.follow_set(%L, %L, false)$q$, p_bob, p_va), '{relation,follow}'), 'none');
+  perform tests.assert_eq('...and so does blocking', tests.q(bob, b_e, format($q$public.block_set(%L, %L, true)$q$, p_bob, p_owner)), '{"blocked": true}');
+  perform tests.assert_eq('...and looking', tests.f(bob, b_e, format($q$public.profile_get(%L, 'clubaclub')$q$, p_bob), '{handle}'), 'clubaclub');
 
   ---------------------------------------------------------------- deleting an account
   perform tests.assert_true('annie has profiles, follows and names before', (select count(*) from public.site_profiles where user_id = ann) = 6 and (select count(*) from public.site_follows where follower = p_ann or followed = p_ann) > 0);
