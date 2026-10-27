@@ -33,6 +33,7 @@ import CmsModeration from "./cms/pages/Moderation";
 import CmsSocialSettings from "./cms/pages/SocialSettings";
 import BookingSuccess from "./pages/BookingSuccess";
 import BookingCancel from "./pages/BookingCancel";
+import SplitShareThanks from "./pages/SplitShareThanks";
 import ClubPaymentConfirm from "./pages/ClubPaymentConfirm";
 import OrderByCode from "./pages/OrderByCode";
 import BookingByCode from "./pages/BookingByCode";
@@ -109,6 +110,7 @@ const App = () => {
             <Route path="/tables/:id" element={<TableDetail />} />
             <Route path="/booking/success" element={<BookingSuccess />} />
             <Route path="/booking/cancel" element={<BookingCancel />} />
+            <Route path="/pay/share-thanks" element={<SplitShareThanks />} />
             <Route path="/club-payment/confirm/:token" element={<ClubPaymentConfirm />} />
             <Route path="/bottle-substitution/confirm/:token" element={<BottleSubstitutionConfirm />} />
             <Route path="/order/:code" element={<OrderByCode />} />

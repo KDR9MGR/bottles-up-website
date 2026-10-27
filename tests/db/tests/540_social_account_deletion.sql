@@ -22,11 +22,12 @@ declare
   olly constant uuid := '00000000-0000-0000-0000-0000000009a4';
   admin_u constant uuid := '00000000-0000-0000-0000-0000000000a2';
   a_e constant text := 'ann@gone.example'; b_e constant text := 'bob@gone.example'; c_e constant text := 'cy@gone.example'; o_e constant text := 'olly@gone.example';
+  t_s uuid; slot_s uuid; bk_s1 uuid; bk_s2 uuid; sp_s1 uuid; sp_s2 uuid;
   p_ann uuid; p_dj uuid; p_bob uuid; p_cy uuid; post_a uuid; post_b uuid; story_b uuid; cm_a uuid; cm_b uuid; rv_a uuid; rv_b uuid; conv uuid; grp uuid; org uuid; va uuid;
   social constant text[] := array[
     'site_profiles', 'site_handles', 'site_follows', 'site_blocks', 'site_posts', 'site_post_media', 'site_post_tags', 'site_post_likes', 'site_post_saves', 'site_comments',
     'site_member_lists', 'site_story_views', 'site_banned_terms', 'site_community_rules', 'site_rules_acceptance', 'site_ai_caption_uses', 'site_reviews', 'site_review_replies',
-    'site_dm_conversations', 'site_dm_members', 'site_dm_messages', 'site_notifications', 'site_notification_opt_outs', 'site_reports', 'site_feature_flags'];
+    'site_dm_conversations', 'site_dm_members', 'site_dm_messages', 'site_notifications', 'site_notification_opt_outs', 'site_reports', 'site_feature_flags', 'site_splits', 'site_split_shares'];
   -- made by BottlesUp staff, not by her: nothing of hers is expected in them
   staff_only constant text[] := array['site_community_rules', 'site_feature_flags', 'site_banned_terms'];
   r record; t record; n bigint; ids uuid[]; before_total bigint := 0;
@@ -74,6 +75,16 @@ begin
   insert into public.site_dm_conversations (kind, title, created_by) values ('group', 'Crew', p_ann) returning id into grp;
   insert into public.site_dm_members (conversation, profile, role) values (grp, p_ann, 'admin'), (grp, p_bob, 'member'), (grp, p_cy, 'member');
   insert into public.site_dm_messages (conversation, sender, kind, body) values (grp, p_ann, 'text', 'ann in the group'), (grp, p_bob, 'text', 'bob in the group');
+  -- splitting a table's bill, both ways: she asks bob to pay a share of her table, and bob asks her to pay a share of his
+  insert into public.site_table_types (venue_id, name, max_guests, min_spend_cents, deposit_cents, inventory_count) values (va, 'Booth', 6, 0, 10000, 50) returning id into t_s;
+  insert into public.site_venue_time_slots (venue_id, day_of_week, start_time) values (va, 5, '22:00') returning id into slot_s;
+  insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, amount_paid_cents, status, confirmation_code)
+    values (va, t_s, slot_s, current_date + 3, 'Ann', a_e, 2, 20000, 5000, 'paid', 'GONE-1') returning id into bk_s1;
+  insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, amount_paid_cents, status, confirmation_code)
+    values (va, t_s, slot_s, current_date + 3, 'Bob', b_e, 2, 20000, 5000, 'paid', 'GONE-2') returning id into bk_s2;
+  insert into public.site_splits (booking_id, host, deadline) values (bk_s1, ann, now() + interval '1 day') returning id into sp_s1;
+  insert into public.site_splits (booking_id, host, deadline) values (bk_s2, bob, now() + interval '1 day') returning id into sp_s2;
+  insert into public.site_split_shares (split_id, payer, amount_cents) values (sp_s1, p_bob, 3000), (sp_s2, p_ann, 3000);
   -- notifications both ways, choices, reports both ways and one about her DJ profile
   insert into public.site_notifications (recipient, kind, actor, post, dedupe_key) values (p_bob, 'like', p_ann, post_b, 'k1'), (p_ann, 'comment', p_bob, post_a, 'k2');
   insert into public.site_notification_opt_outs (profile, kind) values (p_ann, 'tag'), (p_dj, 'follow');
@@ -118,6 +129,7 @@ begin
   perform tests.assert_eq('...her review, and the reply she wrote', (select count(*) from public.site_reviews where id = rv_a)::int + (select count(*) from public.site_review_replies where review = rv_b)::int, 0);
   perform tests.assert_eq('...her Members Only list and the entry about her on bob''s', (select count(*) from public.site_member_lists)::int, 0);
   perform tests.assert_eq('...her messages, but not what the others said', (select count(*) from public.site_dm_messages where conversation in (conv, grp) and sender = p_bob)::int, 2);
+  perform tests.assert_eq('...her split goes without a host (the table is still there), and the share she was asked for has nobody on it', (select count(*) from public.site_splits where id = sp_s1 and host is null)::int + (select count(*) from public.site_split_shares where split_id = sp_s2 and payer is null)::int, 2);
   perform tests.assert_eq('what other people made stays: bob''s post, his story and his review', (select count(*) from public.site_posts where id in (post_b, story_b))::int + (select count(*) from public.site_reviews where id = rv_b)::int, 3);
   perform tests.assert_eq('...the group, with its other two people', (select count(*) from public.site_dm_members where conversation = grp)::int, 2);
   perform tests.assert_eq('...a report she made stays for BottlesUp to read, without her', (select count(*) from public.site_reports where kind = 'post' and target = post_b and reporter is null)::int, 1);

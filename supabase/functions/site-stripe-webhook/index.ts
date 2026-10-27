@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { fulfillTicketOrder, fulfillTableBooking, fulfillBottleAddon } from '../_shared/fulfillment.ts';
+import { fulfillSplitShare, type DbLike, type StripeLike } from '../_shared/splitPayments.ts';
 
 const cryptoProvider = Stripe.createSubtleCryptoProvider();
 
@@ -69,6 +70,12 @@ Deno.serve(async (req: Request) => {
     const bookingId = session.metadata?.booking_id;
     const paymentIntentId =
       (typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id) ?? null;
+
+    // A friend's share of a table's bill (the split_payments switch): the money is recorded against the booking by the database, and paid back here if it could not be used.
+    if (session.metadata?.kind === 'split_share') {
+      await fulfillSplitShare(supabase as unknown as DbLike, stripe as unknown as StripeLike, session.id, paymentIntentId, session.amount_total ?? 0);
+      return new Response('ok', { status: 200 });
+    }
 
     if (!orderId && !bookingId) {
       console.error('checkout.session.completed with no order_id/booking_id metadata:', session.id);

@@ -59,7 +59,9 @@ export function buildUserMessage(req: CaptionRequest): string {
   ].filter((l): l is string => l !== null).join('\n');
 }
 
-const clean = (s: string) => s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim();
+// Control characters other than tab, line feed and carriage return are dropped (they are collapsed to a space below if they were white space).
+const isControl = (c: string) => { const n = c.charCodeAt(0); return n <= 8 || n === 11 || n === 12 || (n >= 14 && n <= 31) || n === 127; };
+const clean = (s: string) => Array.from(s).filter((c) => !isControl(c)).join('').replace(/\s+/g, ' ').trim();
 
 /** The captions in the model's reply: from its JSON when it gave JSON, otherwise from its lines. At most three, different, not empty, not over 300 characters. */
 export function parseCaptions(text: string): string[] {

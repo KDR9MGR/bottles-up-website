@@ -10,6 +10,12 @@ vi.mock('../../supabase/functions/_shared/fulfillment.ts', () => ({
 }));
 import * as fulfillment from '../../supabase/functions/_shared/fulfillment.ts';
 
+// A friend's share of a table's bill goes to its own function (tested in splitPayments.test.ts).
+vi.mock('../../supabase/functions/_shared/splitPayments.ts', () => ({
+  fulfillSplitShare: vi.fn(async () => ({ result: 'applied', refundCents: 0 })),
+}));
+import * as splitPayments from '../../supabase/functions/_shared/splitPayments.ts';
+
 const TEST_SECRET = 'whsec_test_secret';
 const LIVE_SECRET = 'whsec_live_secret';
 
@@ -160,5 +166,43 @@ describe('site-stripe-webhook: routing a completed checkout', () => {
   it('does NOT swallow a fulfillment failure: the handler rejects so the platform answers 5xx and Stripe retries', async () => {
     (fulfillment.fulfillTicketOrder as any).mockRejectedValueOnce(new Error('db down'));
     await expect(handler(signedRequest(sessionEvent({ metadata: { order_id: 'o1' } })))).rejects.toThrow('db down');
+  });
+});
+
+describe('site-stripe-webhook: a friend\'s share of a table', () => {
+  it('goes to fulfillSplitShare with the session, the payment and what Stripe took, and to nothing else', async () => {
+    const res = await handler(signedRequest(sessionEvent({ id: 'cs_share', payment_intent: 'pi_share', amount_total: 2500, metadata: { kind: 'split_share', share_id: 'sh_1' } })));
+    expect(res.status).toBe(200);
+    expect(splitPayments.fulfillSplitShare).toHaveBeenCalledTimes(1);
+    const args = (splitPayments.fulfillSplitShare as any).mock.calls[0];
+    expect(args[2]).toBe('cs_share');
+    expect(args[3]).toBe('pi_share');
+    expect(args[4]).toBe(2500);
+    none();
+  });
+
+  it('is never mistaken for a booking or an order, even if it carries their ids', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_share2', payment_intent: 'pi_2', amount_total: 100, metadata: { kind: 'split_share', booking_id: 'b1', order_id: 'o1' } })));
+    expect(splitPayments.fulfillSplitShare).toHaveBeenCalledTimes(1);
+    none();
+  });
+
+  it('a payment intent that is an object is read, and no intent at all is passed as null', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_s3', payment_intent: { id: 'pi_obj' }, amount_total: 300, metadata: { kind: 'split_share' } })));
+    await handler(signedRequest(sessionEvent({ id: 'cs_s4', amount_total: 300, metadata: { kind: 'split_share' } })));
+    const calls = (splitPayments.fulfillSplitShare as any).mock.calls;
+    expect(calls[0][3]).toBe('pi_obj');
+    expect(calls[1][3]).toBeNull();
+  });
+
+  it('no amount is passed as nothing, which the database refuses rather than guesses', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_s5', metadata: { kind: 'split_share' } })));
+    expect((splitPayments.fulfillSplitShare as any).mock.calls[0][4]).toBe(0);
+  });
+
+  it('an ordinary table booking still goes where it went', async () => {
+    await handler(signedRequest(sessionEvent({ payment_intent: 'pi_b', metadata: { booking_id: 'bk_1' } })));
+    expect(fulfillment.fulfillTableBooking).toHaveBeenCalledTimes(1);
+    expect(splitPayments.fulfillSplitShare).not.toHaveBeenCalled();
   });
 });
