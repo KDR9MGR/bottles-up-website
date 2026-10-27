@@ -59,13 +59,13 @@ function callsIn(file: string): Call[] {
 }
 
 const defined = definedFunctions(migrations);
-const FILES = ['src/lib/account.ts', 'src/lib/venueSetupApi.ts', 'src/lib/venueBookingsApi.ts', 'src/lib/organizerEventsApi.ts', 'supabase/functions/_shared/teamInvitation.ts'];
+const FILES = ['src/lib/account.ts', 'src/lib/venueSetupApi.ts', 'src/lib/venueBookingsApi.ts', 'src/lib/organizerEventsApi.ts', 'src/lib/moderation.ts', 'supabase/functions/_shared/teamInvitation.ts'];
 const calls = FILES.flatMap(callsIn);
 
 describe('the app and the database agree on every function call', () => {
   it('finds the calls and the definitions it is checking (so this test cannot pass by checking nothing)', () => {
     expect(defined.size).toBeGreaterThan(30);
-    expect(calls.map((c) => c.fn)).toEqual(expect.arrayContaining(['invite_member', 'reserve_invitation_email', 'save_my_profile', 'list_team', 'my_workspaces']));
+    expect(calls.map((c) => c.fn)).toEqual(expect.arrayContaining(['invite_member', 'reserve_invitation_email', 'save_my_profile', 'list_team', 'my_workspaces', 'cms_reports_list', 'cms_report_resolve', 'cms_publish_rules', 'cms_set_feature']));
   });
 
   // An independent cross-check on the pattern above: any quoted name that is a real database function and appears in
