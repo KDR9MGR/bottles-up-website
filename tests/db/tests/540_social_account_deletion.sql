@@ -22,14 +22,16 @@ declare
   olly constant uuid := '00000000-0000-0000-0000-0000000009a4';
   admin_u constant uuid := '00000000-0000-0000-0000-0000000000a2';
   a_e constant text := 'ann@gone.example'; b_e constant text := 'bob@gone.example'; c_e constant text := 'cy@gone.example'; o_e constant text := 'olly@gone.example';
+  rq_a uuid; rq_b uuid; q_a uuid; q_b uuid; pbk_a uuid; pbk_b uuid;
   t_s uuid; slot_s uuid; bk_s1 uuid; bk_s2 uuid; sp_s1 uuid; sp_s2 uuid;
   p_ann uuid; p_dj uuid; p_bob uuid; p_cy uuid; post_a uuid; post_b uuid; story_b uuid; cm_a uuid; cm_b uuid; rv_a uuid; rv_b uuid; conv uuid; grp uuid; org uuid; va uuid;
   social constant text[] := array[
     'site_profiles', 'site_handles', 'site_follows', 'site_blocks', 'site_posts', 'site_post_media', 'site_post_tags', 'site_post_likes', 'site_post_saves', 'site_comments',
     'site_member_lists', 'site_story_views', 'site_banned_terms', 'site_community_rules', 'site_rules_acceptance', 'site_ai_caption_uses', 'site_reviews', 'site_review_replies',
-    'site_dm_conversations', 'site_dm_members', 'site_dm_messages', 'site_notifications', 'site_notification_opt_outs', 'site_reports', 'site_feature_flags', 'site_splits', 'site_split_shares'];
+    'site_dm_conversations', 'site_dm_members', 'site_dm_messages', 'site_notifications', 'site_notification_opt_outs', 'site_reports', 'site_feature_flags', 'site_splits', 'site_split_shares',
+    'site_pro_settings', 'site_pro_services', 'site_pro_busy', 'site_pro_requests', 'site_pro_quotes', 'site_pro_bookings', 'site_pro_payments', 'site_pro_disputes', 'site_pro_payouts'];
   -- made by BottlesUp staff, not by her: nothing of hers is expected in them
-  staff_only constant text[] := array['site_community_rules', 'site_feature_flags', 'site_banned_terms'];
+  staff_only constant text[] := array['site_community_rules', 'site_feature_flags', 'site_banned_terms', 'site_pro_settings', 'site_pro_quotes', 'site_pro_payments'];
   r record; t record; n bigint; ids uuid[]; before_total bigint := 0;
 begin
   insert into auth.users (id, email) values (ann, a_e), (bob, b_e), (cy, c_e), (olly, o_e);
@@ -85,6 +87,21 @@ begin
   insert into public.site_splits (booking_id, host, deadline) values (bk_s1, ann, now() + interval '1 day') returning id into sp_s1;
   insert into public.site_splits (booking_id, host, deadline) values (bk_s2, bob, now() + interval '1 day') returning id into sp_s2;
   insert into public.site_split_shares (split_id, payer, amount_cents) values (sp_s1, p_bob, 3000), (sp_s2, p_ann, 3000);
+  -- hiring professionals, both ways: her DJ profile sells and is hired by bob, and she hires through the same table; a booking, a dispute, a payout she was paid
+  insert into public.site_pro_services (profile, title) values (p_dj, 'Fixture set');
+  insert into public.site_pro_busy (profile, day) values (p_dj, current_date + 400);
+  insert into public.site_pro_requests (client, provider, event_date, message) values (bob, p_dj, current_date + 30, 'Please come to our night') returning id into rq_a;
+  insert into public.site_pro_requests (client, provider, event_date, message) values (ann, p_dj, current_date + 31, 'Please come to my night') returning id into rq_b;
+  insert into public.site_pro_quotes (request, total_cents, deposit_cents, balance_due_by, scope, valid_until) values (rq_a, 100000, 30000, current_date + 20, 'Four hours of music and lights', now() + interval '3 days') returning id into q_a;
+  insert into public.site_pro_quotes (request, total_cents, deposit_cents, balance_due_by, scope, valid_until) values (rq_b, 100000, 30000, current_date + 20, 'Four hours of music and lights', now() + interval '3 days') returning id into q_b;
+  insert into public.site_pro_bookings (quote, request, client, provider, title, event_date, total_cents, deposit_cents, balance_due_by, commission_bps, free_cancel_days, pay_by)
+    values (q_a, rq_a, bob, p_dj, 'Fixture set', current_date + 30, 100000, 30000, current_date + 20, 500, 7, now() + interval '1 day') returning id into pbk_a;
+  insert into public.site_pro_bookings (quote, request, client, provider, title, event_date, total_cents, deposit_cents, balance_due_by, commission_bps, free_cancel_days, pay_by)
+    values (q_b, rq_b, ann, p_dj, 'Fixture set', current_date + 31, 100000, 30000, current_date + 20, 500, 7, now() + interval '1 day') returning id into pbk_b;
+  insert into public.site_pro_disputes (booking, opened_by, reason) values (pbk_b, ann, 'It did not go as agreed at all');
+  insert into public.site_pro_payouts (booking, provider, gross_cents, commission_cents, net_cents, status, reference, paid_at, paid_by)
+    values (pbk_a, p_dj, 30000, 1500, 28500, 'paid', 'etransfer 1', now(), ann);
+  update public.site_pro_settings set updated_by = ann where id = 1;
   -- notifications both ways, choices, reports both ways and one about her DJ profile
   insert into public.site_notifications (recipient, kind, actor, post, dedupe_key) values (p_bob, 'like', p_ann, post_b, 'k1'), (p_ann, 'comment', p_bob, post_a, 'k2');
   insert into public.site_notification_opt_outs (profile, kind) values (p_ann, 'tag'), (p_dj, 'follow');
@@ -130,6 +147,7 @@ begin
   perform tests.assert_eq('...her Members Only list and the entry about her on bob''s', (select count(*) from public.site_member_lists)::int, 0);
   perform tests.assert_eq('...her messages, but not what the others said', (select count(*) from public.site_dm_messages where conversation in (conv, grp) and sender = p_bob)::int, 2);
   perform tests.assert_eq('...her split goes without a host (the table is still there), and the share she was asked for has nobody on it', (select count(*) from public.site_splits where id = sp_s1 and host is null)::int + (select count(*) from public.site_split_shares where split_id = sp_s2 and payer is null)::int, 2);
+  perform tests.assert_eq('...what she sold and was hired for stays as a record, with nobody on it: the two bookings, the payout and the dispute', (select count(*) from public.site_pro_bookings where client is null or provider is null)::int + (select count(*) from public.site_pro_payouts where provider is null and paid_by is null)::int + (select count(*) from public.site_pro_disputes where opened_by is null)::int, 4);
   perform tests.assert_eq('what other people made stays: bob''s post, his story and his review', (select count(*) from public.site_posts where id in (post_b, story_b))::int + (select count(*) from public.site_reviews where id = rv_b)::int, 3);
   perform tests.assert_eq('...the group, with its other two people', (select count(*) from public.site_dm_members where conversation = grp)::int, 2);
   perform tests.assert_eq('...a report she made stays for BottlesUp to read, without her', (select count(*) from public.site_reports where kind = 'post' and target = post_b and reporter is null)::int, 1);
