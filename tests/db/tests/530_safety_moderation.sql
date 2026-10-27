@@ -50,7 +50,7 @@ declare
   a_e constant text := 'ann@safety.example'; b_e constant text := 'bob@safety.example'; c_e constant text := 'cy@safety.example'; d_e constant text := 'dee@safety.example';
   o_e constant text := 'olly@safety.example'; n_e constant text := 'newbie@safety.example'; adm constant text := 'admin@test.example';
   p_ann uuid; p_bob uuid; p_cy uuid; p_dee uuid; p_olly uuid; p_newbie uuid; p_dj uuid; p_club uuid;
-  org uuid; va uuid; tgt uuid; post1 uuid; post_dee uuid; post_story uuid; post_cy uuid; cm1 uuid; rv1 uuid; conv uuid; msg1 uuid; msg2 uuid; r1 text; n int; lst text;
+  org uuid; va uuid; tgt uuid; post1 uuid; post_dee uuid; post_story uuid; post_cy uuid; cm1 uuid; rv1 uuid; conv uuid; msg1 uuid; msg2 uuid; hk1 uuid; hk2 uuid; r1 text; n int; lst text;
 begin
   insert into auth.users (id, email) values (ann, a_e), (bob, b_e), (cy, c_e), (dee, d_e), (olly, o_e), (newbie, n_e);
   insert into public.profiles (id, name, email) values (ann, 'Ann Lee', a_e), (bob, 'Bob Ray', b_e), (cy, 'Cy Rus', c_e), (dee, 'Dee Dee', d_e), (olly, 'Olly Owner', o_e), (newbie, 'New Bie', n_e);
@@ -314,6 +314,40 @@ begin
   perform tests.assert_eq('...and nothing can be sent to it', tests.q(bob, b_e, format($q$public.dm_send(%L, %L, 'hello?')$q$, p_bob, conv)), 'ERROR: This conversation isn''t available.');
   perform tests.f(admin_u, adm, format($q$public.cms_profile_set_status(%L, false)$q$, p_cy), '{profiles}');
   perform tests.assert_eq('restored, it is all back', tests.names(bob, b_e, format($q$public.dm_inbox(%L)$q$, p_bob)), conv::text);
+
+  ---------------------------------------------------------------- daily housekeeping
+  insert into public.site_posts (author, kind, caption, audience, expires_at) values (p_dee, 'story', 'long gone', 'public', now() - interval '10 days') returning id into hk1;
+  insert into public.site_posts (author, kind, caption, audience, expires_at) values (p_dee, 'story', 'just expired', 'public', now() - interval '1 day') returning id into hk2;
+  insert into public.site_posts (author, kind, caption, audience, expires_at) values (p_dee, 'story', 'six days', 'public', now() - interval '6 days'), (p_dee, 'story', 'eight days', 'public', now() - interval '8 days');
+  insert into public.site_posts (author, kind, caption, audience) values (p_dee, 'post', 'old but a post', 'public');
+  update public.site_posts set created_at = now() - interval '200 days' where caption = 'old but a post';
+  insert into public.site_ai_caption_uses (user_id, created_at) values (dee, now() - interval '3 days'), (dee, now() - interval '5 days'), (dee, now() - interval '30 hours');
+  insert into public.site_notifications (recipient, kind, actor, dedupe_key, created_at, read_at) values
+    (p_olly, 'follow', p_dee, 'old-read', now() - interval '100 days', now() - interval '99 days'),
+    (p_olly, 'follow', p_dee, 'old-unread', now() - interval '100 days', null),
+    (p_olly, 'follow', p_dee, 'mid-read', now() - interval '85 days', now() - interval '80 days'),
+    (p_olly, 'follow', p_dee, 'new-read', now() - interval '2 days', now() - interval '1 day');
+  perform tests.login(admin_u, adm);
+  perform tests.assert_raises('housekeeping is not for people, not even an admin', $q$select public.social_housekeeping()$q$, 'permission denied');
+  perform tests.logout();
+  r1 := public.social_housekeeping()::text;
+  perform tests.assert_eq('it says what it removed, each count under its own name', r1, '{"stories": 2, "caption_uses": 2, "notifications": 1}');
+  perform tests.assert_eq('stories that expired more than a week ago are gone, the others are not', (select string_agg(caption, ',' order by caption) from public.site_posts where kind = 'story' and caption in ('long gone', 'eight days', 'six days', 'just expired')), 'just expired,six days');
+  perform tests.assert_eq('a post is never touched, however old', (select count(*)::int from public.site_posts where caption = 'old but a post'), 1);
+  perform tests.assert_eq('only a read notification that is more than 90 days old goes', (select string_agg(dedupe_key, ',' order by dedupe_key) from public.site_notifications where dedupe_key in ('old-read', 'old-unread', 'mid-read', 'new-read')), 'mid-read,new-read,old-unread');
+  perform tests.assert_eq('a caption request from 30 hours ago stays; from three days ago goes', (select count(*)::int from public.site_ai_caption_uses where user_id = dee), 1);
+  perform tests.assert_eq('running it again removes nothing more', public.social_housekeeping()::text, '{"stories": 0, "caption_uses": 0, "notifications": 0}');
+  perform tests.assert_eq('a longer wait for stories keeps yesterday''s and the week-old ones', public.social_housekeeping(30, 90)::text, '{"stories": 0, "caption_uses": 0, "notifications": 0}');
+  perform tests.assert_eq('a story day count under one is treated as one day: it takes the six-day-old story and not the one from yesterday', (public.social_housekeeping(0, 90) ->> 'stories')::int || '/' || (select count(*)::int from public.site_posts where caption = 'just expired'), '1/1');
+  update public.site_posts set expires_at = now() - interval '3 days' where id = hk2;
+  perform tests.assert_eq('...and 3 days is not enough for the default week but is for a day', (public.social_housekeeping(7, 90) ->> 'stories') || '/' || (public.social_housekeeping(1, 90) ->> 'stories'), '0/1');
+  -- a caller that passes nothing for a limit gets the standard ones: a week for stories and 90 days for notifications
+  insert into public.site_posts (author, kind, caption, audience, expires_at) values (p_dee, 'story', 'null six', 'public', now() - interval '6 days'), (p_dee, 'story', 'null eight', 'public', now() - interval '8 days');
+  insert into public.site_notifications (recipient, kind, actor, dedupe_key, created_at, read_at) values
+    (p_olly, 'follow', p_dee, 'null-old-read', now() - interval '100 days', now() - interval '99 days'),
+    (p_olly, 'follow', p_dee, 'null-mid-read', now() - interval '85 days', now() - interval '80 days');
+  perform tests.assert_eq('with no limits given it uses a week and 90 days', public.social_housekeeping(null, null)::text, '{"stories": 1, "caption_uses": 0, "notifications": 1}');
+  perform tests.assert_eq('...so the six-day-old story and the 80-day-old read notification stay', (select string_agg(caption, ',') from public.site_posts where caption in ('null six', 'null eight')) || '/' || (select string_agg(dedupe_key, ',') from public.site_notifications where dedupe_key in ('null-old-read', 'null-mid-read')), 'null six/null-mid-read');
 
   ---------------------------------------------------------------- deleting a reporter's account keeps the report
   select count(*) into n from public.site_reports where reporter = p_bob;

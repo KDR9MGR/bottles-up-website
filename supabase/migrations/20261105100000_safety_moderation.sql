@@ -316,12 +316,39 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 3. Who may call what
+-- 3. Daily housekeeping (a scheduled job, as the service role)
+-- ---------------------------------------------------------------------------
+-- Stories that expired more than p_story_days ago are deleted (they are hidden from everyone the moment they expire; this frees the rows, and their files become unused and are
+-- removed by sweep-social-media); read notifications older than p_notification_days (never fewer than 7); caption-idea requests older than two days (they only count a day).
+-- Posts, comments, messages and reports are never touched here: reports are the evidence BottlesUp keeps.
+create function public.social_housekeeping(p_story_days int default 7, p_notification_days int default 90)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_stories int;
+  v_notifications int;
+  v_uses int;
+begin
+  delete from public.site_posts where kind = 'story' and expires_at < now() - make_interval(days => greatest(coalesce(p_story_days, 7), 1));
+  get diagnostics v_stories = row_count;
+  v_notifications := public.notifications_purge(coalesce(p_notification_days, 90));
+  delete from public.site_ai_caption_uses where created_at < now() - interval '2 days';
+  get diagnostics v_uses = row_count;
+  return jsonb_build_object('stories', v_stories, 'notifications', v_notifications, 'caption_uses', v_uses);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 4. Who may call what
 -- ---------------------------------------------------------------------------
 revoke all on function
   public.report_create(uuid, text, uuid, text, text), public.cms_reports_list(text, int, int), public.moderation_person_profiles(uuid),
-  public.cms_report_resolve(text, uuid, text, text), public.cms_find_profiles(text), public.cms_profile_set_status(uuid, boolean, text)
+  public.cms_report_resolve(text, uuid, text, text), public.cms_find_profiles(text), public.cms_profile_set_status(uuid, boolean, text), public.social_housekeeping(int, int)
 from public, anon, authenticated;
+grant execute on function public.social_housekeeping(int, int) to service_role;
 grant execute on function
   public.report_create(uuid, text, uuid, text, text), public.cms_reports_list(text, int, int),
   public.cms_report_resolve(text, uuid, text, text), public.cms_find_profiles(text), public.cms_profile_set_status(uuid, boolean, text)
