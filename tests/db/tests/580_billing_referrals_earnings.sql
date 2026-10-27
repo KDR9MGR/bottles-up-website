@@ -114,6 +114,7 @@ begin
   perform tests.assert_eq('subscriptions are off at first', tests.q(dee, d_e, $q$public.sub_plans()$q$), 'ERROR: Subscriptions are not open yet.');
   perform tests.assert_eq('...and so are referrals', tests.q(ann, a_e, format($q$public.referral_code(%L)$q$, p_ann)), 'ERROR: Referrals are not open yet.');
   perform tests.assert_eq('...and tips', tests.q(cy, c_e, format($q$public.tip_begin(%L, 500, null)$q$, p_dj)), 'ERROR: Tips are not open yet.');
+  perform tests.assert_eq('...and looking at one', tests.q(cy, c_e, $q$public.tip_status(gen_random_uuid())$q$), 'ERROR: Tips are not open yet.');
   perform tests.login(admin_u, adm); perform public.cms_set_feature('subscriptions', true); perform public.cms_set_feature('referrals', true); perform public.cms_set_feature('creator_earnings', true); perform public.cms_set_feature('marketplace', true); perform tests.logout();
   perform tests.login_anon();
   perform tests.assert_raises('a visitor cannot subscribe', format($q$select public.sub_begin(%L, 'monthly')$q$, p_dj), 'permission denied');
@@ -383,11 +384,17 @@ begin
   perform tests.assert_eq('a payment for no tip is unknown', tests.svcf($q$public.tip_paid('cs_test_nothing', 'pi_1', 500)$q$, '{result}'), 'unknown');
   perform tests.svc(format($q$public.tip_attach(%L, 'cs_test_tip1_other')$q$, tip1));
   perform tests.assert_eq('a tip keeps the first Stripe page it was given', (select stripe_session from public.site_tips where id = tip1), 'cs_test_tip1');
+  j := tests.q(cy, c_e, format($q$public.tip_status(%L)$q$, tip1))::jsonb;
+  perform tests.assert_eq('the person who tipped sees it as not paid yet', (j ->> 'status') || '/' || (j ->> 'amount_cents') || '/' || (j ->> 'currency') || '/' || (j -> 'creator' ->> 'display_name'), 'created/500/cad/DJ Dee');
+  perform tests.assert_eq('...nobody else sees it', tests.q(zed, z_e, format($q$public.tip_status(%L)$q$, tip1)), '(null)');
+  perform tests.assert_eq('...nor the creator', tests.q(dee, d_e, format($q$public.tip_status(%L)$q$, tip1)), '(null)');
+  perform tests.assert_eq('...and a tip that does not exist is nothing', tests.q(cy, c_e, $q$public.tip_status(gen_random_uuid())$q$), '(null)');
   perform tests.assert_eq('a different amount is not applied', tests.svcf($q$public.tip_paid('cs_test_tip1', 'pi_1', 400)$q$, '{result}'), 'mismatch');
   perform tests.assert_eq('...the tip stays unpaid', (select status from public.site_tips where id = tip1), 'created');
   perform tests.assert_eq('...and it is in the audit log', (select count(*) from public.audit_log where action = 'tip.amount_mismatch')::int, 1);
   perform tests.assert_eq('the right amount is applied, with the creator''s share', tests.svcf($q$public.tip_paid('cs_test_tip1', 'pi_1', 500)$q$, '{net_cents}'), '475');
   perform tests.assert_eq('...once', tests.svcf($q$public.tip_paid('cs_test_tip1', 'pi_1', 500)$q$, '{result}'), 'already');
+  perform tests.assert_eq('once paid it says so', (tests.q(cy, c_e, format($q$public.tip_status(%L)$q$, tip1))::jsonb) ->> 'status', 'paid');
   perform tests.assert_eq('...paid at a moment', (select paid_at is not null from public.site_tips where id = tip1), true);
   j := tests.q(cy, c_e, format($q$public.tip_begin(%L, 333, null)$q$, p_dj))::jsonb;
   tip2 := (j ->> 'tip_id')::uuid;
@@ -464,6 +471,7 @@ begin
   perform tests.login_anon();
   perform tests.assert_raises('a visitor cannot claim a code', 'select public.referral_claim(''AAAAAAAA'')', 'permission denied');
   perform tests.assert_raises('...or tip', format($q$select public.tip_begin(%L, 500, null)$q$, p_dj), 'permission denied');
+  perform tests.assert_raises('...or look at a tip', format($q$select public.tip_status(%L)$q$, tip1), 'permission denied');
   perform tests.logout();
 end $$;
 

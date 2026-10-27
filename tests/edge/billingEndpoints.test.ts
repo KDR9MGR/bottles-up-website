@@ -294,7 +294,7 @@ describe('create-tip-checkout', () => {
     callerRpc.tip_begin = { data: TIP_BEGIN, error: null };
     const res = await ask();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ url: 'https://checkout.stripe.test/cs_new', session_id: 'cs_new', amount_cents: 500 });
+    expect(await res.json()).toEqual({ url: 'https://checkout.stripe.test/cs_new', session_id: 'cs_new', tip_id: TIP, amount_cents: 500 });
     const params = h.create.mock.calls[0][0];
     expect(params.mode).toBe('payment');
     expect(params.customer_email).toBe('dee@x.example');

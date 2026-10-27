@@ -471,6 +471,21 @@ begin
 end;
 $$;
 
+-- How a tip the caller started stands: the app asks until Stripe has said (the webhook), and says "sent" only when this says paid.
+create function public.tip_status(p_tip uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  perform public.billing_require('creator_earnings');
+  return (select jsonb_build_object('id', t.id, 'status', t.status, 'amount_cents', t.amount_cents, 'currency', (select b.currency from public.site_billing_settings b where b.id = 1), 'creator', public.profile_mini(t.creator))
+            from public.site_tips t where t.id = p_tip and t.tipper = auth.uid());
+end;
+$$;
+
 -- Stripe says a tip was paid. Applied once per session.
 create function public.tip_paid(p_session text, p_payment_intent text, p_amount int)
 returns jsonb
@@ -688,13 +703,13 @@ $$;
 revoke all on function
   public.billing_require(text), public.billing_owned_profile(uuid), public.sub_json(uuid), public.sub_plans(), public.sub_status(uuid), public.sub_begin(uuid, text), public.sub_attach(uuid, text),
   public.sub_customer(uuid), public.sub_apply(text, text, text, timestamptz, boolean, uuid), public.referral_code(uuid), public.referral_claim(text), public.referral_mine(), public.referral_stats(uuid),
-  public.referral_credit_for(text, text, uuid), public.referral_trigger(), public.tip_begin(uuid, int, text), public.tip_attach(uuid, text), public.tip_paid(text, text, int), public.earnings_overview(uuid),
+  public.referral_credit_for(text, text, uuid), public.referral_trigger(), public.tip_begin(uuid, int, text), public.tip_attach(uuid, text), public.tip_status(uuid), public.tip_paid(text, text, int), public.earnings_overview(uuid),
   public.cms_billing_settings(), public.cms_billing_settings_set(int, int, text, text, int, int, int, int, int, int, int), public.cms_subscriptions(text), public.cms_referral_credits(text),
   public.cms_referral_credit_paid(uuid, text), public.cms_creator_payouts(), public.cms_creator_payout_paid(uuid, text)
 from public, anon, authenticated;
 grant execute on function
   public.sub_plans(), public.sub_status(uuid), public.sub_begin(uuid, text), public.sub_customer(uuid), public.referral_code(uuid), public.referral_claim(text), public.referral_mine(),
-  public.referral_stats(uuid), public.tip_begin(uuid, int, text), public.earnings_overview(uuid), public.cms_billing_settings(),
+  public.referral_stats(uuid), public.tip_begin(uuid, int, text), public.tip_status(uuid), public.earnings_overview(uuid), public.cms_billing_settings(),
   public.cms_billing_settings_set(int, int, text, text, int, int, int, int, int, int, int), public.cms_subscriptions(text), public.cms_referral_credits(text),
   public.cms_referral_credit_paid(uuid, text), public.cms_creator_payouts(), public.cms_creator_payout_paid(uuid, text)
 to authenticated;

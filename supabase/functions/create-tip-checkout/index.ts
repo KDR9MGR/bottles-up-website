@@ -68,7 +68,7 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'Internal server error' }, 500);
     }
     void TIP_SESSION_MINUTES;
-    return json({ url: session.url, session_id: session.id, amount_cents: b.amount_cents });
+    return json({ url: session.url, session_id: session.id, tip_id: b.tip_id, amount_cents: b.amount_cents });
   } catch (error) {
     console.error('create-tip-checkout error:', error);
     return json({ error: 'Internal server error' }, 500);
