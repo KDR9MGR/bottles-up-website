@@ -4,6 +4,7 @@ import { generateTicketCode, sendTicketEmail } from './ticketEmail.ts';
 import { generateConfirmationCode, sendTableBookingEmail, sendBottleAdditionEmail, formatTimeSlot } from './tableBookingEmail.ts';
 import { dueAtVenueBottleCents } from './bottlePayment.ts';
 import { recomputeTableBookingTotals } from './bookingTotals.ts';
+import { bookingIsOversold } from './oversold.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseClient = ReturnType<typeof createClient<any>>;
@@ -163,6 +164,14 @@ export async function fulfillTableBooking(
   }
 
   if (!confirmationCode) return;
+
+  // The guest has paid. If their 10-minute hold had lapsed and the table went to someone else meanwhile, the database has opened a conflict for the club's manager (and
+  // keeps reporting it until the manager has dealt with it): the booking stays paid, but no confirmation is sent that promises a table. This runs on every delivery, so a
+  // retry of the same payment cannot slip through.
+  if (await bookingIsOversold(supabase, bookingId)) {
+    console.error('fulfillTableBooking: the table was taken while the guest was paying; flagged for the manager, no confirmation sent', bookingId);
+    return;
+  }
 
   const { data: bottleLines } = await supabase
     .from('site_table_booking_bottles')

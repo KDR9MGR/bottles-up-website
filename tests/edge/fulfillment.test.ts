@@ -142,8 +142,13 @@ const booking = (over: Record<string, unknown> = {}) => ({
   table_type: { name: 'Booth' }, venue: { name: 'The Club', deposit_is_credit: false }, time_slot: { start_time: '23:00:00' },
   ...over,
 });
-const tableDb = (b = booking(), bottles: Record<string, unknown>[] = []) =>
-  createFakeDb({ site_table_bookings: [b], site_table_booking_bottles: bottles });
+const flagCall = { name: 'site_flag_oversold_booking', args: { p_booking: 'b1' } };
+// the table is not oversold unless a test says so
+const tableDb = (b = booking(), bottles: Record<string, unknown>[] = []) => {
+  const db = createFakeDb({ site_table_bookings: [b], site_table_booking_bottles: bottles });
+  db.rpcHandlers.site_flag_oversold_booking = () => false;
+  return db;
+};
 
 describe('fulfillTableBooking: what Stripe collected vs what is left for the venue', () => {
   it('pay_ahead: everything was paid online', async () => {
@@ -186,7 +191,7 @@ describe('fulfillTableBooking: idempotency and races', () => {
   it('counts a promo use exactly once on the first delivery', async () => {
     const db = tableDb(booking({ promo_code_id: 'p1', promo: { code: 'SAVE10' } }));
     await fulfillTableBooking(db.client, 'b1', 'pi_1');
-    expect(db.rpcCalls).toEqual([{ name: 'increment_promo_code_usage', args: { p_promo_id: 'p1' } }]);
+    expect(db.rpcCalls).toEqual([{ name: 'increment_promo_code_usage', args: { p_promo_id: 'p1' } }, flagCall]);
   });
 
   it('IDEMPOTENT: an already-confirmed booking is left completely alone', async () => {
@@ -202,7 +207,7 @@ describe('fulfillTableBooking: idempotency and races', () => {
     const db = tableDb(booking({ status: 'paid', confirmation_code: 'OLD', promo_code_id: 'p1', promo: { code: 'SAVE10' }, amount_paid_cents: 11800 }));
     await fulfillTableBooking(db.client, 'b1', 'pi_1');
     expect(generateConfirmationCode).not.toHaveBeenCalled();
-    expect(db.rpcCalls).toEqual([]);
+    expect(db.rpcCalls).toEqual([flagCall]); // no promo count again; the table is checked again
     expect(sendTableBookingEmail).toHaveBeenCalledWith(expect.objectContaining({ confirmationCode: 'OLD' }));
     expect(tableRow(db, 'site_table_bookings', 'b1').confirmation_sent_at).toBeTruthy();
   });
@@ -256,6 +261,77 @@ const addonDb = () =>
     site_content: [{ id: 1, bottlesup_fee_bps: 500 }],
     audit_log: [],
   });
+
+describe('fulfillTableBooking: a table that went to someone else while the guest was paying', () => {
+  const clientAnswering = (db: ReturnType<typeof createFakeDb>, answer: { data: unknown; error: unknown }) => ({
+    ...db.client,
+    rpc: (name: string, args: unknown) => (name === 'site_flag_oversold_booking' ? (db.rpcCalls.push({ name, args }), Promise.resolve(answer)) : db.client.rpc(name, args)),
+  });
+
+  it('asks the database after the booking is marked paid, with the booking\'s id', async () => {
+    const db = tableDb();
+    await fulfillTableBooking(db.client, 'b1', 'pi_1');
+    expect(db.rpcCalls).toEqual([flagCall]);
+    expect(tableRow(db, 'site_table_bookings', 'b1').status).toBe('paid');
+  });
+
+  it('FLAGGED: the money is kept as paid, but no confirmation is sent and none is marked sent', async () => {
+    const db = tableDb();
+    await fulfillTableBooking(clientAnswering(db, { data: true, error: null }) as any, 'b1', 'pi_1');
+    expect(tableRow(db, 'site_table_bookings', 'b1')).toMatchObject({ status: 'paid', confirmation_code: 'CONF-NEW', amount_paid_cents: 11800, stripe_payment_intent_id: 'pi_1', confirmation_sent_at: null });
+    expect(sendTableBookingEmail).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('flagged for the manager'), 'b1');
+  });
+
+  it('FLAGGED: the promo use is still counted once (the payment really happened)', async () => {
+    const db = tableDb(booking({ promo_code_id: 'p1', promo: { code: 'SAVE10' } }));
+    await fulfillTableBooking(clientAnswering(db, { data: true, error: null }) as any, 'b1', 'pi_1');
+    expect(db.rpcCalls.filter((c) => c.name === 'increment_promo_code_usage')).toHaveLength(1);
+  });
+
+  it('FLAGGED: a retry of the same payment is held back too, and sends nothing', async () => {
+    const db = tableDb();
+    const flagged = clientAnswering(db, { data: true, error: null }) as any;
+    await fulfillTableBooking(flagged, 'b1', 'pi_1');
+    await fulfillTableBooking(flagged, 'b1', 'pi_1');
+    expect(sendTableBookingEmail).not.toHaveBeenCalled();
+    expect(db.rpcCalls.filter((c) => c.name === 'site_flag_oversold_booking')).toHaveLength(2);
+    expect(db.rpcCalls.filter((c) => c.name === 'increment_promo_code_usage')).toHaveLength(0);
+  });
+
+  it('once the manager has dealt with it the database says no, and the next delivery sends the confirmation', async () => {
+    const db = tableDb();
+    await fulfillTableBooking(clientAnswering(db, { data: true, error: null }) as any, 'b1', 'pi_1');
+    expect(sendTableBookingEmail).not.toHaveBeenCalled();
+    await fulfillTableBooking(clientAnswering(db, { data: false, error: null }) as any, 'b1', 'pi_1');
+    expect(sendTableBookingEmail).toHaveBeenCalledWith(expect.objectContaining({ confirmationCode: 'CONF-NEW' }));
+    expect(tableRow(db, 'site_table_bookings', 'b1').confirmation_sent_at).toBeTruthy();
+  });
+
+  it('before the migration is applied (no such function) nothing changes: the confirmation goes out', async () => {
+    const db = tableDb();
+    await fulfillTableBooking(clientAnswering(db, { data: null, error: { code: 'PGRST202', message: 'Could not find the function public.site_flag_oversold_booking' } }) as any, 'b1', 'pi_1');
+    expect(sendTableBookingEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [{ data: null, error: { code: '42501', message: 'permission denied for function site_flag_oversold_booking' } }, 'Could not check the table: permission denied'],
+    [{ data: null, error: { message: 'fetch failed' } }, 'Could not check the table: fetch failed'],
+    [{ data: null, error: null }, 'did not answer yes or no'],
+    [{ data: 'true', error: null }, 'did not answer yes or no'],
+  ])('an answer that cannot be read (%j) fails the delivery: Stripe tries again, no confirmation is sent', async (answer, text) => {
+    const db = tableDb();
+    await expect(fulfillTableBooking(clientAnswering(db, answer) as any, 'b1', 'pi_1')).rejects.toThrow(text);
+    expect(sendTableBookingEmail).not.toHaveBeenCalled();
+    expect(tableRow(db, 'site_table_bookings', 'b1').confirmation_sent_at).toBeNull();
+  });
+
+  it('an already-confirmed booking is not asked about at all', async () => {
+    const db = tableDb(booking({ status: 'paid', confirmation_code: 'OLD', confirmation_sent_at: '2026-01-01T00:00:00Z', amount_paid_cents: 11800 }));
+    await fulfillTableBooking(db.client, 'b1', 'pi_1');
+    expect(db.rpcCalls).toEqual([]);
+  });
+});
 
 describe('fulfillBottleAddon', () => {
   it('confirms only the lines paid for by THIS checkout session, recomputes totals, adds what was charged, audits and emails', async () => {
