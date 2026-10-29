@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mutation check for 20261102100000_profile_date_of_birth.sql: break the migration on purpose, one change at a time, and confirm the SQL test
+"""Mutation check for 20261112100000_profile_date_of_birth.sql: break the migration on purpose, one change at a time, and confirm the SQL test
 (tests/db/tests/490_profile_date_of_birth.sql) or the migration guard (tests/db/migration_guard_profile_date_of_birth.sh) fails. A mutant that survives is either a
 test gap (add a test) or an equivalent change (document it below). Run it in a COPY of the repository (git worktree), never in the folder someone builds from: it edits the
 migration in place and puts it back.
@@ -12,7 +12,7 @@ Known equivalent (cannot be told apart by any test):
 import os, subprocess, sys, shutil
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-MIG = os.path.join(ROOT, 'supabase', 'migrations', '20261102100000_profile_date_of_birth.sql')
+MIG = os.path.join(ROOT, 'supabase', 'migrations', '20261112100000_profile_date_of_birth.sql')
 DB = 'mutants_dob'
 ENV = dict(os.environ, TEST_DB_NAME=DB, DEV_DB=DB)
 

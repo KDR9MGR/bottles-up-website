@@ -1,4 +1,4 @@
--- profiles.date_of_birth (20261102100000): the date of birth is stored, the age is always worked out from it by the database, and anyone under 18 is refused by the
+-- profiles.date_of_birth (20261112100000): the date of birth is stored, the age is always worked out from it by the database, and anyone under 18 is refused by the
 -- rule production already has (profiles_age_check). What matters: an adult's age is set from the date and whatever age was typed is overwritten; the 18th birthday counts on the day itself
 -- and the day before does not; a date in the future or before 1900 is refused; a row WITHOUT a date of birth behaves exactly as before; the person can still write their own row (the trigger
 -- function is not callable from the app, and that must not stop it firing).

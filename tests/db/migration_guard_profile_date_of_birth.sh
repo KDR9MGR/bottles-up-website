@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 20261102100000_profile_date_of_birth.sql adds a column, a check, a function and a trigger to profiles, a table that exists only in production. It is not a compare-and-swap (it replaces
+# 20261112100000_profile_date_of_birth.sql adds a column, a check, a function and a trigger to profiles, a table that exists only in production. It is not a compare-and-swap (it replaces
 # nothing), but it must refuse to run where it would collide with something that is already there, and say so before changing anything. Scenarios, each inside a transaction that is
 # rolled back, on the database as the replay left it (the migration already applied):
 #
@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 DB="${TEST_DB_NAME:-bottlesup_test}"
-MIG=supabase/migrations/20261102100000_profile_date_of_birth.sql
+MIG=supabase/migrations/20261112100000_profile_date_of_birth.sql
 FN=profiles_set_age_from_date_of_birth
 psql_db() { psql -X -q -t -A -v ON_ERROR_STOP=1 -d "$DB" "$@"; }
 fail() { echo "FAIL - migration guard (profile date of birth): $1"; exit 1; }
