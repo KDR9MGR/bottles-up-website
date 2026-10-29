@@ -90,6 +90,11 @@ begin
   perform tests.assert_eq('the first guest to pay is not flagged', tests.flag(b1), 'false');
   perform tests.assert_eq('...and nothing is written for them', (select count(*)::int from public.site_booking_conflicts where booking_id = b1), 0);
   perform tests.assert_eq('a guest who has already been sent their confirmation is never flagged afterwards, even when the totals now say two for one', tests.flag(b1), 'false');
+  insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status)
+    values (venue_a, t_one, s_eve, d, 'Waiting To Pay', 'waiting@conf.example', 2, 10000, 'pending') returning id into b3;
+  perform tests.assert_eq('a checkout still waiting for payment is never flagged, even on a full table', tests.flag(b3), 'false');
+  perform tests.assert_eq('...and nothing is written for it', (select count(*)::int from public.site_booking_conflicts where booking_id = b3), 0);
+  delete from public.site_table_bookings where id = b3;
   perform tests.assert_eq('the guest whose payment made it two for one table is flagged', tests.flag(b2), 'true');
   select * into j from public.site_booking_conflicts where booking_id = b2;
   perform tests.assert_eq('the conflict says what was found',
@@ -130,10 +135,13 @@ begin
 
   insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status, confirmation_code, confirmation_sent_at)
     values (venue_a, t_spare, s_eve, d, 'Spare 1', 's1@conf.example', 2, 5000, 'paid', 'CF0006', now()), (venue_a, t_spare, s_eve, d, 'Spare 2', 's2@conf.example', 2, 5000, 'paid', 'CF0007', now()), (venue_a, t_spare, s_eve, d, 'Spare 3', 's3@conf.example', 2, 5000, 'paid', 'CF0008', null);
-  perform tests.assert_eq('three bookings for three tables are fine', tests.flag((select id from public.site_table_bookings where customer_email = 's3@conf.example')), 'false');
+  insert into public.site_table_bookings (venue_id, table_type_id, time_slot_id, booking_date, customer_name, customer_email, guest_count, amount_total_cents, status)
+    values (venue_a, t_spare, s_eve, d, 'Waiting 1', 'w1@conf.example', 2, 5000, 'pending');
+  perform tests.assert_eq('three bookings for three tables are fine, and another guest still deciding does not count', tests.flag((select id from public.site_table_bookings where customer_email = 's3@conf.example')), 'false');
   insert into public.site_table_blocks (venue_id, table_type_id, time_slot_id, booking_date, kind, quantity, reason, created_by, expires_at)
     values (venue_a, t_spare, s_eve, d, 'held', 1, 'Held for the owner', mgr_a, now() + interval '1 hour') returning id into blk;
   perform tests.assert_eq('a table a manager is holding counts: three paid and one held is one too many', tests.flag((select id from public.site_table_bookings where customer_email = 's3@conf.example')), 'true');
+  perform tests.assert_eq('...and the conflict records the held table in what was counted (3 paid and 1 held)', (select paid_count from public.site_booking_conflicts where booking_id = (select id from public.site_table_bookings where customer_email = 's3@conf.example')), 4);
   delete from public.site_booking_conflicts where booking_id = (select id from public.site_table_bookings where customer_email = 's3@conf.example');
   update public.site_table_blocks set released_at = now(), released_by = mgr_a where id = blk;
   perform tests.assert_eq('a released hold does not count', tests.flag((select id from public.site_table_bookings where customer_email = 's3@conf.example')), 'false');
@@ -197,6 +205,9 @@ begin
   ---------------------------------------------------------------- closing one: the facts
   perform tests.assert_eq('"moved" is refused while the booking still overbooks its table', tests.resolve(mgr_a, 'mgra@conf.example', c1, 'moved', 'Moved to the terrace'), 'ERROR: that table is still double-booked: move the booking to another table first');
   perform tests.assert_eq('"refunded" is refused while the booking is still paid', tests.resolve(mgr_a, 'mgra@conf.example', c1, 'refunded', 'Paid back'), 'ERROR: refund or cancel the booking first');
+  update public.site_table_bookings set status = 'cancelled' where id = b2;
+  perform tests.assert_eq('"moved" is refused for a booking that is not paid any more, with the right reason', tests.resolve(mgr_a, 'mgra@conf.example', c1, 'moved', 'Moved to the terrace'), 'ERROR: the booking is not paid any more: close this as refunded');
+  update public.site_table_bookings set status = 'paid' where id = b2;
   update public.site_table_bookings set table_type_id = t_spare where id = b2;     -- what desk_move_booking does: the booking is on another kind of table
   update public.site_table_bookings set status = 'refunded' where customer_email = 's3@conf.example';
   perform tests.assert_eq('"moved" is accepted once the booking sits on a table with room', tests.resolve(mgr_a, 'mgra@conf.example', c1, 'moved', '  Moved to a spare table, guest told  '), 'ok');

@@ -158,7 +158,8 @@ begin
   select * into b from public.site_table_bookings where id = c.booking_id;
 
   if p_resolution = 'moved' then
-    -- Where the booking is NOW must no longer be overbooked.
+    -- The booking must still be paid, and where it is NOW must no longer be overbooked.
+    if b.status <> 'paid' then raise exception 'the booking is not paid any more: close this as refunded'; end if;
     select t.inventory_count into v_inventory from public.site_table_types t where t.id = b.table_type_id for update;
     select (select count(*) from public.site_table_bookings k
              where k.table_type_id = b.table_type_id and k.time_slot_id = b.time_slot_id and k.booking_date = b.booking_date and k.status = 'paid')
@@ -166,7 +167,7 @@ begin
              where k.table_type_id = b.table_type_id and k.time_slot_id = b.time_slot_id and k.booking_date = b.booking_date
                and k.released_at is null and (k.expires_at is null or k.expires_at > now())), 0)
       into v_taken;
-    if b.status <> 'paid' or v_taken > v_inventory then
+    if v_taken > v_inventory then
       raise exception 'that table is still double-booked: move the booking to another table first';
     end if;
   elsif p_resolution = 'refunded' then
