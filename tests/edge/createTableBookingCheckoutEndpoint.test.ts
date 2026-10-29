@@ -49,6 +49,8 @@ function seed(opts: { venueMode?: 'pay_ahead' | 'pay_at_club' | 'both'; type?: R
     site_bottles: [{ id: BOTTLE, venue_id: VENUE, name: 'Vodka', size: '750ml', price_cents: 5000, currency: 'cad', is_available: true, is_sold_out: false, stock_quantity: null }],
     site_table_bookings: [],
     site_table_booking_bottles: [],
+    promo_codes: [{ id: 'promo-1', code: 'SAVE10', discount_type: 'percentage', discount_value: 10, applies_to: 'both', max_uses: null, used_count: 0, min_purchase_cents: null, starts_at: null, expires_at: null, is_active: true }],
+    promo_code_venues: [],
   });
   db.rpcHandlers = { site_table_taken_count: () => taken };
   const client = { ...db.client, rpc: (name: string, args: unknown) => (name === 'site_reserve_table_booking' ? (db.rpcCalls.push({ name, args }), Promise.resolve(reserveAnswer)) : db.client.rpc(name, args)) };
@@ -111,6 +113,21 @@ describe('create-table-booking-checkout: the table is taken in one step, then th
     seed({ type: { pricing_mode: 'hourly', hourly_rate_cents: 4000, min_hours: 2 } });
     await post(request({ hours: 3 }));
     expect(reserveArgs()).toMatchObject({ p_hours: 3, p_deposit_cents: 12000, p_tax_cents: 1560, p_fee_cents: 600, p_total_cents: 14160 });
+  });
+
+  it('a promo code is worked out again here, lowers what is charged, and is stored with the booking', async () => {
+    await post(request({ promo_code: ' save10 ' }));
+    // 10% off the 100.00 deposit = 10.00; tax 13% and BottlesUp\'s 5% are worked out on the 90.00 that is left
+    expect(reserveArgs()).toMatchObject({ p_promo_code_id: 'promo-1', p_discount_cents: 1000, p_tax_cents: 1170, p_fee_cents: 450, p_total_cents: 10620 });
+    expect(couponsCreate.mock.calls[0][0]).toMatchObject({ amount_off: 1000, currency: 'cad' });
+  });
+
+  it('a code that does not work stops the booking before anything is reserved', async () => {
+    const res = await post(request({ promo_code: 'NOPE' }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Invalid promo code' });
+    expect(reserveArgs()).toBeUndefined();
+    expect(sessionsCreate).not.toHaveBeenCalled();
   });
 
   it('bottles paid online are added to the total and written for the booking the database made', async () => {
