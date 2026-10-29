@@ -3,6 +3,9 @@
 (tests/db/tests/497_booking_sign_text.sql) fails. Run it in a COPY of the repository (git worktree): it edits the migration in place and puts it back.
 
   PGHOST=127.0.0.1 PGPORT=54329 PGUSER=postgres LC_ALL=en_US.UTF-8 python3 tests/db/tools/mutants_booking_sign_text.py
+
+Known equivalent: "signed-in people may not call it" (the grant moved to service_role): the database grants execute on new functions to signed-in roles by default, so the explicit grant
+changes nothing there; the revoke from visitors is what matters, and is tested.
 """
 import os, subprocess, sys, shutil
 

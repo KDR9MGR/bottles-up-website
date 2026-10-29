@@ -74,6 +74,7 @@ begin
   perform tests.assert_eq('another club''s manager is refused', tests.sign(mgr_b, 'mgrb@sign.example', b_sign), 'ERROR: not allowed');
   perform tests.assert_eq('a stranger is refused', tests.sign(rando, 'rando@sign.example', b_sign), 'ERROR: not allowed');
   perform tests.assert_eq('a booking that does not exist is refused like any other the person cannot reach', tests.sign(mgr_a, 'mgra@sign.example', gen_random_uuid()), 'ERROR: not allowed');
+  perform tests.assert_eq('a signed-in role with no person behind it is not authenticated', tests.sign(null, null, b_sign), 'ERROR: not authenticated');
   perform tests.login_anon();
   perform tests.assert_raises('a visitor cannot call it', format('select public.desk_booking_sign(%L)', b_sign), 'permission denied');
   perform tests.logout();
