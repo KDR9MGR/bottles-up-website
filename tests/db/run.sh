@@ -77,6 +77,9 @@ bash tests/db/concurrency_outbox.sh
 echo "--- concurrency_walkin.sh"
 bash tests/db/concurrency_walkin.sh
 
+echo "--- concurrency_checkout.sh"
+bash tests/db/concurrency_checkout.sh
+
 echo "--- concurrency_partial_delivery.sh"
 bash tests/db/concurrency_partial_delivery.sh
 
