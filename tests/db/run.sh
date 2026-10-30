@@ -77,9 +77,6 @@ bash tests/db/concurrency_outbox.sh
 echo "--- concurrency_walkin.sh"
 bash tests/db/concurrency_walkin.sh
 
-echo "--- concurrency_oversold.sh"
-bash tests/db/concurrency_oversold.sh
-
 echo "--- concurrency_partial_delivery.sh"
 bash tests/db/concurrency_partial_delivery.sh
 
@@ -91,6 +88,9 @@ bash tests/db/concurrency_floor.sh
 
 echo "--- concurrency_door_sales.sh"
 bash tests/db/concurrency_door_sales.sh
+
+echo "--- concurrency_oversold.sh"
+bash tests/db/concurrency_oversold.sh
 
 echo "--- migration_guard.sh"
 bash tests/db/migration_guard.sh
