@@ -10,6 +10,8 @@ import { useUserAuth, userSignUp } from '@/hooks/useUserAuth';
 import TicketCard, { type TicketCardData } from '@/components/TicketCard';
 import RefundRequestCard from '@/components/RefundRequestCard';
 import { isAfterMidnightSlot, computeNightDate, formatWeekday, formatTimeSlot } from '@/lib/bookingNight';
+import { readBookingStatus } from '@/lib/bookingStatus';
+import BookingHeldNotice from '@/components/BookingHeldNotice';
 
 type PaidTicket = TicketCardData & { customerEmail?: string };
 
@@ -124,7 +126,7 @@ const BookingSuccess = () => {
   const navigate = useNavigate();
   const { session, loading: authLoading } = useUserAuth();
   const sessionId = searchParams.get('session_id');
-  const [status, setStatus] = useState<'checking' | 'paid' | 'pending'>('checking');
+  const [status, setStatus] = useState<'checking' | 'paid' | 'pending' | 'held'>('checking');
   const [ticket, setTicket] = useState<PaidTicket | null>(null);
   const [booking, setBooking] = useState<PaidBooking | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(REDIRECT_SECONDS);
@@ -142,18 +144,23 @@ const BookingSuccess = () => {
 
       if (cancelled) return;
 
-      if (data?.status === 'paid' && data.ticket) {
-        setTicket(data.ticket as PaidTicket);
+      const outcome = readBookingStatus(data, attempts);
+      if (outcome.kind === 'ticket') {
+        setTicket(outcome.ticket as PaidTicket);
         setStatus('paid');
         return;
       }
-      if (data?.status === 'paid' && data.booking) {
-        setBooking(data.booking as PaidBooking);
+      if (outcome.kind === 'booking') {
+        setBooking(outcome.booking as PaidBooking);
         setStatus('paid');
+        return;
+      }
+      if (outcome.kind === 'held') {
+        setStatus('held');
         return;
       }
       attempts += 1;
-      if (attempts < 10) {
+      if (outcome.kind === 'retry') {
         setTimeout(poll, 2000);
       } else {
         setStatus('pending');
@@ -179,6 +186,10 @@ const BookingSuccess = () => {
     const t = setTimeout(() => setSecondsLeft((s) => s - 1), 1000);
     return () => clearTimeout(t);
   }, [status, secondsLeft, navigate, showAccountPrompt]);
+
+  if (status === 'held') {
+    return <BookingHeldNotice />;
+  }
 
   if (status === 'paid' && (ticket || booking)) {
     const cardData: TicketCardData | null = ticket

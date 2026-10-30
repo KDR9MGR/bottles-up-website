@@ -2,6 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { corsHeadersFor, handleOptions } from '../_shared/cors.ts';
 import { fulfillTicketOrder, fulfillTableBooking } from '../_shared/fulfillment.ts';
+import { bookingHeldForReview } from '../_shared/oversold.ts';
 
 // Public, unauthenticated lookup by Stripe checkout session id (the booking-success page's
 // only signal). site_orders has no public RLS select policy - it holds customer PII (name,
@@ -135,6 +136,11 @@ Deno.serve(async (req: Request) => {
 
     if (currentBooking.status !== 'paid' || !currentBooking.confirmation_code) {
       return json({ status: currentBooking.status });
+    }
+
+    // The guest paid, but their table went to someone else while they did and a manager has been asked to sort it out: no confirmation code and no QR until it is.
+    if (await bookingHeldForReview(supabase, currentBooking.id)) {
+      return json({ status: 'held' });
     }
 
     const tableType = currentBooking.site_table_types as unknown as { name: string } | null;
