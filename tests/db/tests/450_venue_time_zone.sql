@@ -100,15 +100,17 @@ begin
 
   ---------------------------------------------------------------- the refund policy counts the hours in the club's own zone
   perform tests.assert_eq('the same wall-clock arrival, Toronto: the baseline', round(tests.hours_for(venue_a, t_a, tomorrow, '20:00'), 2), round(toronto, 2));
-  perform tests.try(mgr_a, 'mgra@tz.example', format($q$select public.save_venue_time_zone(%L, 'America/Vancouver')$q$, venue_a));
+  -- Los Angeles, not Vancouver: the US and Canada change their clocks on the same days, so the difference is always 3 hours. British Columbia is moving to permanent UTC-07
+  -- from 1 Nov 2026 (tzdata 2026b), so a newer time-zone database makes Vancouver only 2 hours behind Toronto from that day: this test failed in CI because of it.
+  perform tests.try(mgr_a, 'mgra@tz.example', format($q$select public.save_venue_time_zone(%L, 'America/Los_Angeles')$q$, venue_a));
   vancouver := tests.hours_for(venue_a, t_a, tomorrow, '20:00');
-  perform tests.assert_eq('8 pm in Vancouver is 3 hours later than 8 pm in Toronto', round(vancouver - toronto, 1), 3.0);
+  perform tests.assert_eq('8 pm in Los Angeles is 3 hours later than 8 pm in Toronto', round(vancouver - toronto, 1), 3.0);
   perform tests.try(mgr_a, 'mgra@tz.example', format($q$select public.save_venue_time_zone(%L, 'Europe/London')$q$, venue_a));
   london := tests.hours_for(venue_a, t_a, tomorrow, '20:00');
   perform tests.assert_eq('8 pm in London is 4 or 5 hours EARLIER than 8 pm in Toronto (the clocks change on different days)', round(toronto - london) in (4, 5), true);
 
   ---------------------------------------------------------------- the change is on record
-  perform tests.assert_eq('every accepted change was logged, and no refused one (12 saves: manager, owner, five place names, trimmed name, empty, null, Vancouver again, London)', tests.log_count(venue_a), 12);
+  perform tests.assert_eq('every accepted change was logged, and no refused one (12 saves: manager, owner, five place names, trimmed name, empty, null, Los Angeles, London)', tests.log_count(venue_a), 12);
   perform tests.assert_eq('...and nothing was logged for the other club', tests.log_count(venue_b), 0);
 
   ---------------------------------------------------------------- the grants
