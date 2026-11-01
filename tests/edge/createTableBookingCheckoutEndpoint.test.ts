@@ -33,13 +33,13 @@ beforeAll(async () => {
   await import('../../supabase/functions/create-table-booking-checkout/index.ts');
 });
 
-function seed(opts: { venueMode?: 'pay_ahead' | 'pay_at_club' | 'both'; type?: Record<string, unknown> } = {}) {
+function seed(opts: { venueMode?: 'pay_ahead' | 'pay_at_club' | 'both'; type?: Record<string, unknown>; credit?: boolean; terms?: unknown } = {}) {
   db = createFakeDb({
     site_content: [{ id: 1, payments_mode: 'test', bottlesup_fee_bps: 500 }],
     // the fake does not resolve embedded relations: the venue is attached to the table type, as the function's select would return it
     site_table_types: [{
       id: TYPE, venue_id: VENUE, name: 'Gold', max_guests: 6, deposit_cents: 10000, currency: 'cad', inventory_count: 1, pricing_mode: 'flat',
-      venue: { id: VENUE, name: 'Club A', status: 'published', booking_start_date: null, booking_end_date: null, tax_rate_bps: 1300, bottle_payment_mode: opts.venueMode ?? 'pay_ahead', deposit_is_credit: false },
+      venue: { id: VENUE, name: 'Club A', status: 'published', booking_start_date: null, booking_end_date: null, tax_rate_bps: 1300, bottle_payment_mode: opts.venueMode ?? 'pay_ahead', deposit_is_credit: opts.credit ?? false, deposit_terms: opts.terms ?? null },
       ...opts.type,
     }],
     site_venue_time_slots: [
@@ -144,6 +144,29 @@ describe('create-table-booking-checkout: the table is taken in one step, then th
     await post(request({ bottles: [{ bottle_id: BOTTLE, quantity: 2 }], bottle_payment_choice: 'pay_at_club' }));
     expect(reserveArgs()).toMatchObject({ p_bottle_subtotal_cents: 10000, p_tax_cents: 1300, p_fee_cents: 500, p_total_cents: 21800, p_bottle_payment_choice: 'pay_at_club' });
     expect(db.tables.site_table_booking_bottles[0]).toMatchObject({ booking_id: BOOKING, payment_status: 'due_at_venue' });
+  });
+});
+
+describe('create-table-booking-checkout: a deposit that is a combination', () => {
+  const combination = { purpose: 'combination', recipient: 'venue', venue_pct: 100, parts: { reservation_fee_pct: 30, minimum_spend_credit_pct: 50, admission_pct: 20 } };
+
+  it('charges the same now, whatever the terms: only what is due at the club depends on the credit', async () => {
+    seed({ venueMode: 'both', credit: true, terms: combination });
+    await post(request({ bottles: [{ bottle_id: BOTTLE, quantity: 6 }], bottle_payment_choice: 'pay_at_club' }));
+    // deposit 10000 + tax 1300 + fee 500 = 11800 charged now; bottles 30000 stay with the club, of which only the 50% credit share (5000) is netted off: 25000 due
+    expect(reserveArgs()).toMatchObject({ p_bottle_subtotal_cents: 30000, p_tax_cents: 1300, p_fee_cents: 500, p_total_cents: 11800 + 25000, p_bottle_payment_choice: 'pay_at_club' });
+  });
+
+  it('a single-purpose credit deposit nets off all of the deposit, as it always did', async () => {
+    seed({ venueMode: 'both', credit: true, terms: { purpose: 'minimum_spend_credit', recipient: 'venue', venue_pct: 100 } });
+    await post(request({ bottles: [{ bottle_id: BOTTLE, quantity: 6 }], bottle_payment_choice: 'pay_at_club' }));
+    expect(reserveArgs()).toMatchObject({ p_total_cents: 11800 + 20000 });
+  });
+
+  it('with the credit switched off nothing is netted off, even for a combination', async () => {
+    seed({ venueMode: 'both', credit: false, terms: combination });
+    await post(request({ bottles: [{ bottle_id: BOTTLE, quantity: 6 }], bottle_payment_choice: 'pay_at_club' }));
+    expect(reserveArgs()).toMatchObject({ p_total_cents: 11800 + 30000 });
   });
 });
 

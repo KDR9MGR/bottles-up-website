@@ -174,6 +174,15 @@ describe('fulfillTableBooking: what Stripe collected vs what is left for the ven
     expect(sendTableBookingEmail).toHaveBeenCalledWith(expect.objectContaining({ paidNowCents: 11800, dueAtVenueCents: 20000 }));
   });
 
+  it('pay_at_club with a combination deposit: only its credit share is netted off the amount due at the venue', async () => {
+    // bottles 30000, deposit 10000 of which 50% (5000) is the credit share -> 25000 due at venue; total 36800 -> 11800 paid now
+    const terms = { purpose: 'combination', recipient: 'venue', venue_pct: 100, parts: { reservation_fee_pct: 30, minimum_spend_credit_pct: 50, admission_pct: 20 } };
+    const db = tableDb(booking({ amount_total_cents: 36800, bottle_payment_choice: 'pay_at_club', bottle_subtotal_cents: 30000, deposit_terms: terms, venue: { name: 'The Club', deposit_is_credit: true } }));
+    await fulfillTableBooking(db.client, 'b1', 'pi_1');
+    expect(tableRow(db, 'site_table_bookings', 'b1').amount_paid_cents).toBe(11800);
+    expect(sendTableBookingEmail).toHaveBeenCalledWith(expect.objectContaining({ paidNowCents: 11800, dueAtVenueCents: 25000 }));
+  });
+
   it('amount paid can never be negative, even if the stored numbers disagree', async () => {
     const db = tableDb(booking({ amount_total_cents: 5000, bottle_payment_choice: 'pay_at_club', bottle_subtotal_cents: 15000 }));
     await fulfillTableBooking(db.client, 'b1', 'pi_1');

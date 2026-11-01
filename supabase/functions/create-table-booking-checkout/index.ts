@@ -103,7 +103,7 @@ Deno.serve(async (req: Request) => {
     // the time slot separately and cross-check venue_id in application code instead.
     const { data: tableType, error: tableTypeError } = await supabase
       .from('site_table_types')
-      .select('*, venue:site_venues!inner(id, name, status, booking_start_date, booking_end_date, tax_rate_bps, bottle_payment_mode, deposit_is_credit)')
+      .select('*, venue:site_venues!inner(id, name, status, booking_start_date, booking_end_date, tax_rate_bps, bottle_payment_mode, deposit_is_credit, deposit_terms)')
       .eq('id', table_type_id)
       .eq('venue_id', venue_id)
       .single();
@@ -262,6 +262,7 @@ Deno.serve(async (req: Request) => {
       bottleSubtotalCents,
       depositCents,
       depositIsCredit: tableType.venue.deposit_is_credit,
+      depositTerms: tableType.venue.deposit_terms,
     });
     const chargeNowBottleCents = bottlePaymentChoice === 'pay_at_club' ? 0 : bottleSubtotalCents;
     const preTaxSubtotalCents = depositCents + chargeNowBottleCents;

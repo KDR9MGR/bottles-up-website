@@ -121,6 +121,7 @@ export async function fulfillTableBooking(
         bottleSubtotalCents: booking.bottle_subtotal_cents,
         depositCents: booking.deposit_cents,
         depositIsCredit: (booking.venue as { deposit_is_credit: boolean }).deposit_is_credit,
+        depositTerms: booking.deposit_terms,
       }),
     0,
   );

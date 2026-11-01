@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { creditedDepositCents } from './depositAllocation.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseClient = ReturnType<typeof createClient<any>>;
@@ -23,7 +24,7 @@ export interface RecomputedTotals {
 // (a confirmed Stripe session or a manually recorded in-person payment), which the
 // caller handles separately, since it can also include payments this function has
 // no way to derive (e.g. cash collected at the venue).
-const BOOKING_COLUMNS = 'deposit_cents, discount_cents, venue:site_venues(tax_rate_bps, deposit_is_credit)';
+const BOOKING_COLUMNS = 'deposit_cents, discount_cents, deposit_terms, venue:site_venues(tax_rate_bps, deposit_is_credit)';
 
 // The booking, with what staff have discounted (staff_discount_cents, 20261024100000_staff_discounts_and_complimentary.sql). Before that migration is applied the column
 // does not exist and the database says so: read the booking without it (nothing can have been discounted by staff yet).
@@ -64,8 +65,9 @@ export async function recomputeTableBookingTotals(
     .filter((l) => l.payment_status === 'due_at_venue')
     .reduce((sum, l) => sum + l.line_total_cents, 0);
 
+  // The part of the deposit that counts toward the bottle bill: all of it when the venue credits the deposit, only its credit share for a combination (depositAllocation.ts).
   const creditedDueAtVenueCents = venue.deposit_is_credit
-    ? Math.max(dueAtVenueBottleCentsRaw - booking.deposit_cents, 0)
+    ? Math.max(dueAtVenueBottleCentsRaw - creditedDepositCents({ depositCents: booking.deposit_cents, depositIsCredit: true, terms: (booking as { deposit_terms?: unknown }).deposit_terms }), 0)
     : dueAtVenueBottleCentsRaw;
 
   const preTax = booking.deposit_cents + taxedBottleCents;
