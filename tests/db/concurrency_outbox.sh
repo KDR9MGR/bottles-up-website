@@ -11,6 +11,14 @@ psql_db() { psql -X -q -t -A -v ON_ERROR_STOP=1 -d "$DB" "$@"; }
 fail() {
   echo "FAIL - outbox concurrency: $1"
   if [ -n "${OUT_A:-}" ]; then echo "--- run A output:"; head -5 "$OUT_A"; echo "--- run B output:"; head -5 "$OUT_B"; fi
+  # This failed intermittently in CI (30 Oct: run B was handed nothing and raised no error, while run A got its 20) and never on a developer machine in 65 runs,
+  # so when it does, say what the database looked like: where the 40 messages were, and who was still running.
+  echo "--- the race messages now (status, attempts, claimed or not, how many):"
+  psql_db -F ' | ' -c "select status, attempts, (claimed_at is not null) as claimed, count(*) from public.site_outbox where payload ->> 'race' = 'outbox' group by 1, 2, 3 order by 1, 2, 3" 2>&1 || true
+  echo "--- messages that were NOT part of this race and could still have been handed out (queued, unclaimed or claim older than 10 minutes):"
+  psql_db -F ' | ' -c "select kind, attempts, claimed_at, created_at from public.site_outbox where status = 'queued' and coalesce(payload ->> 'race', '') <> 'outbox' and attempts < 5 and (claimed_at is null or claimed_at < clock_timestamp() - interval '10 minutes') limit 10" 2>&1 || true
+  echo "--- database sessions at this moment (pid, state, waiting on, started, query):"
+  psql_db -F ' | ' -c "select pid, state, wait_event_type, backend_start, left(query, 70) from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid() order by backend_start" 2>&1 || true
   exit 1
 }
 

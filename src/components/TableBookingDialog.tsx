@@ -25,6 +25,7 @@ import { supabase } from '@/lib/supabase';
 import type { Database, BottlePaymentChoice } from '@/types/database';
 import type { TableTypeWithVenue } from '@/pages/VipTables';
 import { isAfterMidnightSlot, computeArrivalDate, formatWeekday } from '@/lib/bookingNight';
+import { creditedDepositCents } from '@/lib/depositAllocation';
 import BottlePreviewDialog from '@/components/BottlePreviewDialog';
 import { fetchPublicRefundPolicy, type PublicRefundPolicy } from '@/lib/refundPolicy';
 
@@ -159,14 +160,16 @@ const TableBookingDialog = ({ tableType, open, onOpenChange, initialDate, initia
   const canChoosePaymentMode = venuePaymentMode === 'both' && bottleSubtotalCents > 0;
   const effectivePaymentChoice: BottlePaymentChoice = venuePaymentMode === 'both' ? bottlePaymentChoice : venuePaymentMode;
   // Mirrors create-table-booking-checkout's pricing exactly: pay_at_club charges
-  // only the deposit now, the bottle amount (minus deposit credit if the venue
-  // enables it) is settled in person instead.
-  const dueAtVenueCents =
-    effectivePaymentChoice === 'pay_at_club'
-      ? tableType.venue.deposit_is_credit
-        ? Math.max(bottleSubtotalCents - depositCents, 0)
-        : bottleSubtotalCents
-      : 0;
+  // only the deposit now, the bottle amount (minus the part of the deposit that is
+  // a credit, if the venue enables it) is settled in person instead. For a
+  // deposit that is a combination only its credit share counts.
+  const creditedCents = creditedDepositCents({
+    depositCents,
+    depositIsCredit: tableType.venue.deposit_is_credit,
+    // The venue is read with select('*'), so its deposit terms come with it (the generated row type predates them).
+    terms: (tableType.venue as { deposit_terms?: unknown }).deposit_terms,
+  });
+  const dueAtVenueCents = effectivePaymentChoice === 'pay_at_club' ? Math.max(bottleSubtotalCents - creditedCents, 0) : 0;
   const chargeNowBottleCents = effectivePaymentChoice === 'pay_at_club' ? 0 : bottleSubtotalCents;
   const preTaxSubtotalCents = depositCents + chargeNowBottleCents;
   const discountCents = appliedPromo?.discountCents ?? 0;

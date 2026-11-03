@@ -85,7 +85,7 @@ begin
   perform tests.assert_eq('...and how many more can be invited (the limit of 6, less the holder and the 3 invited)', (j ->> 'guests_left')::int, 2);
   perform tests.assert_eq('a guest says whether their ticket was e-mailed', (select (x ->> 'ticket_sent') from jsonb_array_elements(j -> 'guests') x where x ->> 'name' = 'Gus Guest'), 'true');
   perform tests.assert_eq('...and whether it was not', (select (x ->> 'ticket_sent') from jsonb_array_elements(j -> 'guests') x where x ->> 'name' = 'Gia Guest'), 'false');
-  perform tests.assert_true('NO e-mail address or phone number is in the answer', j::text not like '%@%' and j::text not like '%555%');
+  perform tests.assert_true('NO e-mail address or phone number is in the answer', j::text not like '%@%' and j::text not like '%555 0100%');  -- the holder's number; "555" alone turned up by chance in random ids and timestamps (a flaky failure in CI on 23 Oct)
   perform tests.assert_true('...and no guest code either', j::text not like '%GT-ACT%');
   perform tests.assert_eq('the owner sees it too', (tests.guests_as(owner_u, 'owner@act.example', b1) ->> 'holder_name'), 'Hana Holder');
   perform tests.assert_eq('the server who was given the table sees it', (tests.guests_as(srv_1, 'srv1@act.example', b1) ->> 'guests_issued')::int, 3);
