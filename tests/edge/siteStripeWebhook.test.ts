@@ -10,6 +10,26 @@ vi.mock('../../supabase/functions/_shared/fulfillment.ts', () => ({
 }));
 import * as fulfillment from '../../supabase/functions/_shared/fulfillment.ts';
 
+// A friend's share of a table's bill goes to its own function (tested in splitPayments.test.ts).
+vi.mock('../../supabase/functions/_shared/splitPayments.ts', () => ({
+  fulfillSplitShare: vi.fn(async () => ({ result: 'applied', refundCents: 0 })),
+}));
+import * as splitPayments from '../../supabase/functions/_shared/splitPayments.ts';
+
+// A deposit or balance for a professional goes to its own function too.
+vi.mock('../../supabase/functions/_shared/proPayments.ts', () => ({
+  fulfillProPayment: vi.fn(async () => ({ result: 'applied', refundCents: 0 })),
+}));
+import * as proPayments from '../../supabase/functions/_shared/proPayments.ts';
+
+// A subscription's page, a change to a subscription and a tip go to their own functions (tested in billing.test.ts).
+vi.mock('../../supabase/functions/_shared/billing.ts', () => ({
+  fulfillSubscriptionCheckout: vi.fn(async () => ({ result: 'applied' })),
+  applySubscription: vi.fn(async () => ({ result: 'applied' })),
+  fulfillTip: vi.fn(async () => ({ result: 'applied' })),
+}));
+import * as billing from '../../supabase/functions/_shared/billing.ts';
+
 const TEST_SECRET = 'whsec_test_secret';
 const LIVE_SECRET = 'whsec_live_secret';
 
@@ -160,5 +180,129 @@ describe('site-stripe-webhook: routing a completed checkout', () => {
   it('does NOT swallow a fulfillment failure: the handler rejects so the platform answers 5xx and Stripe retries', async () => {
     (fulfillment.fulfillTicketOrder as any).mockRejectedValueOnce(new Error('db down'));
     await expect(handler(signedRequest(sessionEvent({ metadata: { order_id: 'o1' } })))).rejects.toThrow('db down');
+  });
+});
+
+describe('site-stripe-webhook: a friend\'s share of a table', () => {
+  it('goes to fulfillSplitShare with the session, the payment and what Stripe took, and to nothing else', async () => {
+    const res = await handler(signedRequest(sessionEvent({ id: 'cs_share', payment_intent: 'pi_share', amount_total: 2500, metadata: { kind: 'split_share', share_id: 'sh_1' } })));
+    expect(res.status).toBe(200);
+    expect(splitPayments.fulfillSplitShare).toHaveBeenCalledTimes(1);
+    const args = (splitPayments.fulfillSplitShare as any).mock.calls[0];
+    expect(args[2]).toBe('cs_share');
+    expect(args[3]).toBe('pi_share');
+    expect(args[4]).toBe(2500);
+    none();
+  });
+
+  it('is never mistaken for a booking or an order, even if it carries their ids', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_share2', payment_intent: 'pi_2', amount_total: 100, metadata: { kind: 'split_share', booking_id: 'b1', order_id: 'o1' } })));
+    expect(splitPayments.fulfillSplitShare).toHaveBeenCalledTimes(1);
+    none();
+  });
+
+  it('a payment intent that is an object is read, and no intent at all is passed as null', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_s3', payment_intent: { id: 'pi_obj' }, amount_total: 300, metadata: { kind: 'split_share' } })));
+    await handler(signedRequest(sessionEvent({ id: 'cs_s4', amount_total: 300, metadata: { kind: 'split_share' } })));
+    const calls = (splitPayments.fulfillSplitShare as any).mock.calls;
+    expect(calls[0][3]).toBe('pi_obj');
+    expect(calls[1][3]).toBeNull();
+  });
+
+  it('no amount is passed as nothing, which the database refuses rather than guesses', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_s5', metadata: { kind: 'split_share' } })));
+    expect((splitPayments.fulfillSplitShare as any).mock.calls[0][4]).toBe(0);
+  });
+
+  it('an ordinary table booking still goes where it went', async () => {
+    await handler(signedRequest(sessionEvent({ payment_intent: 'pi_b', metadata: { booking_id: 'bk_1' } })));
+    expect(fulfillment.fulfillTableBooking).toHaveBeenCalledTimes(1);
+    expect(splitPayments.fulfillSplitShare).not.toHaveBeenCalled();
+  });
+});
+
+describe('site-stripe-webhook: a professional\'s booking payment', () => {
+  it('goes to fulfillProPayment with the session, the payment and what Stripe took, and to nothing else', async () => {
+    const res = await handler(signedRequest(sessionEvent({ id: 'cs_pro', payment_intent: 'pi_pro', amount_total: 30000, metadata: { kind: 'pro_payment', payment_id: 'pay_1' } })));
+    expect(res.status).toBe(200);
+    expect(proPayments.fulfillProPayment).toHaveBeenCalledTimes(1);
+    const args = (proPayments.fulfillProPayment as any).mock.calls[0];
+    expect([args[2], args[3], args[4]]).toEqual(['cs_pro', 'pi_pro', 30000]);
+    expect(splitPayments.fulfillSplitShare).not.toHaveBeenCalled();
+    none();
+  });
+
+  it('is never mistaken for a booking, an order or a split share, even if it carries their ids', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_pro2', amount_total: 100, metadata: { kind: 'pro_payment', booking_id: 'b1', order_id: 'o1' } })));
+    expect(proPayments.fulfillProPayment).toHaveBeenCalledTimes(1);
+    expect(splitPayments.fulfillSplitShare).not.toHaveBeenCalled();
+    none();
+  });
+
+  it('a payment intent that is an object is read, no intent is null, and no amount is nothing', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_p3', payment_intent: { id: 'pi_obj' }, amount_total: 300, metadata: { kind: 'pro_payment' } })));
+    await handler(signedRequest(sessionEvent({ id: 'cs_p4', metadata: { kind: 'pro_payment' } })));
+    const calls = (proPayments.fulfillProPayment as any).mock.calls;
+    expect(calls[0][3]).toBe('pi_obj');
+    expect([calls[1][3], calls[1][4]]).toEqual([null, 0]);
+  });
+});
+
+describe('site-stripe-webhook: a subscription', () => {
+  it('a completed subscription page goes to fulfillSubscriptionCheckout with the session, and to nothing else', async () => {
+    const res = await handler(signedRequest(sessionEvent({ id: 'cs_sub', mode: 'subscription', subscription: 'sub_1', metadata: { kind: 'subscription', subscription_id: 'ours-1' } })));
+    expect(res.status).toBe(200);
+    expect(billing.fulfillSubscriptionCheckout).toHaveBeenCalledTimes(1);
+    const args = (billing.fulfillSubscriptionCheckout as any).mock.calls[0];
+    expect(args[2]).toMatchObject({ id: 'cs_sub', subscription: 'sub_1', metadata: { subscription_id: 'ours-1' } });
+    expect(typeof args[1].subscriptions.retrieve).toBe('function');
+    expect(billing.fulfillTip).not.toHaveBeenCalled();
+    expect(proPayments.fulfillProPayment).not.toHaveBeenCalled();
+    none();
+  });
+
+  it('is never mistaken for a booking or an order, even if it carries their ids', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_sub2', metadata: { kind: 'subscription', booking_id: 'b1', order_id: 'o1' } })));
+    expect(billing.fulfillSubscriptionCheckout).toHaveBeenCalledTimes(1);
+    none();
+  });
+
+  it('a change to a subscription in Stripe is written as Stripe says it', async () => {
+    const sub = { id: 'sub_1', object: 'subscription', status: 'past_due', customer: 'cus_1', current_period_end: 1_800_000_000, cancel_at_period_end: false, metadata: { subscription_id: 'ours-1' } };
+    for (const type of ['customer.subscription.updated', 'customer.subscription.deleted']) {
+      const res = await handler(signedRequest(JSON.stringify({ id: 'evt_s', object: 'event', type, data: { object: sub } })));
+      expect(res.status).toBe(200);
+    }
+    const calls = (billing.applySubscription as any).mock.calls;
+    expect(calls.length).toBe(2);
+    expect(calls[0][1]).toMatchObject({ id: 'sub_1', status: 'past_due' });
+    none();
+  });
+
+  it('other subscription events are acknowledged and ignored', async () => {
+    const res = await handler(signedRequest(JSON.stringify({ id: 'evt_s2', object: 'event', type: 'customer.subscription.created', data: { object: { id: 'sub_1' } } })));
+    expect(res.status).toBe(200);
+    expect(billing.applySubscription).not.toHaveBeenCalled();
+  });
+});
+
+describe('site-stripe-webhook: a tip', () => {
+  it('goes to fulfillTip with the session, the payment and what Stripe took, and to nothing else', async () => {
+    const res = await handler(signedRequest(sessionEvent({ id: 'cs_tip', payment_intent: 'pi_tip', amount_total: 500, metadata: { kind: 'tip', tip_id: 't1' } })));
+    expect(res.status).toBe(200);
+    expect(billing.fulfillTip).toHaveBeenCalledTimes(1);
+    const args = (billing.fulfillTip as any).mock.calls[0];
+    expect([args[1], args[2], args[3]]).toEqual(['cs_tip', 'pi_tip', 500]);
+    expect(billing.fulfillSubscriptionCheckout).not.toHaveBeenCalled();
+    none();
+  });
+
+  it('a payment intent that is an object is read, no intent is null, and no amount is nothing', async () => {
+    await handler(signedRequest(sessionEvent({ id: 'cs_t2', payment_intent: { id: 'pi_obj' }, amount_total: 300, metadata: { kind: 'tip' } })));
+    await handler(signedRequest(sessionEvent({ id: 'cs_t3', metadata: { kind: 'tip' } })));
+    const calls = (billing.fulfillTip as any).mock.calls;
+    expect(calls[0][2]).toBe('pi_obj');
+    expect([calls[1][2], calls[1][3]]).toEqual([null, 0]);
+    none();
   });
 });

@@ -1,0 +1,756 @@
+-- Verification, ranks, awards, plaques and jobs. What matters most: a badge never comes from payment, only from BottlesUp's decision (a person's own verification, or the business account's);
+-- a rank is asked for, looked at and awarded or turned down with a reason, and the highest one awarded is what the badge shows; a plaque's address is seen only by its owner and BottlesUp and
+-- is wiped after the parcel arrives; a job's applications are private to the business; applying is free but limited; the CMS functions are for admins only; every table is closed.
+begin;
+
+create function tests.q(p_user uuid, p_email text, p_expr text) returns text language plpgsql as $$
+declare r text;
+begin
+  perform tests.login(p_user, p_email);
+  execute 'select (' || p_expr || ')::text' into r;
+  perform tests.logout();
+  return coalesce(r, '(null)');
+exception when others then
+  perform tests.logout();
+  return 'ERROR: ' || sqlerrm;
+end $$;
+create function tests.f(p_user uuid, p_email text, p_expr text, p_path text[]) returns text language plpgsql as $$
+declare r text;
+begin
+  perform tests.login(p_user, p_email);
+  execute 'select (' || p_expr || ') #>> $1' into r using p_path;
+  perform tests.logout();
+  return coalesce(r, '(null)');
+exception when others then
+  perform tests.logout();
+  return 'ERROR: ' || sqlerrm;
+end $$;
+-- A listing put straight into the table (as the database owner), for the limits that need many of them.
+create function tests.mkjob(p_poster uuid, p_title text default 'Weekend bartender wanted') returns uuid language plpgsql as $$
+declare v uuid;
+begin
+  insert into public.site_jobs (poster, title, kind, description, compensation, location, deadline)
+  values (p_poster, p_title, 'part_time', 'We need an experienced bartender for weekends.', '$20 an hour', 'Toronto', current_date + 30) returning id into v;
+  return v;
+end $$;
+
+-- job_create as someone, with the usual valid values unless changed: 'ok' or the error.
+create function tests.jc(p_user uuid, p_email text, p_actor uuid, p_title text default 'Weekend bartender', p_kind text default 'part_time', p_desc text default 'We need an experienced bartender for weekends.',
+                         p_req text default null, p_comp text default '$20 an hour', p_loc text default 'Toronto', p_remote boolean default false, p_sched text default null, p_deadline date default current_date + 30)
+returns text language plpgsql as $$
+declare r text;
+begin
+  r := tests.q(p_user, p_email, format('public.job_create(%L, %L, %L, %L, %L, %L, %L, %L, %L, %L)', p_actor, p_title, p_kind, p_desc, p_req, p_comp, p_loc, p_remote, p_sched, p_deadline));
+  return case when r like 'ERROR:%' then r else 'ok' end;
+end $$;
+
+do $$
+declare
+  admin_u constant uuid := '00000000-0000-0000-0000-0000000000a2';
+  adm constant text := 'admin@test.example';
+  dee constant uuid := '00000000-0000-0000-0000-0000000007c1';    -- a DJ, owner of two professional profiles
+  ann constant uuid := '00000000-0000-0000-0000-0000000007c2';    -- gets verified and earns ranks
+  bob constant uuid := '00000000-0000-0000-0000-0000000007c3';    -- follows ann, applies for jobs
+  cy constant uuid := '00000000-0000-0000-0000-0000000007c4';     -- follows ann, applies for jobs
+  zed constant uuid := '00000000-0000-0000-0000-0000000007c5';    -- follows ann, a stranger
+  eve constant uuid := '00000000-0000-0000-0000-0000000007c6';    -- blocked the DJ
+  olly constant uuid := '00000000-0000-0000-0000-0000000007c7';   -- runs a club
+  fay constant uuid := '00000000-0000-0000-0000-0000000007c8';    -- has not accepted the rules; follows ann
+  gus constant uuid := '00000000-0000-0000-0000-0000000007c9';    -- follows ann
+  hal constant uuid := '00000000-0000-0000-0000-0000000007ca';    -- follows ann
+  d_e constant text := 'dee@rec.example'; a_e constant text := 'ann@rec.example'; b_e constant text := 'bob@rec.example'; c_e constant text := 'cy@rec.example';
+  z_e constant text := 'zed@rec.example'; e_e constant text := 'eve@rec.example'; o_e constant text := 'olly@rec.example'; f_e constant text := 'fay@rec.example';
+  g_e constant text := 'gus@rec.example'; h_e constant text := 'hal@rec.example';
+  p_dee uuid; p_ann uuid; p_bob uuid; p_cy uuid; p_zed uuid; p_eve uuid; p_olly uuid; p_fay uuid; p_gus uuid; p_hal uuid; p_dj uuid; p_dj2 uuid; p_club uuid;
+  org uuid; va uuid;
+  v1 uuid; v2 uuid; v3 uuid; rv1 uuid; rv2 uuid; rv3 uuid; aw1 uuid; aw2 uuid; pq1 uuid; pq2 uuid;
+  j1 uuid; j2 uuid; j3 uuid; j4 uuid; ap1 uuid; ap2 uuid; ap3 uuid; rp uuid; tm1 uuid; tm2 uuid; tm3 uuid; j5 uuid; j6 uuid; ap4 uuid;
+  r text; n int; j jsonb;
+begin
+  insert into auth.users (id, email) values (dee, d_e), (ann, a_e), (bob, b_e), (cy, c_e), (zed, z_e), (eve, e_e), (olly, o_e), (fay, f_e), (gus, g_e), (hal, h_e);
+  insert into public.profiles (id, name, email) values (dee, 'Dee Dee', d_e), (ann, 'Ann Lee', a_e), (bob, 'Bob Ray', b_e), (cy, 'Cy Rus', c_e), (zed, 'Zed Zed', z_e), (eve, 'Eve Ng', e_e),
+    (olly, 'Olly Owner', o_e), (fay, 'Fay Fox', f_e), (gus, 'Gus Gee', g_e), (hal, 'Hal Hill', h_e);
+  perform tests.login(admin_u, adm); perform public.cms_set_feature('social', true); perform public.cms_publish_rules('Be kind to people. No spam. No hate. Respect each other.'); perform tests.logout();
+  perform tests.login(dee, d_e); perform public.save_my_profile('Dee Dee', 'deerec', 'Toronto'); perform public.profile_save_personal('public'); perform public.rules_accept(2);
+  perform public.profile_create_business('dj', 'DJ Dee', 'djdeerec'); perform public.profile_create_business('photographer', 'Dee Photos', 'deephotosrec');
+  perform tests.login(ann, a_e); perform public.save_my_profile('Ann Lee', 'annrec', 'Toronto'); perform public.profile_save_personal('public'); perform public.rules_accept(2);
+  perform tests.login(bob, b_e); perform public.save_my_profile('Bob Ray', 'bobrec', 'Toronto'); perform public.profile_save_personal('public'); perform public.rules_accept(2);
+  perform tests.login(cy, c_e); perform public.save_my_profile('Cy Rus', 'cyrec', 'Toronto'); perform public.profile_save_personal('public'); perform public.rules_accept(2);
+  perform tests.login(zed, z_e); perform public.save_my_profile('Zed Zed', 'zedrec', 'Toronto'); perform public.profile_save_personal('public'); perform public.rules_accept(2);
+  perform tests.login(eve, e_e); perform public.save_my_profile('Eve Ng', 'everec', 'Toronto'); perform public.profile_save_personal('public'); perform public.rules_accept(2);
+  perform tests.login(fay, f_e); perform public.save_my_profile('Fay Fox', 'fayrec', 'Toronto'); perform public.profile_save_personal('public');
+  perform tests.login(gus, g_e); perform public.save_my_profile('Gus Gee', 'gusrec', 'Toronto'); perform public.profile_save_personal('public'); perform public.rules_accept(2);
+  perform tests.login(hal, h_e); perform public.save_my_profile('Hal Hill', 'halrec', 'Toronto'); perform public.profile_save_personal('public'); perform public.rules_accept(2);
+  perform tests.login(olly, o_e); perform public.save_my_profile('Olly Owner', 'ollyrec', 'Toronto'); perform public.profile_save_personal('public'); perform public.rules_accept(2);
+  org := public.create_organization('Rec Club Co', 'venue_owner'); va := public.create_org_venue(org, 'Rec Club');
+  perform public.profile_create_business('venue', 'Rec Club', 'recclub', null, null, null, va);
+  perform tests.logout();
+  update public.site_venues set status = 'published' where id = va;
+  select id into p_dee from public.site_profiles where user_id = dee and kind = 'personal'; select id into p_ann from public.site_profiles where user_id = ann and kind = 'personal';
+  select id into p_bob from public.site_profiles where user_id = bob and kind = 'personal'; select id into p_cy from public.site_profiles where user_id = cy and kind = 'personal';
+  select id into p_zed from public.site_profiles where user_id = zed and kind = 'personal'; select id into p_eve from public.site_profiles where user_id = eve and kind = 'personal';
+  select id into p_olly from public.site_profiles where user_id = olly and kind = 'personal'; select id into p_fay from public.site_profiles where user_id = fay and kind = 'personal';
+  select id into p_gus from public.site_profiles where user_id = gus and kind = 'personal'; select id into p_hal from public.site_profiles where user_id = hal and kind = 'personal';
+  select id into p_dj from public.site_profiles where handle = 'djdeerec'; select id into p_dj2 from public.site_profiles where handle = 'deephotosrec'; select id into p_club from public.site_profiles where handle = 'recclub';
+  perform tests.login(eve, e_e); perform public.block_set(p_eve, p_dj, true); perform tests.logout();
+
+  ---------------------------------------------------------------- the switches
+  perform tests.assert_eq('verification is off at first', tests.q(ann, a_e, format($q$public.verification_status(%L)$q$, p_ann)), 'ERROR: Verification and ranks are not open yet.');
+  perform tests.assert_eq('...and so are ranks', tests.q(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann)), 'ERROR: Verification and ranks are not open yet.');
+  perform tests.assert_eq('...and jobs', tests.q(dee, d_e, format($q$public.jobs_list(%L)$q$, p_dee)), 'ERROR: Jobs are not open yet.');
+  perform tests.assert_eq('...also asking to be verified', tests.q(ann, a_e, format($q$public.verification_request(%L)$q$, p_ann)), 'ERROR: Verification and ranks are not open yet.');
+  perform tests.assert_eq('...asking for a rank', tests.q(ann, a_e, format($q$public.rank_request(%L)$q$, p_ann)), 'ERROR: Verification and ranks are not open yet.');
+  perform tests.assert_eq('...the plaques', tests.q(ann, a_e, format($q$public.plaques_mine(%L)$q$, p_ann)), 'ERROR: Verification and ranks are not open yet.');
+  perform tests.assert_eq('...asking for one', tests.q(ann, a_e, $q$public.plaque_claim(gen_random_uuid(), 'Ann Lee', '1 King St', null, 'Toronto', 'ON', 'M5V 1A1', 'Canada')$q$), 'ERROR: Verification and ranks are not open yet.');
+  perform tests.assert_eq('...cancelling one', tests.q(ann, a_e, $q$public.plaque_cancel(gen_random_uuid())$q$), 'ERROR: Verification and ranks are not open yet.');
+  perform tests.assert_eq('...the awards of a profile are just empty', tests.q(ann, a_e, format($q$public.awards_of(%L, %L)$q$, p_ann, p_ann)), '[]');
+  perform tests.assert_eq('...posting a job', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj)), 'ERROR: Jobs are not open yet.');
+  perform tests.assert_eq('...changing one', tests.q(dee, d_e, format($q$public.job_update(%L, gen_random_uuid(), 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj)), 'ERROR: Jobs are not open yet.');
+  perform tests.assert_eq('...closing one', tests.q(dee, d_e, format($q$public.job_close(%L, gen_random_uuid())$q$, p_dj)), 'ERROR: Jobs are not open yet.');
+  perform tests.assert_eq('...opening one', tests.q(dee, d_e, format($q$public.job_get(%L, gen_random_uuid())$q$, p_dee)), 'ERROR: Jobs are not open yet.');
+  perform tests.assert_eq('...my listings', tests.q(dee, d_e, format($q$public.jobs_mine(%L)$q$, p_dj)), 'ERROR: Jobs are not open yet.');
+  perform tests.assert_eq('...applying', tests.q(dee, d_e, format($q$public.job_apply(%L, gen_random_uuid(), 'I have worked many bars in Toronto.')$q$, p_dee)), 'ERROR: Jobs are not open yet.');
+  perform tests.assert_eq('...reading applications', tests.q(dee, d_e, format($q$public.job_applications(%L, gen_random_uuid())$q$, p_dj)), 'ERROR: Jobs are not open yet.');
+  perform tests.assert_eq('...answering one', tests.q(dee, d_e, format($q$public.job_application_set(%L, gen_random_uuid(), 'accepted')$q$, p_dj)), 'ERROR: Jobs are not open yet.');
+  perform tests.assert_eq('...taking one back', tests.q(dee, d_e, format($q$public.job_application_withdraw(%L, gen_random_uuid())$q$, p_dee)), 'ERROR: Jobs are not open yet.');
+  perform tests.assert_eq('...my applications', tests.q(dee, d_e, format($q$public.job_applications_mine(%L)$q$, p_dee)), 'ERROR: Jobs are not open yet.');
+  perform tests.assert_eq('a profile has no rank while they are off', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{rank}'), '(null)');
+  perform tests.login(admin_u, adm); perform public.cms_set_feature('ranks', true); perform public.cms_set_feature('jobs', true); perform tests.logout();
+  perform tests.login_anon();
+  perform tests.assert_raises('a visitor cannot ask about verification', format($q$select public.verification_status(%L)$q$, p_ann), 'permission denied');
+  perform tests.assert_raises('...or look at jobs', format($q$select public.jobs_list(%L)$q$, p_ann), 'permission denied');
+  perform tests.logout();
+
+  ---------------------------------------------------------------- the ranks as proposed
+  j := tests.q(ann, a_e, 'public.rank_levels()')::jsonb;
+  perform tests.assert_eq('six ranks, lowest first', (select string_agg(x ->> 'key', ',') from jsonb_array_elements(j) x), 'verified,elite,icon,legend,global_icon,immortal');
+  perform tests.assert_eq('...with the followers the plan proposes', (select string_agg(x ->> 'min_followers', ',') from jsonb_array_elements(j) x), '0,100000,1000000,10000000,50000000,100000000');
+  perform tests.assert_eq('...and a colour each', (select count(distinct x ->> 'colour')::int from jsonb_array_elements(j) x), 6);
+  perform tests.assert_eq('...and their names', (select string_agg(x ->> 'name', ',') from jsonb_array_elements(j) x), 'Verified,Elite,Icon,Legend,Global Icon,BottlesUp Immortal');
+  perform tests.assert_eq('...a plaque only from Icon up', (select string_agg(x ->> 'key', ',') from jsonb_array_elements(j) x where (x ->> 'plaque')::boolean), 'icon,legend,global_icon,immortal');
+
+  ---------------------------------------------------------------- asking to be verified
+  perform tests.assert_eq('nobody is verified at first', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{verified}'), 'false');
+  perform tests.assert_eq('...and there is no rank to show', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{rank}'), '(null)');
+  perform tests.assert_eq('a person sees where their profile stands', tests.f(ann, a_e, format($q$public.verification_status(%L)$q$, p_ann), '{verified}') || '/' || tests.f(ann, a_e, format($q$public.verification_status(%L)$q$, p_ann), '{request}'), 'false/(null)');
+  perform tests.assert_eq('nobody else sees it', tests.q(bob, b_e, format($q$public.verification_status(%L)$q$, p_ann)), 'ERROR: This profile is not available.');
+  perform tests.assert_eq('only the owner asks', tests.q(bob, b_e, format($q$public.verification_request(%L, 'hello')$q$, p_ann)), 'ERROR: Only the owner of an active profile can ask to be verified.');
+  perform tests.assert_eq('a business account''s profile is verified through the account', tests.q(olly, o_e, format($q$public.verification_request(%L, 'hello')$q$, p_club)), 'ERROR: This profile is verified through its business account in BottlesUp Business.');
+  perform tests.assert_eq('the words are limited', tests.q(ann, a_e, format($q$public.verification_request(%L, %L)$q$, p_ann, repeat('x', 501))), 'ERROR: Keep it to 500 characters.');
+  perform tests.login(admin_u, adm); perform public.cms_set_banned_term('forbiddenword', true); perform tests.logout();
+  perform tests.assert_eq('...and kept clean', tests.q(ann, a_e, format($q$public.verification_request(%L, 'a forbiddenword note')$q$, p_ann)), 'ERROR: That wording is not allowed here.');
+  update public.site_profiles set status = 'suspended' where id = p_ann;
+  perform tests.assert_eq('a suspended profile cannot ask', tests.q(ann, a_e, format($q$public.verification_request(%L, 'hello')$q$, p_ann)), 'ERROR: Only the owner of an active profile can ask to be verified.');
+  update public.site_profiles set status = 'active' where id = p_ann;
+  j := tests.q(ann, a_e, format($q$public.verification_request(%L, '  I am a radio host.  ')$q$, p_ann))::jsonb;
+  perform tests.assert_eq('a request is made', (j ->> 'verified') || '/' || (j -> 'request' ->> 'state') || '/' || (j -> 'request' ->> 'note'), 'false/requested/I am a radio host.');
+  perform tests.assert_eq('...and is in the audit log', (select count(*)::int from public.audit_log where action = 'verification.requested' and entity_id = p_ann::text), 1);
+  perform tests.assert_eq('one request waits at a time', tests.q(ann, a_e, format($q$public.verification_request(%L, 'again')$q$, p_ann)), 'ERROR: Your request is already waiting for a decision.');
+  perform tests.assert_eq('a request alone gives no tick', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{verified}'), 'false');
+  perform tests.assert_eq('a team member without ownership cannot ask for a professional''s profile', tests.q(zed, z_e, format($q$public.verification_request(%L, 'hi')$q$, p_dj)), 'ERROR: Only the owner of an active profile can ask to be verified.');
+
+  ---------------------------------------------------------------- BottlesUp decides
+  perform tests.assert_eq('the list is for admins', tests.q(ann, a_e, $q$public.cms_verifications()$q$), 'ERROR: Only a BottlesUp admin can see this.');
+  perform tests.assert_eq('...with a state that exists', tests.q(admin_u, adm, $q$public.cms_verifications('maybe')$q$), 'ERROR: Choose requested, approved, rejected, revoked or all.');
+  insert into public.site_follows (follower, followed, status) values (p_zed, p_ann, 'active');
+  j := tests.q(admin_u, adm, $q$public.cms_verifications()$q$)::jsonb;
+  perform tests.assert_eq('the waiting request shows the person and their note', jsonb_array_length(j) || '/' || (j -> 0 ->> 'state') || '/' || (j -> 0 -> 'profile' ->> 'handle') || '/' || (j -> 0 ->> 'note') || '/' || (j -> 0 ->> 'followers'), '1/requested/annrec/I am a radio host./1');
+  delete from public.site_follows where follower = p_zed and followed = p_ann;
+  select (x ->> 'id')::uuid into v1 from jsonb_array_elements(j) x limit 1;
+  perform tests.assert_eq('only an admin decides', tests.q(ann, a_e, format($q$public.cms_verification_decide(%L, 'approve')$q$, v1)), 'ERROR: Only a BottlesUp admin can do this.');
+  perform tests.assert_eq('...choosing a decision', tests.q(admin_u, adm, format($q$public.cms_verification_decide(%L, 'maybe')$q$, v1)), 'ERROR: Choose approve, reject or revoke.');
+  perform tests.assert_eq('...a refusal needs its reason', tests.q(admin_u, adm, format($q$public.cms_verification_decide(%L, 'reject')$q$, v1)), 'ERROR: Write the reason (at least 3 characters).');
+  perform tests.assert_eq('...which is not too long', tests.q(admin_u, adm, format($q$public.cms_verification_decide(%L, 'reject', %L)$q$, v1, repeat('x', 301))), 'ERROR: Keep the reason to 300 characters.');
+  perform tests.assert_eq('...nor too short', tests.q(admin_u, adm, format($q$public.cms_verification_decide(%L, 'reject', 'No')$q$, v1)), 'ERROR: Write the reason (at least 3 characters).');
+  perform tests.assert_eq('...nothing that was never asked for', tests.q(admin_u, adm, $q$public.cms_verification_decide(gen_random_uuid(), 'approve')$q$), 'ERROR: There is no such request.');
+  perform tests.assert_eq('...and only an approved one is taken back', tests.q(admin_u, adm, format($q$public.cms_verification_decide(%L, 'revoke', 'no longer true')$q$, v1)), 'ERROR: Only an approved verification can be taken back.');
+  perform tests.assert_eq('a refusal is made', tests.q(admin_u, adm, format($q$public.cms_verification_decide(%L, 'reject', 'We could not confirm who you are.')$q$, v1))::jsonb ->> 'state', 'rejected');
+  perform tests.assert_eq('...and written to the audit log', (select count(*)::int from public.audit_log where action = 'verification.rejected' and entity_id = p_ann::text), 1);
+  perform tests.assert_eq('...by whom', (select decided_by from public.site_profile_verifications where id = v1), admin_u);
+  perform tests.assert_eq('...and decided only once', tests.q(admin_u, adm, format($q$public.cms_verification_decide(%L, 'approve')$q$, v1)), 'ERROR: This request has already been decided.');
+  perform tests.assert_eq('the person is told why', tests.f(ann, a_e, format($q$public.verification_status(%L)$q$, p_ann), '{request,reason}'), 'We could not confirm who you are.');
+  perform tests.assert_eq('...and when they may ask again', tests.f(ann, a_e, format($q$public.verification_status(%L)$q$, p_ann), '{request,retry_on}'), to_char((now() + interval '30 days')::date, 'YYYY-MM-DD'));
+  perform tests.assert_eq('a refusal means waiting a month', tests.q(ann, a_e, format($q$public.verification_request(%L, 'again')$q$, p_ann)), 'ERROR: You can ask again on ' || to_char((now() + interval '30 days')::date, 'YYYY-MM-DD') || '.');
+  update public.site_profile_verifications set decided_at = now() - interval '29 days' where id = v1;
+  perform tests.assert_eq('...which is still a month at 29 days', tests.q(ann, a_e, format($q$public.verification_request(%L, 'again')$q$, p_ann)) like 'ERROR: You can ask again on %', true);
+  update public.site_profile_verifications set decided_at = now() - interval '31 days' where id = v1;
+  perform tests.assert_eq('...and after the month they may', tests.q(ann, a_e, format($q$public.verification_request(%L, 'second try')$q$, p_ann))::jsonb -> 'request' ->> 'state', 'requested');
+  select id into v2 from public.site_profile_verifications where profile = p_ann and state = 'requested';
+  perform tests.assert_eq('an approval is made, with no reason needed', tests.q(admin_u, adm, format($q$public.cms_verification_decide(%L, 'approve')$q$, v2))::jsonb ->> 'state', 'approved');
+  perform tests.assert_eq('...and it is in the audit log', (select count(*)::int from public.audit_log where action = 'verification.approved' and entity_id = p_ann::text), 1);
+  perform tests.assert_eq('the profile now carries a tick', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{verified}'), 'true');
+  perform tests.assert_eq('...and the first rank', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{rank}'), 'verified');
+  perform tests.assert_eq('...also where only a small card is shown', public.profile_mini(p_ann) ->> 'rank', 'verified');
+  perform tests.assert_eq('...with the tick', public.profile_mini(p_ann) ->> 'verified', 'true');
+  perform tests.assert_eq('the owner sees how', tests.f(ann, a_e, format($q$public.verification_status(%L)$q$, p_ann), '{via}'), 'review');
+  perform tests.login(admin_u, adm); perform public.cms_set_feature('ranks', false); perform tests.logout();
+  perform tests.assert_eq('with ranks off a person''s own verification is not shown', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{verified}') || '/' || tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{rank}'), 'false/(null)');
+  perform tests.login(admin_u, adm); perform public.cms_set_feature('ranks', true); perform tests.logout();
+  perform tests.assert_eq('a verified profile cannot ask again', tests.q(ann, a_e, format($q$public.verification_request(%L, 'again')$q$, p_ann)), 'ERROR: This profile is already verified.');
+  perform tests.assert_eq('the list can be asked for each state', jsonb_array_length(tests.q(admin_u, adm, $q$public.cms_verifications('approved')$q$)::jsonb) || '/' || jsonb_array_length(tests.q(admin_u, adm, $q$public.cms_verifications('all')$q$)::jsonb), '1/2');
+  perform tests.assert_eq('...rejected ones too', jsonb_array_length(tests.q(admin_u, adm, $q$public.cms_verifications('rejected')$q$)::jsonb), 1);
+  perform tests.assert_eq('a business account is not verified until BottlesUp Business says so', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_club), '{verified}'), 'false');
+  insert into public.site_verifications (org_id, state) values (org, 'verified') on conflict (org_id) do update set state = 'verified';
+  perform tests.assert_eq('a verified business account''s profile carries the tick', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_club), '{verified}') || '/' || tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_club), '{rank}'), 'true/verified');
+  perform tests.assert_eq('...and says it came through the account', tests.f(olly, o_e, format($q$public.verification_status(%L)$q$, p_club), '{via}') || '/' || tests.f(olly, o_e, format($q$public.verification_status(%L)$q$, p_club), '{org_run}'), 'business/true');
+
+  ---------------------------------------------------------------- the levels in the CMS
+  perform tests.assert_eq('only an admin sees every level', tests.q(ann, a_e, $q$public.cms_rank_levels()$q$), 'ERROR: Only a BottlesUp admin can see this.');
+  perform tests.assert_eq('...and changes one', tests.q(ann, a_e, $q$public.cms_rank_level_set('elite', 'Elite', 2, '#2E9E5B', false, true)$q$), 'ERROR: Only a BottlesUp admin can do this.');
+  perform tests.assert_eq('a level has to exist', tests.q(admin_u, adm, $q$public.cms_rank_level_set('nope', 'Nope', 2, '#2E9E5B', false, true)$q$), 'ERROR: There is no such rank.');
+  perform tests.assert_eq('...have a name', tests.q(admin_u, adm, $q$public.cms_rank_level_set('elite', 'E', 2, '#2E9E5B', false, true)$q$), 'ERROR: Write a name of 2 to 40 characters.');
+  perform tests.assert_eq('...a real colour', tests.q(admin_u, adm, $q$public.cms_rank_level_set('elite', 'Elite', 2, 'green', false, true)$q$), 'ERROR: Write the colour like #1D9BF0.');
+  perform tests.assert_eq('...and say all of it', tests.q(admin_u, adm, $q$public.cms_rank_level_set('elite', 'Elite', 2, '#2E9E5B', null, true)$q$), 'ERROR: Say whether it has a plaque and whether it is in use.');
+  perform tests.assert_eq('Verified stays as it is', tests.q(admin_u, adm, $q$public.cms_rank_level_set('verified', 'Verified', 5, '#1D9BF0', false, true)$q$), 'ERROR: Verified needs no followers, is always in use and has no plaque.');
+  perform tests.assert_eq('...even switched off', tests.q(admin_u, adm, $q$public.cms_rank_level_set('verified', 'Verified', 0, '#1D9BF0', false, false)$q$), 'ERROR: Verified needs no followers, is always in use and has no plaque.');
+  perform tests.assert_eq('...or given a plaque', tests.q(admin_u, adm, $q$public.cms_rank_level_set('verified', 'Verified', 0, '#1D9BF0', true, true)$q$), 'ERROR: Verified needs no followers, is always in use and has no plaque.');
+  perform tests.assert_eq('a level needs more followers than the one below', tests.q(admin_u, adm, $q$public.cms_rank_level_set('icon', 'Icon', 0, '#7E57C2', true, true)$q$), 'ERROR: It needs more followers than the rank below it (100000).');
+  perform tests.assert_eq('...and no more than the one above', tests.q(admin_u, adm, $q$public.cms_rank_level_set('icon', 'Icon', 10000000, '#7E57C2', true, true)$q$), 'ERROR: It needs fewer followers than the rank above it (10000000).');
+  perform tests.assert_eq('...the top one has nothing above it', tests.q(admin_u, adm, $q$public.cms_rank_level_set('immortal', 'BottlesUp Immortal', 200000000, '#C62828', true, true)$q$)::jsonb ->> 'min_followers', '200000000');
+  perform tests.assert_eq('...nor the lowest below it, but it needs more than nothing', tests.q(admin_u, adm, $q$public.cms_rank_level_set('elite', 'Elite', 0, '#2E9E5B', false, true)$q$), 'ERROR: It needs more followers than the rank below it (0).');
+  perform tests.assert_eq('a level needs a number of followers', tests.q(admin_u, adm, $q$public.cms_rank_level_set('icon', 'Icon', null, '#7E57C2', true, true)$q$), 'ERROR: It needs more followers than the rank below it (100000).');
+  -- Small numbers, so that a handful of test followers is enough.
+  perform tests.login(admin_u, adm);
+  perform public.cms_rank_level_set('elite', 'Elite', 2, '#2E9E5B', false, true);
+  perform public.cms_rank_level_set('icon', 'Icon', 4, '#7E57C2', true, true);
+  perform public.cms_rank_level_set('legend', 'Legend', 6, '#E67E22', true, true);
+  perform public.cms_rank_level_set('global_icon', 'Global Icon', 7, '#D4A017', true, true);
+  perform public.cms_rank_level_set('immortal', 'BottlesUp Immortal', 8, '#c62828', true, true);
+  perform tests.logout();
+  perform tests.assert_eq('a change is kept, the colour in capitals', (select colour from public.site_rank_levels where key = 'immortal'), '#C62828');
+  perform tests.assert_eq('...and written to the audit log', (select count(*)::int from public.audit_log where action = 'rank.level_changed'), 6);
+  perform tests.assert_eq('the CMS list shows them all', jsonb_array_length(tests.q(admin_u, adm, $q$public.cms_rank_levels()$q$)::jsonb), 6);
+  perform tests.assert_eq('a name of forty characters is fine', tests.q(admin_u, adm, format($q$public.cms_rank_level_set('elite', %L, 2, '#2E9E5B', false, true)$q$, repeat('N', 40)))::jsonb ->> 'name', repeat('N', 40));
+  perform tests.assert_eq('...forty-one is not', tests.q(admin_u, adm, format($q$public.cms_rank_level_set('elite', %L, 2, '#2E9E5B', false, true)$q$, repeat('N', 41))), 'ERROR: Write a name of 2 to 40 characters.');
+  perform tests.assert_eq('...and two is the least, with the spaces trimmed', tests.q(admin_u, adm, $q$public.cms_rank_level_set('elite', ' El ', 2, '#2E9E5B', false, true)$q$)::jsonb ->> 'name', 'El');
+  perform tests.assert_eq('...put back', tests.q(admin_u, adm, $q$public.cms_rank_level_set('elite', 'Elite', 2, '#2E9E5B', false, true)$q$)::jsonb ->> 'name', 'Elite');
+
+  ---------------------------------------------------------------- asking for a rank
+  perform tests.assert_eq('a profile that is not verified cannot ask', tests.q(bob, b_e, format($q$public.rank_request(%L)$q$, p_bob)), 'ERROR: Get verified first: ranks are for verified profiles.');
+  perform tests.assert_eq('...and has no next step to take', tests.f(bob, b_e, format($q$public.rank_status(%L)$q$, p_bob), '{can_request}') || '/' || tests.f(bob, b_e, format($q$public.rank_status(%L)$q$, p_bob), '{target}'), 'false/(null)');
+  perform tests.assert_eq('only the owner asks', tests.q(bob, b_e, format($q$public.rank_request(%L)$q$, p_ann)), 'ERROR: Only the owner of an active profile can ask for a rank.');
+  update public.site_profiles set status = 'suspended' where id = p_ann;
+  perform tests.assert_eq('...and only for an active profile', tests.q(ann, a_e, format($q$public.rank_request(%L)$q$, p_ann)), 'ERROR: Only the owner of an active profile can ask for a rank.');
+  update public.site_profiles set status = 'active' where id = p_ann;
+  perform tests.assert_eq('nobody else sees the standing', tests.q(bob, b_e, format($q$public.rank_status(%L)$q$, p_ann)), 'ERROR: This profile is not available.');
+  perform tests.assert_eq('before the followers are there', tests.q(ann, a_e, format($q$public.rank_request(%L)$q$, p_ann)), 'ERROR: You have not reached the next level yet.');
+  j := tests.q(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann))::jsonb;
+  perform tests.assert_eq('the standing says what comes next', (j ->> 'rank') || '/' || (j ->> 'followers') || '/' || (j -> 'next' ->> 'key') || '/' || (j -> 'next' ->> 'min_followers') || '/' || (j ->> 'can_request'), 'verified/0/elite/2/false');
+  perform tests.login(bob, b_e); perform public.follow_set(p_bob, p_ann, true); perform tests.login(cy, c_e); perform public.follow_set(p_cy, p_ann, true); perform tests.logout();
+  perform tests.assert_eq('followers are counted', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{followers}'), '2');
+  insert into public.site_follows (follower, followed, status) values (p_fay, p_ann, 'pending');
+  perform tests.assert_eq('a follow still waiting for approval is not counted', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{followers}'), '2');
+  delete from public.site_follows where follower = p_fay and followed = p_ann;
+  update public.site_profiles set status = 'suspended' where id = p_cy;
+  perform tests.assert_eq('...nor is a suspended profile', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{followers}'), '1');
+  update public.site_profiles set status = 'active' where id = p_cy;
+  perform tests.assert_eq('...and the level is within reach', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{target,key}') || '/' || tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{can_request}'), 'elite/true');
+  j := tests.q(ann, a_e, format($q$public.rank_request(%L)$q$, p_ann))::jsonb;
+  perform tests.assert_eq('a review is asked for', (j -> 'pending' ->> 'level') || '/' || (j ->> 'can_request'), 'elite/false');
+  perform tests.assert_eq('...and is in the audit log', (select count(*)::int from public.audit_log where action = 'rank.requested' and entity_id = p_ann::text), 1);
+  perform tests.assert_eq('one waits at a time', tests.q(ann, a_e, format($q$public.rank_request(%L)$q$, p_ann)), 'ERROR: A review is already waiting for a decision.');
+  perform tests.assert_eq('it remembers the followers it was asked with', (select followers from public.site_rank_reviews where profile = p_ann and state = 'pending'), 2);
+  perform tests.assert_eq('the list is for admins', tests.q(ann, a_e, $q$public.cms_rank_reviews()$q$), 'ERROR: Only a BottlesUp admin can see this.');
+  perform tests.assert_eq('...with a state that exists', tests.q(admin_u, adm, $q$public.cms_rank_reviews('later')$q$), 'ERROR: Choose pending, approved, rejected or all.');
+  j := tests.q(admin_u, adm, $q$public.cms_rank_reviews()$q$)::jsonb;
+  perform tests.assert_eq('the review shows the level, the followers then and now and whether they are verified', (j -> 0 ->> 'level_name') || '/' || (j -> 0 ->> 'followers') || '/' || (j -> 0 ->> 'followers_now') || '/' || (j -> 0 ->> 'verified') || '/' || (j -> 0 -> 'profile' ->> 'handle'), 'Elite/2/2/true/annrec');
+  select (x ->> 'id')::uuid into rv1 from jsonb_array_elements(j) x limit 1;
+  insert into public.site_follows (follower, followed, status) values (p_gus, p_ann, 'active');
+  perform tests.assert_eq('...and the followers now, which may have grown', tests.q(admin_u, adm, $q$public.cms_rank_reviews()$q$)::jsonb -> 0 ->> 'followers_now', '3');
+  delete from public.site_follows where follower = p_gus and followed = p_ann;
+  perform tests.assert_eq('only an admin decides a review', tests.q(ann, a_e, format($q$public.cms_rank_decide(%L, true)$q$, rv1)), 'ERROR: Only a BottlesUp admin can do this.');
+  perform tests.assert_eq('...saying which way', tests.q(admin_u, adm, format($q$public.cms_rank_decide(%L, null)$q$, rv1)), 'ERROR: Say whether to award the rank.');
+  perform tests.assert_eq('...a refusal needs its reason', tests.q(admin_u, adm, format($q$public.cms_rank_decide(%L, false)$q$, rv1)), 'ERROR: Write the reason (at least 3 characters).');
+  perform tests.assert_eq('...which is not too long', tests.q(admin_u, adm, format($q$public.cms_rank_decide(%L, false, %L)$q$, rv1, repeat('x', 301))), 'ERROR: Keep the reason to 300 characters.');
+  perform tests.assert_eq('...nor too short', tests.q(admin_u, adm, format($q$public.cms_rank_decide(%L, false, 'No')$q$, rv1)), 'ERROR: Write the reason (at least 3 characters).');
+  perform tests.assert_eq('...nothing that does not exist', tests.q(admin_u, adm, $q$public.cms_rank_decide(gen_random_uuid(), true)$q$), 'ERROR: There is no such review.');
+  perform tests.assert_eq('a review is turned down with its reason', tests.q(admin_u, adm, format($q$public.cms_rank_decide(%L, false, 'Some followers look bought.')$q$, rv1))::jsonb ->> 'state', 'rejected');
+  perform tests.assert_eq('...by whom', (select decided_by from public.site_rank_reviews where id = rv1), admin_u);
+  perform tests.assert_eq('...and written to the audit log as a refusal', (select count(*)::int from public.audit_log where action = 'rank.refused' and entity_id = p_ann::text), 1);
+  perform tests.assert_eq('...and decided once', tests.q(admin_u, adm, format($q$public.cms_rank_decide(%L, true)$q$, rv1)), 'ERROR: This review has already been decided.');
+  perform tests.assert_eq('...the rank stays as it was', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{rank}'), 'verified');
+  perform tests.assert_eq('...the person reads why, and when to ask again', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{rejected,reason}') || '/' || tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{rejected,retry_on}'), 'Some followers look bought./' || to_char((now() + interval '30 days')::date, 'YYYY-MM-DD'));
+  perform tests.assert_eq('...and cannot ask for the same level before then', tests.q(ann, a_e, format($q$public.rank_request(%L)$q$, p_ann)), 'ERROR: We looked at this recently. You can ask again on ' || to_char((now() + interval '30 days')::date, 'YYYY-MM-DD') || '.');
+  perform tests.assert_eq('...nor is it offered', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{can_request}'), 'false');
+  insert into public.site_follows (follower, followed, status) values (p_fay, p_ann, 'active'), (p_eve, p_ann, 'active');
+  perform tests.assert_eq('a turned-down level does not stop the next one: Icon is offered', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{target,key}') || '/' || tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{can_request}'), 'icon/true');
+  perform tests.assert_eq('...and can be asked for', tests.q(ann, a_e, format($q$public.rank_request(%L)$q$, p_ann))::jsonb -> 'pending' ->> 'level', 'icon');
+  delete from public.site_rank_reviews where profile = p_ann and state = 'pending';
+  delete from public.site_follows where followed = p_ann and follower in (p_fay, p_eve);
+  update public.site_rank_reviews set decided_at = now() - interval '31 days' where id = rv1;
+  perform tests.assert_eq('after a month the status no longer shows the refusal', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{rejected}') || '/' || tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{can_request}'), '(null)/true');
+  perform tests.assert_eq('after a month it can be asked for again', tests.q(ann, a_e, format($q$public.rank_request(%L)$q$, p_ann))::jsonb -> 'pending' ->> 'level', 'elite');
+  select id into rv2 from public.site_rank_reviews where profile = p_ann and state = 'pending';
+  perform tests.assert_eq('an award is made', tests.q(admin_u, adm, format($q$public.cms_rank_decide(%L, true)$q$, rv2))::jsonb ->> 'level', 'elite');
+  perform tests.assert_eq('...and written to the audit log', (select count(*)::int from public.audit_log where action = 'rank.awarded' and entity_id = p_ann::text), 1);
+  perform tests.assert_eq('the badge now shows it', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{rank}'), 'elite');
+  perform tests.login(admin_u, adm); perform public.cms_rank_level_set('icon', 'Icon', 4, '#7E57C2', true, false); perform tests.logout();
+  perform tests.assert_eq('a level taken out of use is skipped as the next step', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{next,key}'), 'legend');
+  perform tests.login(admin_u, adm); perform public.cms_rank_level_set('icon', 'Icon', 4, '#7E57C2', true, true); perform tests.logout();
+  perform tests.assert_eq('...and comes back when it is in use again', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{next,key}'), 'icon');
+  perform tests.assert_eq('the CMS lists the reviews by state', jsonb_array_length(tests.q(admin_u, adm, $q$public.cms_rank_reviews('approved')$q$)::jsonb) || '/' || jsonb_array_length(tests.q(admin_u, adm, $q$public.cms_rank_reviews('rejected')$q$)::jsonb) || '/' || jsonb_array_length(tests.q(admin_u, adm, $q$public.cms_rank_reviews('pending')$q$)::jsonb) || '/' || jsonb_array_length(tests.q(admin_u, adm, $q$public.cms_rank_reviews('all')$q$)::jsonb), '1/1/0/2');
+  perform tests.assert_eq('...and so does a small card', public.profile_mini(p_ann) ->> 'rank', 'elite');
+  perform tests.assert_eq('there is nothing above to ask for yet', tests.q(ann, a_e, format($q$public.rank_request(%L)$q$, p_ann)), 'ERROR: You have not reached the next level yet.');
+  perform tests.assert_eq('the standing now points to Icon', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{next,key}') || '/' || tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{rank}'), 'icon/elite');
+  j := tests.q(zed, z_e, format($q$public.awards_of(%L, %L)$q$, p_zed, p_ann))::jsonb;
+  perform tests.assert_eq('anyone who can see the profile sees its awards', jsonb_array_length(j) || '/' || (j -> 0 ->> 'level') || '/' || (j -> 0 ->> 'name') || '/' || (j -> 0 ->> 'colour') || '/' || (j -> 0 ->> 'plaque'), '1/elite/Elite/#2E9E5B/false');
+  perform tests.assert_eq('a profile with none shows none', tests.q(zed, z_e, format($q$public.awards_of(%L, %L)$q$, p_zed, p_bob)), '[]');
+  perform tests.assert_eq('only as a profile the caller can act as', tests.q(zed, z_e, format($q$public.awards_of(%L, %L)$q$, p_bob, p_ann)), 'ERROR: You cannot act as this profile.');
+  -- More followers: three more reach Legend (6) and skip Icon (4).
+  perform tests.login(zed, z_e); perform public.follow_set(p_zed, p_ann, true); perform tests.login(gus, g_e); perform public.follow_set(p_gus, p_ann, true);
+  perform tests.login(hal, h_e); perform public.follow_set(p_hal, p_ann, true); perform tests.login(olly, o_e); perform public.follow_set(p_olly, p_ann, true); perform tests.logout();
+  perform tests.assert_eq('the highest level reached is the one to ask for', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{target,key}') || '/' || tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{followers}'), 'legend/6');
+  perform tests.assert_eq('...and asked for', tests.q(ann, a_e, format($q$public.rank_request(%L)$q$, p_ann))::jsonb -> 'pending' ->> 'level', 'legend');
+  select id into rv3 from public.site_rank_reviews where profile = p_ann and state = 'pending';
+  perform tests.assert_eq('...and awarded', tests.q(admin_u, adm, format($q$public.cms_rank_decide(%L, true)$q$, rv3))::jsonb ->> 'level', 'legend');
+  perform tests.assert_eq('the badge shows the highest', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{rank}'), 'legend');
+  perform tests.assert_eq('both awards are listed, the highest first', (select string_agg(x ->> 'level', ',') from jsonb_array_elements(tests.q(zed, z_e, format($q$public.awards_of(%L, %L)$q$, p_zed, p_ann))::jsonb) x), 'legend,elite');
+  perform tests.assert_eq('...with whether each comes with a plaque', (select string_agg(x ->> 'plaque', ',') from jsonb_array_elements(tests.q(zed, z_e, format($q$public.awards_of(%L, %L)$q$, p_zed, p_ann))::jsonb) x), 'true,false');
+  perform tests.login(admin_u, adm); perform public.cms_rank_level_set('legend', 'Legend', 6, '#E67E22', true, false); perform tests.logout();
+  perform tests.assert_eq('a level taken out of use stops showing', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{rank}'), 'elite');
+  perform tests.assert_eq('...in the list of ranks too', (select string_agg(x ->> 'key', ',') from jsonb_array_elements(tests.q(ann, a_e, 'public.rank_levels()')::jsonb) x), 'verified,elite,icon,global_icon,immortal');
+  perform tests.assert_eq('...and the next step skips it', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{target,key}'), 'icon');
+  perform tests.assert_eq('...though the CMS still lists it', jsonb_array_length(tests.q(admin_u, adm, $q$public.cms_rank_levels()$q$)::jsonb), 6);
+  perform tests.assert_eq('...and in the awards', (select string_agg(x ->> 'level', ',') from jsonb_array_elements(tests.q(zed, z_e, format($q$public.awards_of(%L, %L)$q$, p_zed, p_ann))::jsonb) x), 'elite');
+  perform tests.login(admin_u, adm); perform public.cms_rank_level_set('legend', 'Legend', 6, '#E67E22', true, true); perform tests.logout();
+  perform tests.assert_eq('...and back when it is', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{rank}'), 'legend');
+
+  insert into public.site_profile_verifications (profile, state, decided_at) values (p_dj, 'approved', now());
+  insert into public.site_awards (profile, level) values (p_dj, 'elite');
+  perform tests.assert_eq('a profile that someone blocked is not shown to them with its awards', tests.q(eve, e_e, format($q$public.awards_of(%L, %L)$q$, p_eve, p_dj)), '[]');
+  perform tests.assert_eq('...while others see them', tests.q(zed, z_e, format($q$public.awards_of(%L, %L)$q$, p_zed, p_dj))::jsonb -> 0 ->> 'level', 'elite');
+  delete from public.site_awards where profile = p_dj;
+  delete from public.site_profile_verifications where profile = p_dj;
+  insert into public.site_awards (profile, level) values (p_club, 'elite');
+  perform tests.assert_eq('a business account''s profile with an award shows its rank', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_club), '{rank}'), 'elite');
+  perform tests.login(admin_u, adm); perform public.cms_set_feature('ranks', false); perform tests.logout();
+  perform tests.assert_eq('...but only while ranks are on', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_club), '{rank}'), 'verified');
+  perform tests.assert_eq('...and its awards are not listed', tests.q(zed, z_e, format($q$public.awards_of(%L, %L)$q$, p_zed, p_club)), '[]');
+  perform tests.login(admin_u, adm); perform public.cms_set_feature('ranks', true); perform tests.logout();
+  delete from public.site_awards where profile = p_club;
+
+  ---------------------------------------------------------------- taking a rank back
+  select id into aw1 from public.site_awards where profile = p_ann and level = 'legend'; select id into aw2 from public.site_awards where profile = p_ann and level = 'elite';
+  j := tests.q(admin_u, adm, 'public.cms_awards()')::jsonb;
+  perform tests.assert_eq('the CMS lists the awards', jsonb_array_length(j) || '/' || (j -> 0 ->> 'level_name'), '2/Legend');
+  perform tests.assert_eq('only an admin lists them', tests.q(ann, a_e, 'public.cms_awards()'), 'ERROR: Only a BottlesUp admin can see this.');
+  perform tests.assert_eq('only an admin takes one back', tests.q(ann, a_e, format($q$public.cms_award_revoke(%L, 'no')$q$, aw1)), 'ERROR: Only a BottlesUp admin can do this.');
+  perform tests.assert_eq('...with a reason', tests.q(admin_u, adm, format($q$public.cms_award_revoke(%L, 'x')$q$, aw1)), 'ERROR: Write the reason (3 to 300 characters).');
+  perform tests.assert_eq('...which is not too long', tests.q(admin_u, adm, format($q$public.cms_award_revoke(%L, %L)$q$, aw1, repeat('x', 301))), 'ERROR: Write the reason (3 to 300 characters).');
+  perform tests.assert_eq('...of an award that exists', tests.q(admin_u, adm, $q$public.cms_award_revoke(gen_random_uuid(), 'bought followers')$q$), 'ERROR: There is no such award.');
+
+  ---------------------------------------------------------------- plaques
+  perform tests.login(admin_u, adm); perform public.cms_rank_level_set('legend', 'Legend', 6, '#E67E22', true, false); perform tests.logout();
+  perform tests.assert_eq('a rank taken out of use cannot claim a plaque', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '1 King St', null, 'Toronto', 'ON', 'M5V 1A1', 'Canada')$q$, aw1)), 'ERROR: This rank does not come with a plaque.');
+  perform tests.login(admin_u, adm); perform public.cms_rank_level_set('legend', 'Legend', 6, '#E67E22', true, true); perform tests.logout();
+  perform tests.assert_eq('a rank without a plaque cannot claim one', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '1 King St', null, 'Toronto', 'ON', 'M5V 1A1', 'Canada')$q$, aw2)), 'ERROR: This rank does not come with a plaque.');
+  perform tests.assert_eq('nobody else claims it', tests.q(bob, b_e, format($q$public.plaque_claim(%L, 'Bob', '1 King St', null, 'Toronto', 'ON', 'M5V 1A1', 'Canada')$q$, aw1)), 'ERROR: This award is not available.');
+  perform tests.assert_eq('the name is needed', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'A', '1 King St', null, 'Toronto', 'ON', 'M5V 1A1', 'Canada')$q$, aw1)), 'ERROR: Write the name for the parcel (2 to 80 characters).');
+  perform tests.assert_eq('...the street', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '1', null, 'Toronto', 'ON', 'M5V 1A1', 'Canada')$q$, aw1)), 'ERROR: Write the street address (3 to 120 characters).');
+  perform tests.assert_eq('...two characters are not enough', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '12', null, 'Toronto', 'ON', 'M5V 1A1', 'Canada')$q$, aw1)), 'ERROR: Write the street address (3 to 120 characters).');
+  perform tests.assert_eq('...the second line is short', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '1 King St', %L, 'Toronto', 'ON', 'M5V 1A1', 'Canada')$q$, aw1, repeat('x', 121))), 'ERROR: Keep the second address line to 120 characters.');
+  perform tests.assert_eq('...the city', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '1 King St', null, 'T', 'ON', 'M5V 1A1', 'Canada')$q$, aw1)), 'ERROR: Write the city (2 to 80 characters).');
+  perform tests.assert_eq('...the region is short', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '1 King St', null, 'Toronto', %L, 'M5V 1A1', 'Canada')$q$, aw1, repeat('x', 81))), 'ERROR: Keep the province or state to 80 characters.');
+  perform tests.assert_eq('...the postal code', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '1 King St', null, 'Toronto', 'ON', 'M', 'Canada')$q$, aw1)), 'ERROR: Write the postal code (2 to 20 characters).');
+  perform tests.assert_eq('...the country', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '1 King St', null, 'Toronto', 'ON', 'M5V 1A1', 'C')$q$, aw1)), 'ERROR: Write the country (2 to 60 characters).');
+  perform tests.assert_eq('...the phone is short', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '1 King St', null, 'Toronto', 'ON', 'M5V 1A1', 'Canada', %L)$q$, aw1, repeat('1', 31))), 'ERROR: Keep the phone number to 30 characters.');
+  perform tests.assert_eq('the least that is accepted', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'An', 'Abc', null, 'To', null, 'M5', 'Ca')$q$, aw1))::jsonb ->> 'state', 'requested');
+  perform tests.assert_eq('...taken back', tests.q(ann, a_e, format($q$public.plaque_cancel(%L)$q$, (select id from public.site_plaques where award = aw1)))::jsonb ->> 'state', 'cancelled');
+  perform tests.assert_eq('the most that is accepted', tests.q(ann, a_e, format($q$public.plaque_claim(%L, %L, %L, %L, %L, %L, %L, %L, %L)$q$, aw1, repeat('n', 80), repeat('l', 120), repeat('m', 120), repeat('c', 80), repeat('r', 80), repeat('p', 20), repeat('k', 60), repeat('1', 30)))::jsonb ->> 'state', 'requested');
+  perform tests.assert_eq('...taken back again', tests.q(ann, a_e, format($q$public.plaque_cancel(%L)$q$, (select id from public.site_plaques where award = aw1)))::jsonb ->> 'state', 'cancelled');
+  perform tests.assert_eq('a name over eighty characters', tests.q(ann, a_e, format($q$public.plaque_claim(%L, %L, '1 King St', null, 'Toronto', 'ON', 'M5V 1A1', 'Canada')$q$, aw1, repeat('n', 81))), 'ERROR: Write the name for the parcel (2 to 80 characters).');
+  perform tests.assert_eq('...a street over 120', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', %L, null, 'Toronto', 'ON', 'M5V 1A1', 'Canada')$q$, aw1, repeat('l', 121))), 'ERROR: Write the street address (3 to 120 characters).');
+  perform tests.assert_eq('...a city over 80', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '1 King St', null, %L, 'ON', 'M5V 1A1', 'Canada')$q$, aw1, repeat('c', 81))), 'ERROR: Write the city (2 to 80 characters).');
+  perform tests.assert_eq('...a postal code over 20', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '1 King St', null, 'Toronto', 'ON', %L, 'Canada')$q$, aw1, repeat('p', 21))), 'ERROR: Write the postal code (2 to 20 characters).');
+  perform tests.assert_eq('...a country over 60', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '1 King St', null, 'Toronto', 'ON', 'M5V 1A1', %L)$q$, aw1, repeat('k', 61))), 'ERROR: Write the country (2 to 60 characters).');
+  j := tests.q(ann, a_e, format($q$public.plaque_claim(%L, '  Ann Lee ', '1 King St W', ' Unit 4 ', 'Toronto', 'ON', 'M5V 1A1', 'Canada', null)$q$, aw1))::jsonb;
+  pq1 := (j ->> 'id')::uuid;
+  perform tests.assert_eq('a plaque is asked for with the address, tidied', (j ->> 'state') || '/' || (j ->> 'recipient') || '/' || (j ->> 'line2') || '/' || (j ->> 'level_name') || '/' || (j ->> 'address_removed'), 'requested/Ann Lee/Unit 4/Legend/false');
+  perform tests.assert_eq('...once', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '1 King St', null, 'Toronto', 'ON', 'M5V 1A1', 'Canada')$q$, aw1)), 'ERROR: A plaque has already been asked for.');
+  perform tests.assert_eq('the owner reads it back', (tests.q(ann, a_e, format($q$public.plaques_mine(%L)$q$, p_ann))::jsonb -> 0 ->> 'line1'), '1 King St W');
+  perform tests.assert_eq('nobody else does', tests.q(bob, b_e, format($q$public.plaques_mine(%L)$q$, p_ann)), 'ERROR: This profile is not available.');
+  perform tests.assert_eq('...nor can they cancel it', tests.q(bob, b_e, format($q$public.plaque_cancel(%L)$q$, pq1)), 'ERROR: This plaque is not available.');
+  j := tests.q(admin_u, adm, $q$public.cms_plaques()$q$)::jsonb;
+  perform tests.assert_eq('staff see the address to send it to', jsonb_array_length(j) || '/' || (j -> 0 ->> 'line1') || '/' || (j -> 0 -> 'profile' ->> 'handle'), '1/1 King St W/annrec');
+  perform tests.assert_eq('only staff do', tests.q(ann, a_e, $q$public.cms_plaques()$q$), 'ERROR: Only a BottlesUp admin can see this.');
+  perform tests.assert_eq('...with a state that exists', tests.q(admin_u, adm, $q$public.cms_plaques('lost')$q$), 'ERROR: Choose requested, shipped, delivered, cancelled or all.');
+  perform tests.assert_eq('the owner takes the request back', tests.q(ann, a_e, format($q$public.plaque_cancel(%L)$q$, pq1))::jsonb ->> 'state', 'cancelled');
+  perform tests.assert_eq('...and the address goes', (select (recipient is null)::text || '/' || (line1 is null)::text from public.site_plaques where id = pq1), 'true/true');
+  perform tests.assert_eq('...it says the address was removed', tests.q(ann, a_e, format($q$public.plaques_mine(%L)$q$, p_ann))::jsonb -> 0 ->> 'address_removed', 'true');
+  perform tests.assert_eq('...and it cannot be cancelled twice', tests.q(ann, a_e, format($q$public.plaque_cancel(%L)$q$, pq1)), 'ERROR: This plaque was already cancelled.');
+  j := tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '2 Queen St', null, 'Toronto', null, 'M5V 2B2', 'Canada')$q$, aw1))::jsonb;
+  pq2 := (j ->> 'id')::uuid;
+  perform tests.assert_eq('a new request replaces the cancelled one', (select count(*)::int from public.site_plaques where award = aw1) || '/' || (j ->> 'line1'), '1/2 Queen St');
+  perform tests.assert_eq('staff mark it shipped only with a carrier', tests.q(admin_u, adm, format($q$public.cms_plaque_shipped(%L, 'X', 'ABC123')$q$, pq2)), 'ERROR: Write the carrier (2 to 60 characters).');
+  perform tests.assert_eq('...and a tracking number', tests.q(admin_u, adm, format($q$public.cms_plaque_shipped(%L, 'Canada Post', 'A')$q$, pq2)), 'ERROR: Write the tracking number (3 to 80 characters).');
+  perform tests.assert_eq('...only staff', tests.q(ann, a_e, format($q$public.cms_plaque_shipped(%L, 'Canada Post', 'ABC123')$q$, pq2)), 'ERROR: Only a BottlesUp admin can do this.');
+  perform tests.assert_eq('...of a plaque that exists', tests.q(admin_u, adm, $q$public.cms_plaque_shipped(gen_random_uuid(), 'Canada Post', 'ABC123')$q$), 'ERROR: There is no such plaque.');
+  perform tests.assert_eq('it cannot arrive before it is sent', tests.q(admin_u, adm, format($q$public.cms_plaque_delivered(%L)$q$, pq2)), 'ERROR: Only a plaque that was shipped can be marked as delivered.');
+  perform tests.assert_eq('...nor can one that is not there', tests.q(admin_u, adm, $q$public.cms_plaque_delivered(gen_random_uuid())$q$), 'ERROR: There is no such plaque.');
+  perform tests.assert_eq('...only staff say so', tests.q(ann, a_e, format($q$public.cms_plaque_delivered(%L)$q$, pq2)), 'ERROR: Only a BottlesUp admin can do this.');
+  perform tests.assert_eq('a carrier name over sixty characters', tests.q(admin_u, adm, format($q$public.cms_plaque_shipped(%L, %L, 'ABC123')$q$, pq2, repeat('c', 61))), 'ERROR: Write the carrier (2 to 60 characters).');
+  perform tests.assert_eq('...a tracking number over eighty', tests.q(admin_u, adm, format($q$public.cms_plaque_shipped(%L, 'Canada Post', %L)$q$, pq2, repeat('t', 81))), 'ERROR: Write the tracking number (3 to 80 characters).');
+  insert into public.site_awards (profile, level) values (p_club, 'icon'), (p_club, 'legend');
+  insert into public.site_plaques (award, profile, recipient, line1, city, postal, country) select a.id, p_club, 'Olly Owner', '9 Dock Rd', 'Toronto', 'M1M 1M1', 'Canada' from public.site_awards a where a.profile = p_club;
+  perform tests.assert_eq('a tracking number of two characters is too short', tests.q(admin_u, adm, format($q$public.cms_plaque_shipped(%L, 'Canada Post', 'AB')$q$, (select q.id from public.site_plaques q join public.site_awards a on a.id = q.award where a.profile = p_club and a.level = 'icon'))), 'ERROR: Write the tracking number (3 to 80 characters).');
+  perform tests.assert_eq('the shortest carrier and tracking number are fine', tests.q(admin_u, adm, format($q$public.cms_plaque_shipped(%L, 'CP', 'ABC')$q$, (select q.id from public.site_plaques q join public.site_awards a on a.id = q.award where a.profile = p_club and a.level = 'icon')))::jsonb ->> 'state', 'shipped');
+  perform tests.assert_eq('...and so are the longest', tests.q(admin_u, adm, format($q$public.cms_plaque_shipped(%L, %L, %L)$q$, (select q.id from public.site_plaques q join public.site_awards a on a.id = q.award where a.profile = p_club and a.level = 'legend'), repeat('c', 60), repeat('t', 80)))::jsonb ->> 'state', 'shipped');
+  perform tests.assert_eq('the plaque list is filtered by state', jsonb_array_length(tests.q(admin_u, adm, $q$public.cms_plaques('requested')$q$)::jsonb) || '/' || jsonb_array_length(tests.q(admin_u, adm, $q$public.cms_plaques('shipped')$q$)::jsonb) || '/' || jsonb_array_length(tests.q(admin_u, adm, $q$public.cms_plaques('all')$q$)::jsonb), '1/2/3');
+  perform tests.assert_eq('taking a rank back leaves a plaque that is already on its way', tests.q(admin_u, adm, format($q$public.cms_award_revoke(%L, 'Taken back for a test.')$q$, (select id from public.site_awards where profile = p_club and level = 'icon')))::jsonb ->> 'level', 'icon');
+  perform tests.assert_eq('...as it was', (select q.state || '/' || (q.line1 is not null)::text from public.site_plaques q join public.site_awards a on a.id = q.award where a.profile = p_club and a.level = 'icon'), 'shipped/true');
+  delete from public.site_awards where profile = p_club;
+  perform tests.assert_eq('it is shipped', tests.q(admin_u, adm, format($q$public.cms_plaque_shipped(%L, ' Canada Post ', 'AB123456789CA')$q$, pq2))::jsonb ->> 'state', 'shipped');
+  perform tests.assert_eq('...with the carrier and tracking the owner sees', (tests.q(ann, a_e, format($q$public.plaques_mine(%L)$q$, p_ann))::jsonb -> 0 ->> 'carrier') || '/' || (tests.q(ann, a_e, format($q$public.plaques_mine(%L)$q$, p_ann))::jsonb -> 0 ->> 'tracking'), 'Canada Post/AB123456789CA');
+  perform tests.assert_eq('...once', tests.q(admin_u, adm, format($q$public.cms_plaque_shipped(%L, 'Canada Post', 'AB123456789CA')$q$, pq2)), 'ERROR: Only a plaque that was asked for can be marked as shipped.');
+  perform tests.assert_eq('a plaque on its way cannot be cancelled', tests.q(ann, a_e, format($q$public.plaque_cancel(%L)$q$, pq2)), 'ERROR: It is already on its way, so it cannot be cancelled here.');
+  perform tests.assert_eq('the shipped list shows it', jsonb_array_length(tests.q(admin_u, adm, $q$public.cms_plaques('shipped')$q$)::jsonb), 1);
+  perform tests.assert_eq('it arrives', tests.q(admin_u, adm, format($q$public.cms_plaque_delivered(%L)$q$, pq2))::jsonb ->> 'state', 'delivered');
+  perform tests.assert_eq('...at a moment', (select delivered_at is not null from public.site_plaques where id = pq2), true);
+  perform tests.assert_eq('...and is in the audit log', (select count(*)::int from public.audit_log where action in ('plaque.requested', 'plaque.shipped', 'plaque.delivered')), 8);
+  perform tests.assert_eq('the address stays for now', (select line1 from public.site_plaques where id = pq2), '2 Queen St');
+  perform tests.assert_eq('the clean-up leaves a plaque delivered a month ago', public.social_housekeeping() ->> 'plaque_addresses', '0');
+  update public.site_plaques set delivered_at = now() - interval '60 days' where id = pq2;
+  perform tests.assert_eq('...or two months ago', public.social_housekeeping() ->> 'plaque_addresses', '0');
+  perform tests.assert_eq('...and the address is still there', (select line1 from public.site_plaques where id = pq2), '2 Queen St');
+  update public.site_plaques set delivered_at = now() - interval '91 days' where id = pq2;
+  perform tests.assert_eq('...and wipes the address of one delivered over 90 days ago', public.social_housekeeping() ->> 'plaque_addresses', '1');
+  perform tests.assert_eq('the address is gone but the parcel''s history stays', (select (recipient is null)::text || '/' || (line1 is null)::text || '/' || (postal is null)::text || '/' || state || '/' || (tracking is not null)::text from public.site_plaques where id = pq2), 'true/true/true/delivered/true');
+  perform tests.assert_eq('...and staff see that', tests.q(admin_u, adm, $q$public.cms_plaques('delivered')$q$)::jsonb -> 0 ->> 'address_removed', 'true');
+  perform tests.login(admin_u, adm); perform public.cms_rank_level_set('elite', 'Elite', 2, '#2E9E5B', true, true); perform tests.logout();
+  j := tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '3 Bay St', null, 'Toronto', 'ON', 'M5V 3C3', 'Canada')$q$, aw2))::jsonb;
+  perform tests.assert_eq('a rank that gets a plaque later can claim it', j ->> 'state', 'requested');
+  perform tests.assert_eq('taking the award back cancels the plaque and wipes the address', tests.q(admin_u, adm, format($q$public.cms_award_revoke(%L, 'Followers were bought.')$q$, aw2))::jsonb ->> 'level', 'elite');
+  perform tests.assert_eq('...it is cancelled with no address', (select state || '/' || (recipient is null)::text from public.site_plaques where award = aw2), 'cancelled/true');
+  perform tests.assert_eq('...the badge falls back to the next award', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{rank}'), 'legend');
+  perform tests.assert_eq('...and the award is no longer claimable', tests.q(ann, a_e, format($q$public.plaque_claim(%L, 'Ann Lee', '3 Bay St', null, 'Toronto', 'ON', 'M5V 3C3', 'Canada')$q$, aw2)), 'ERROR: This award is not available.');
+  perform tests.assert_eq('...and the CMS list no longer shows it', jsonb_array_length(tests.q(admin_u, adm, 'public.cms_awards()')::jsonb), 1);
+  perform tests.assert_eq('...and the profile no longer lists it', (select string_agg(x ->> 'level', ',') from jsonb_array_elements(tests.q(zed, z_e, format($q$public.awards_of(%L, %L)$q$, p_zed, p_ann))::jsonb) x), 'legend');
+  perform tests.assert_eq('a reason of two characters is too short to take a rank back', tests.q(admin_u, adm, format($q$public.cms_award_revoke(%L, 'no')$q$, aw1)), 'ERROR: Write the reason (3 to 300 characters).');
+  perform tests.assert_eq('taking back the highest one drops the badge to the next', tests.q(admin_u, adm, format($q$public.cms_award_revoke(%L, 'Another reason.')$q$, aw1))::jsonb ->> 'level', 'legend');
+  perform tests.assert_eq('...which is only verified', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{rank}'), 'verified');
+  insert into public.site_awards (profile, level) values (p_ann, 'legend');
+  perform tests.assert_eq('...and a new award brings it back', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{rank}'), 'legend');
+  perform tests.assert_eq('an award is taken back once', tests.q(admin_u, adm, format($q$public.cms_award_revoke(%L, 'again')$q$, aw2)), 'ERROR: There is no such award.');
+  perform tests.assert_eq('...and is in the audit log', (select count(*)::int from public.audit_log where action = 'rank.revoked' and entity_id = p_ann::text), 2);
+  perform tests.assert_eq('a profile can earn the level again', (select count(*)::int from public.site_awards where profile = p_ann and revoked_at is null), 1);
+  perform tests.assert_eq('taking away the verification hides the ranks too', tests.q(admin_u, adm, format($q$public.cms_verification_decide(%L, 'revoke', 'The profile was not genuine.')$q$, v2))::jsonb ->> 'state', 'revoked');
+  perform tests.assert_eq('...the tick goes', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{verified}') || '/' || tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{rank}'), 'false/(null)');
+  perform tests.assert_eq('...and it is written to the audit log', (select count(*)::int from public.audit_log where action = 'verification.revoked' and entity_id = p_ann::text), 1);
+  perform tests.assert_eq('...the person is told when they may ask again', tests.f(ann, a_e, format($q$public.verification_status(%L)$q$, p_ann), '{request,retry_on}'), to_char((now() + interval '30 days')::date, 'YYYY-MM-DD'));
+  perform tests.assert_eq('...and has no next level to ask for', tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{target}') || '/' || tests.f(ann, a_e, format($q$public.rank_status(%L)$q$, p_ann), '{can_request}'), '(null)/false');
+  perform tests.assert_eq('...nor can they ask for a rank', tests.q(ann, a_e, format($q$public.rank_request(%L)$q$, p_ann)), 'ERROR: Get verified first: ranks are for verified profiles.');
+  perform tests.assert_eq('...and so do the awards', tests.q(zed, z_e, format($q$public.awards_of(%L, %L)$q$, p_zed, p_ann)), '[]');
+  insert into public.site_rank_reviews (profile, level, followers) values (p_ann, 'icon', 6) returning id into rp;
+  perform tests.assert_eq('the review list says the profile is no longer verified', tests.q(admin_u, adm, $q$public.cms_rank_reviews()$q$)::jsonb -> 0 ->> 'verified', 'false');
+  perform tests.assert_eq('...and a rank cannot be given', tests.q(admin_u, adm, format($q$public.cms_rank_decide(%L, true)$q$, rp)), 'ERROR: This profile is not verified now, so it cannot be given a rank.');
+  perform tests.assert_eq('...though the review can be turned down', tests.q(admin_u, adm, format($q$public.cms_rank_decide(%L, false, 'Not verified.')$q$, rp))::jsonb ->> 'state', 'rejected');
+  perform tests.assert_eq('...a person who was taken back waits a month', tests.q(ann, a_e, format($q$public.verification_request(%L, 'please')$q$, p_ann)), 'ERROR: You can ask again on ' || to_char((now() + interval '30 days')::date, 'YYYY-MM-DD') || '.');
+  perform tests.login(admin_u, adm); perform public.cms_set_feature('ranks', false); perform tests.logout();
+  perform tests.assert_eq('with ranks off a business account''s tick stays, as before', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_club), '{verified}'), 'true');
+  perform tests.assert_eq('...and a person''s own verification is hidden', tests.f(bob, b_e, format($q$public.profile_get(%L, null, %L)$q$, p_bob, p_ann), '{verified}'), 'false');
+  perform tests.assert_eq('...and awards', tests.q(zed, z_e, format($q$public.awards_of(%L, %L)$q$, p_zed, p_ann)), '[]');
+  perform tests.login(admin_u, adm); perform public.cms_set_feature('ranks', true); perform tests.logout();
+
+  ---------------------------------------------------------------- a team: a content manager cannot post jobs, a booking agent can
+  perform tests.login(admin_u, adm); perform public.cms_set_feature('marketplace', true); perform tests.logout();
+  perform tests.login(dee, d_e);
+  perform public.team_invite(p_dj, 'zedrec', 'content_manager'); perform public.team_invite(p_dj, 'cyrec', 'booking_agent'); perform public.team_invite(p_dj2, 'gusrec', 'booking_agent');
+  perform tests.logout();
+  select id into tm1 from public.site_profile_team where profile = p_dj and member = zed; select id into tm2 from public.site_profile_team where profile = p_dj and member = cy; select id into tm3 from public.site_profile_team where profile = p_dj2 and member = gus;
+  perform tests.login(zed, z_e); perform public.team_answer(tm1, true); perform tests.login(cy, c_e); perform public.team_answer(tm2, true); perform tests.login(gus, g_e); perform public.team_answer(tm3, true); perform tests.logout();
+
+  ---------------------------------------------------------------- posting a job
+  perform tests.assert_eq('only a business profile posts', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dee)), 'ERROR: Only a business profile can post a job.');
+  perform tests.assert_eq('...that the person manages', tests.q(bob, b_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj)), 'ERROR: You cannot act as this profile.');
+  perform tests.assert_eq('a team member whose role is content cannot post a job', tests.q(zed, z_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj)), 'ERROR: Your role on this profile does not allow this.');
+  perform tests.assert_eq('posting needs the community rules', tests.q(fay, f_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_fay)), 'ERROR: Read and accept the community rules first.');
+  perform tests.assert_eq('a title', tests.q(dee, d_e, format($q$public.job_create(%L, 'Bar', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj)), 'ERROR: Write a title of 5 to 120 characters.');
+  perform tests.assert_eq('...a kind of job', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'volunteer', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj)), 'ERROR: Choose what kind of job it is.');
+  perform tests.assert_eq('...a description', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'Short.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj)), 'ERROR: Describe the job in 20 to 4000 characters.');
+  perform tests.assert_eq('...short requirements', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', %L, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj, repeat('x', 2001))), 'ERROR: Keep the requirements to 2000 characters.');
+  perform tests.assert_eq('...what it pays', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '', 'Toronto', false, null, current_date + 30)$q$, p_dj)), 'ERROR: Say what it pays (2 to 200 characters).');
+  perform tests.assert_eq('...a short place', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', %L, false, null, current_date + 30)$q$, p_dj, repeat('x', 121))), 'ERROR: Keep the location to 120 characters.');
+  perform tests.assert_eq('...a place or remote', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', null, false, null, current_date + 30)$q$, p_dj)), 'ERROR: Say where it is, or that it can be done remotely.');
+  perform tests.assert_eq('...a short schedule', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, %L, current_date + 30)$q$, p_dj, repeat('x', 201))), 'ERROR: Keep the schedule to 200 characters.');
+  perform tests.assert_eq('...a last day that has not passed', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date - 1)$q$, p_dj)), 'ERROR: Choose a last day to apply, from today to a year away.');
+  perform tests.assert_eq('...and is not too far off', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 366)$q$, p_dj)), 'ERROR: Choose a last day to apply, from today to a year away.');
+  perform tests.assert_eq('...and has to be given', tests.jc(dee, d_e, p_dj2, p_deadline => null), 'ERROR: Choose a last day to apply, from today to a year away.');
+  perform tests.assert_eq('...but may be today', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date)$q$, p_dj))::jsonb ->> 'open', 'true');
+  perform tests.assert_eq('...or a year away', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 365)$q$, p_dj))::jsonb ->> 'status', 'open');
+  perform tests.assert_eq('...in words that are allowed', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced forbiddenword bartender.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj)), 'ERROR: That wording is not allowed here.');
+  perform tests.assert_eq('a title of four characters', tests.jc(dee, d_e, p_dj2, p_title => 'Barb'), 'ERROR: Write a title of 5 to 120 characters.');
+  perform tests.assert_eq('...five is enough', tests.jc(dee, d_e, p_dj2, p_title => 'Barbs'), 'ok');
+  delete from public.site_jobs;
+  perform tests.assert_eq('...a hundred and twenty', tests.jc(dee, d_e, p_dj2, p_title => repeat('t', 120)), 'ok');
+  delete from public.site_jobs;
+  perform tests.assert_eq('...a hundred and twenty-one is too many', tests.jc(dee, d_e, p_dj2, p_title => repeat('t', 121)), 'ERROR: Write a title of 5 to 120 characters.');
+  perform tests.assert_eq('a description of nineteen characters', tests.jc(dee, d_e, p_dj2, p_desc => repeat('d', 19)), 'ERROR: Describe the job in 20 to 4000 characters.');
+  perform tests.assert_eq('...twenty is enough', tests.jc(dee, d_e, p_dj2, p_desc => repeat('d', 20)), 'ok');
+  delete from public.site_jobs;
+  perform tests.assert_eq('...four thousand', tests.jc(dee, d_e, p_dj2, p_desc => repeat('d', 4000)), 'ok');
+  delete from public.site_jobs;
+  perform tests.assert_eq('...four thousand and one is too many', tests.jc(dee, d_e, p_dj2, p_desc => repeat('d', 4001)), 'ERROR: Describe the job in 20 to 4000 characters.');
+  perform tests.assert_eq('requirements of two thousand characters', tests.jc(dee, d_e, p_dj2, p_req => repeat('r', 2000)), 'ok');
+  delete from public.site_jobs;
+  perform tests.assert_eq('a pay line of one character', tests.jc(dee, d_e, p_dj2, p_comp => '$'), 'ERROR: Say what it pays (2 to 200 characters).');
+  perform tests.assert_eq('...two is enough', tests.jc(dee, d_e, p_dj2, p_comp => '10'), 'ok');
+  delete from public.site_jobs;
+  perform tests.assert_eq('...two hundred', tests.jc(dee, d_e, p_dj2, p_comp => repeat('c', 200)), 'ok');
+  delete from public.site_jobs;
+  perform tests.assert_eq('...two hundred and one is too many', tests.jc(dee, d_e, p_dj2, p_comp => repeat('c', 201)), 'ERROR: Say what it pays (2 to 200 characters).');
+  perform tests.assert_eq('a place of a hundred and twenty characters', tests.jc(dee, d_e, p_dj2, p_loc => repeat('l', 120)), 'ok');
+  delete from public.site_jobs;
+  perform tests.assert_eq('a schedule of two hundred characters', tests.jc(dee, d_e, p_dj2, p_sched => repeat('s', 200)), 'ok');
+  delete from public.site_jobs;
+  perform tests.assert_eq('a collaboration is a kind of job', tests.jc(dee, d_e, p_dj2, p_kind => 'collaboration'), 'ok');
+  delete from public.site_jobs;
+  perform tests.assert_eq('a place that is only spaces is no place', tests.jc(dee, d_e, p_dj2, p_loc => '   '), 'ERROR: Say where it is, or that it can be done remotely.');
+  perform tests.assert_eq('a remote job may name no place', tests.jc(dee, d_e, p_dj2, p_loc => null, p_remote => true), 'ok');
+  delete from public.site_jobs;
+  perform tests.assert_eq('a banned word in the title', tests.jc(dee, d_e, p_dj2, p_title => 'Weekend forbiddenword'), 'ERROR: That wording is not allowed here.');
+  perform tests.assert_eq('...the requirements', tests.jc(dee, d_e, p_dj2, p_req => 'forbiddenword needed'), 'ERROR: That wording is not allowed here.');
+  perform tests.assert_eq('...the pay', tests.jc(dee, d_e, p_dj2, p_comp => 'forbiddenword money'), 'ERROR: That wording is not allowed here.');
+  perform tests.assert_eq('...the place', tests.jc(dee, d_e, p_dj2, p_loc => 'The forbiddenword club'), 'ERROR: That wording is not allowed here.');
+  perform tests.assert_eq('...the schedule', tests.jc(dee, d_e, p_dj2, p_sched => 'forbiddenword evenings'), 'ERROR: That wording is not allowed here.');
+  update public.site_profiles set status = 'suspended' where id = p_dj2;
+  perform tests.assert_eq('a suspended business cannot post', tests.jc(dee, d_e, p_dj2), 'ERROR: You cannot act as this profile.');
+  update public.site_profiles set status = 'active' where id = p_dj2;
+  delete from public.site_jobs;
+  j := tests.q(dee, d_e, format($q$public.job_create(%L, '  Weekend bartender ', 'part_time', 'We need an experienced bartender for weekends.', ' Two years behind a bar. ', '$20 an hour plus tips', ' Toronto ', false, '  Fri and Sat nights ', current_date + 30)$q$, p_dj))::jsonb;
+  j1 := (j ->> 'id')::uuid;
+  perform tests.assert_eq('a job is posted, tidied', (j ->> 'title') || '/' || (j ->> 'requirements') || '/' || (j ->> 'location') || '/' || (j ->> 'schedule') || '/' || (j ->> 'status') || '/' || (j ->> 'open') || '/' || (j ->> 'mine'), 'Weekend bartender/Two years behind a bar./Toronto/Fri and Sat nights/open/true/true');
+  perform tests.assert_eq('...showing the business and no applicants yet', (j -> 'poster' ->> 'handle') || '/' || (j ->> 'applications') || '/' || (j ->> 'waiting') || '/' || coalesce(j ->> 'applied', 'none'), 'djdeerec/0/0/none');
+  perform tests.assert_eq('a remote job needs no place', tests.q(dee, d_e, format($q$public.job_create(%L, 'Remote promoter', 'ambassador', 'Promote our nights to your followers.', null, 'Commission on tickets', null, true, null, current_date + 30)$q$, p_dj))::jsonb ->> 'remote', 'true');
+  perform tests.assert_eq('a business that is a venue can post as well', tests.q(olly, o_e, format($q$public.job_create(%L, 'Door staff', 'event_shift', 'We need door staff for Friday nights.', null, '$18 an hour', 'Toronto', false, null, current_date + 30)$q$, p_club))::jsonb ->> 'status', 'open');
+  perform tests.assert_eq('five a day is the limit', (select count(*)::int from public.site_jobs where poster = p_dj), 2);
+  perform tests.assert_eq('three more are fine', tests.jc(dee, d_e, p_dj, p_title => 'Bar back') || tests.jc(dee, d_e, p_dj, p_title => 'Coat check') || tests.jc(dee, d_e, p_dj, p_title => 'Sound tech'), 'okokok');
+  perform tests.assert_eq('the sixth listing of the day', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj)), 'ERROR: You have posted a lot of jobs today. Try again tomorrow.');
+  update public.site_jobs set created_at = now() - interval '2 days' where poster = p_dj and id <> j1;
+  for n in 1..15 loop perform tests.mkjob(p_dj2); end loop;
+  update public.site_jobs set created_at = now() - interval '2 days' where poster = p_dj2;
+  for n in 1..5 loop perform tests.mkjob(p_dj2); end loop;
+  update public.site_jobs set created_at = now() - interval '2 days' where poster = p_dj2;
+  perform tests.assert_eq('twenty open listings is the limit', tests.q(dee, d_e, format($q$public.job_create(%L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj2)), 'ERROR: You have 20 open jobs. Close one first.');
+  delete from public.site_jobs where id = (select id from public.site_jobs where poster = p_dj2 limit 1);
+  perform tests.assert_eq('...nineteen are fine', tests.jc(dee, d_e, p_dj2), 'ok');
+  update public.site_jobs set status = 'closed' where id in (select id from public.site_jobs where poster = p_dj2 and status = 'open' limit 3);
+  perform tests.assert_eq('closed jobs do not count towards the twenty', tests.jc(dee, d_e, p_dj2, p_title => 'Another job'), 'ok');
+  delete from public.site_jobs where poster = p_dj2;
+  delete from public.site_jobs where poster = p_dj and id <> j1;
+  update public.site_jobs set created_at = now() - interval '3 days' where id = j1;
+
+  ---------------------------------------------------------------- changing and closing a job
+  perform tests.assert_eq('only the business changes a job', tests.q(bob, b_e, format($q$public.job_update(%L, %L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_bob, j1)), 'ERROR: This job is not available.');
+  perform tests.assert_eq('...and a team member whose role is content cannot', tests.q(zed, z_e, format($q$public.job_update(%L, %L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj, j1)), 'ERROR: Your role on this profile does not allow this.');
+  perform tests.assert_eq('...and another business cannot', tests.q(dee, d_e, format($q$public.job_update(%L, %L, 'Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj2, j1)), 'ERROR: This job is not available.');
+  perform tests.assert_eq('a change is checked like a new listing', tests.q(dee, d_e, format($q$public.job_update(%L, %L, 'Bar', 'part_time', 'We need an experienced bartender for weekends.', null, '$20 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj, j1)), 'ERROR: Write a title of 5 to 120 characters.');
+  j := tests.q(dee, d_e, format($q$public.job_update(%L, %L, 'Weekend head bartender', 'full_time', 'We need an experienced bartender for weekends and more.', null, '$24 an hour', null, true, null, current_date + 45)$q$, p_dj, j1))::jsonb;
+  perform tests.assert_eq('a change is made', (j ->> 'title') || '/' || (j ->> 'kind') || '/' || (j ->> 'compensation') || '/' || (j ->> 'remote') || '/' || coalesce(j ->> 'requirements', 'none') || '/' || coalesce(j ->> 'location', 'none'), 'Weekend head bartender/full_time/$24 an hour/true/none/none');
+  perform tests.assert_eq('...with its new last day', (select deadline from public.site_jobs where id = j1), current_date + 45);
+  perform tests.assert_eq('...and the post is still the same one', (select count(*)::int from public.site_jobs where poster = p_dj), 1);
+  perform tests.assert_eq('a job is not found by a stranger''s id', tests.q(dee, d_e, format($q$public.job_close(%L, gen_random_uuid())$q$, p_dj)), 'ERROR: This job is not available.');
+  perform tests.assert_eq('only the business closes it', tests.q(bob, b_e, format($q$public.job_close(%L, %L)$q$, p_bob, j1)), 'ERROR: This job is not available.');
+  perform tests.assert_eq('...and not a content manager', tests.q(zed, z_e, format($q$public.job_close(%L, %L)$q$, p_dj, j1)), 'ERROR: Your role on this profile does not allow this.');
+  perform tests.assert_eq('a booking agent changes it', tests.q(cy, c_e, format($q$public.job_update(%L, %L, 'Weekend head bartender', 'full_time', 'We need an experienced bartender for weekends and more.', null, '$24 an hour', null, true, null, current_date + 45)$q$, p_dj, j1))::jsonb ->> 'title', 'Weekend head bartender');
+  perform tests.assert_eq('...and posts', tests.q(cy, c_e, format($q$public.job_create(%L, 'Cloakroom attendant', 'event_shift', 'We need a cloakroom attendant on event nights.', null, '$17 an hour', 'Toronto', false, null, current_date + 30)$q$, p_dj))::jsonb ->> 'title', 'Cloakroom attendant');
+  perform tests.assert_eq('...which is the business''s, not theirs', (select poster = p_dj from public.site_jobs where title = 'Cloakroom attendant'), true);
+  delete from public.site_jobs where title = 'Cloakroom attendant';
+
+  ---------------------------------------------------------------- browsing jobs
+  delete from public.site_jobs where poster = p_club;
+  j := tests.q(dee, d_e, format($q$public.job_create(%L, 'Wedding photographer', 'freelance', 'Photograph a wedding on a Saturday in June.', 'A portfolio of weddings.', '$1,500 for the day', 'Hamilton', false, 'Saturday, 10am to 10pm', current_date + 20)$q$, p_dj2))::jsonb;
+  j2 := (j ->> 'id')::uuid;
+  j := tests.q(olly, o_e, format($q$public.job_create(%L, 'Door staff', 'event_shift', 'We need door staff for Friday nights.', null, '$18 an hour', 'Toronto', false, null, current_date + 30)$q$, p_club))::jsonb;
+  j3 := (j ->> 'id')::uuid;
+  update public.site_jobs set created_at = now() - interval '2 hours' where id = j2;
+  update public.site_jobs set created_at = now() - interval '1 hour' where id = j3;
+  perform tests.assert_eq('the list shows open jobs, newest first', (select string_agg(x ->> 'title', ',') from jsonb_array_elements(tests.q(bob, b_e, format($q$public.jobs_list(%L)$q$, p_bob))::jsonb) x), 'Door staff,Wedding photographer,Weekend head bartender');
+  perform tests.assert_eq('...for a profile the caller acts as', tests.q(bob, b_e, format($q$public.jobs_list(%L)$q$, p_cy)), 'ERROR: You cannot act as this profile.');
+  perform tests.assert_eq('it can be filtered by kind', (select string_agg(x ->> 'title', ',') from jsonb_array_elements(tests.q(bob, b_e, format($q$public.jobs_list(%L, 'freelance')$q$, p_bob))::jsonb) x), 'Wedding photographer');
+  perform tests.assert_eq('...by remote', (select string_agg(x ->> 'title', ',') from jsonb_array_elements(tests.q(bob, b_e, format($q$public.jobs_list(%L, null, null, true)$q$, p_bob))::jsonb) x), 'Weekend head bartender');
+  perform tests.assert_eq('...and not remote', (select string_agg(x ->> 'title', ',' order by x ->> 'title') from jsonb_array_elements(tests.q(bob, b_e, format($q$public.jobs_list(%L, null, null, false)$q$, p_bob))::jsonb) x), 'Door staff,Wedding photographer');
+  perform tests.assert_eq('...by words in the title', (select string_agg(x ->> 'title', ',') from jsonb_array_elements(tests.q(bob, b_e, format($q$public.jobs_list(%L, null, 'WEDDING')$q$, p_bob))::jsonb) x), 'Wedding photographer');
+  perform tests.assert_eq('...or the description', (select string_agg(x ->> 'title', ',') from jsonb_array_elements(tests.q(bob, b_e, format($q$public.jobs_list(%L, null, 'friday nights')$q$, p_bob))::jsonb) x), 'Door staff');
+  perform tests.assert_eq('...or the place', (select string_agg(x ->> 'title', ',') from jsonb_array_elements(tests.q(bob, b_e, format($q$public.jobs_list(%L, null, 'hamilton')$q$, p_bob))::jsonb) x), 'Wedding photographer');
+  perform tests.assert_eq('...or only the title', (select string_agg(x ->> 'title', ',') from jsonb_array_elements(tests.q(bob, b_e, format($q$public.jobs_list(%L, null, 'head bartender')$q$, p_bob))::jsonb) x), 'Weekend head bartender');
+  perform tests.assert_eq('a percent sign in the words is just a character', tests.q(bob, b_e, format($q$public.jobs_list(%L, null, '%%')$q$, p_bob)), '[]');
+  perform tests.assert_eq('...and so is an underscore', tests.q(bob, b_e, format($q$public.jobs_list(%L, null, 'Door_staff')$q$, p_bob)), '[]');
+  perform tests.assert_eq('...and so is a backslash', tests.q(bob, b_e, format($q$public.jobs_list(%L, null, %L)$q$, p_bob, E'D\\oor')), '[]');
+  for n in 1..52 loop perform tests.mkjob(p_dj2, 'Many job ' || n); end loop;
+  perform tests.assert_eq('a page is never more than fifty', jsonb_array_length(tests.q(bob, b_e, format($q$public.jobs_list(%L, null, null, null, null, null, 500)$q$, p_bob))::jsonb), 50);
+  perform tests.assert_eq('...and is as long as asked', jsonb_array_length(tests.q(bob, b_e, format($q$public.jobs_list(%L, null, null, null, null, null, 7)$q$, p_bob))::jsonb), 7);
+  perform tests.assert_eq('...twenty when nothing is said', jsonb_array_length(tests.q(bob, b_e, format($q$public.jobs_list(%L)$q$, p_bob))::jsonb), 20);
+  perform tests.assert_eq('...and when the size is left empty', jsonb_array_length(tests.q(bob, b_e, format($q$public.jobs_list(%L, null, null, null, null, null, null)$q$, p_bob))::jsonb), 20);
+  perform tests.assert_eq('...and the newest come first', (tests.q(bob, b_e, format($q$public.jobs_list(%L, null, null, null, null, null, 2)$q$, p_bob))::jsonb -> 0 ->> 'title') || '/' || (tests.q(bob, b_e, format($q$public.jobs_list(%L, null, null, null, null, null, 2)$q$, p_bob))::jsonb -> 1 ->> 'title'), 'Many job 52/Many job 51');
+  delete from public.site_jobs where title like 'Many job %';
+  perform tests.assert_eq('a page ends where the last one did', (select string_agg(x ->> 'title', ',') from jsonb_array_elements(tests.q(bob, b_e, format($q$public.jobs_list(%L, null, null, null, %L, %L, 20)$q$, p_bob, (select created_at from public.site_jobs where id = j3), j3))::jsonb) x), 'Wedding photographer,Weekend head bartender');
+  perform tests.assert_eq('...and has a size', jsonb_array_length(tests.q(bob, b_e, format($q$public.jobs_list(%L, null, null, null, null, null, 1)$q$, p_bob))::jsonb), 1);
+  perform tests.assert_eq('...which is never less than one', jsonb_array_length(tests.q(bob, b_e, format($q$public.jobs_list(%L, null, null, null, null, null, 0)$q$, p_bob))::jsonb), 1);
+  perform tests.assert_eq('...and a short page is the newest', (tests.q(bob, b_e, format($q$public.jobs_list(%L, null, null, null, null, null, 1)$q$, p_bob))::jsonb -> 0 ->> 'title'), 'Door staff');
+  perform tests.assert_eq('someone who blocked the person behind a business does not see any of their jobs', (select string_agg(x ->> 'title', ',') from jsonb_array_elements(tests.q(eve, e_e, format($q$public.jobs_list(%L)$q$, p_eve))::jsonb) x), 'Door staff');
+  perform tests.assert_eq('...nor open one', tests.q(eve, e_e, format($q$public.job_get(%L, %L)$q$, p_eve, j1)), 'ERROR: This job is not available.');
+  update public.site_jobs set deadline = current_date - 1 where id = j2;
+  perform tests.assert_eq('a job past its last day is not listed', (select string_agg(x ->> 'title', ',') from jsonb_array_elements(tests.q(bob, b_e, format($q$public.jobs_list(%L)$q$, p_bob))::jsonb) x), 'Door staff,Weekend head bartender');
+  perform tests.assert_eq('...but can be opened, closed to applications', tests.q(bob, b_e, format($q$public.job_get(%L, %L)$q$, p_bob, j2))::jsonb ->> 'open', 'false');
+  update public.site_jobs set deadline = current_date + 20 where id = j2;
+  update public.site_profiles set status = 'suspended' where id = p_club;
+  perform tests.assert_eq('a suspended business''s jobs are hidden', (select string_agg(x ->> 'title', ',') from jsonb_array_elements(tests.q(bob, b_e, format($q$public.jobs_list(%L)$q$, p_bob))::jsonb) x), 'Wedding photographer,Weekend head bartender');
+  perform tests.assert_eq('...and cannot be opened', tests.q(bob, b_e, format($q$public.job_get(%L, %L)$q$, p_bob, j3)), 'ERROR: This job is not available.');
+  update public.site_profiles set status = 'active' where id = p_club;
+  perform tests.assert_eq('a job is opened with its business', tests.q(bob, b_e, format($q$public.job_get(%L, %L)$q$, p_bob, j2))::jsonb -> 'poster' ->> 'handle', 'deephotosrec');
+  perform tests.assert_eq('...and an applicant does not see the count', tests.q(bob, b_e, format($q$public.job_get(%L, %L)$q$, p_bob, j2))::jsonb ->> 'applications' is null, true);
+  perform tests.assert_eq('a job that is not there', tests.q(bob, b_e, format($q$public.job_get(%L, gen_random_uuid())$q$, p_bob)), 'ERROR: This job is not available.');
+  perform tests.assert_eq('...opened only as a profile the caller acts as', tests.q(bob, b_e, format($q$public.job_get(%L, %L)$q$, p_cy, j2)), 'ERROR: You cannot act as this profile.');
+
+  ---------------------------------------------------------------- applying
+  perform tests.assert_eq('applying needs the community rules', tests.q(fay, f_e, format($q$public.job_apply(%L, %L, 'I have worked many bars in Toronto.')$q$, p_fay, j2)), 'ERROR: Read and accept the community rules first.');
+  perform tests.assert_eq('a business cannot apply to its own job', tests.q(dee, d_e, format($q$public.job_apply(%L, %L, 'I have worked many bars in Toronto.')$q$, p_dj, j2)), 'ERROR: You cannot apply to your own job.');
+  perform tests.assert_eq('...nor can its owner as another profile', tests.q(dee, d_e, format($q$public.job_apply(%L, %L, 'I have worked many bars in Toronto.')$q$, p_dee, j2)), 'ERROR: You cannot apply to your own job.');
+  perform tests.assert_eq('a message is needed', tests.q(bob, b_e, format($q$public.job_apply(%L, %L, 'Hi, I am free.')$q$, p_bob, j2)), 'ERROR: Write a message of 20 to 2000 characters.');
+  perform tests.assert_eq('...and is not too long', tests.q(bob, b_e, format($q$public.job_apply(%L, %L, %L)$q$, p_bob, j2, repeat('x', 2001))), 'ERROR: Write a message of 20 to 2000 characters.');
+  perform tests.assert_eq('a link must be secure', tests.q(bob, b_e, format($q$public.job_apply(%L, %L, 'I have shot many weddings in Ontario.', 'http://example.com/me')$q$, p_bob, j2)), 'ERROR: A link must start with https:// and be up to 300 characters.');
+  perform tests.assert_eq('...and without spaces', tests.q(bob, b_e, format($q$public.job_apply(%L, %L, 'I have shot many weddings in Ontario.', 'https://example.com/my work')$q$, p_bob, j2)), 'ERROR: A link must start with https:// and be up to 300 characters.');
+  perform tests.assert_eq('...and short', tests.q(bob, b_e, format($q$public.job_apply(%L, %L, 'I have shot many weddings in Ontario.', %L)$q$, p_bob, j2, 'https://example.com/' || repeat('x', 290))), 'ERROR: A link must start with https:// and be up to 300 characters.');
+  perform tests.assert_eq('...three hundred and one is too long', tests.q(bob, b_e, format($q$public.job_apply(%L, %L, 'I have shot many weddings in Ontario.', %L)$q$, p_bob, j2, 'https://example.com/' || repeat('x', 281))), 'ERROR: A link must start with https:// and be up to 300 characters.');
+  perform tests.assert_eq('the words must be allowed', tests.q(bob, b_e, format($q$public.job_apply(%L, %L, 'I have shot many forbiddenword weddings.')$q$, p_bob, j2)), 'ERROR: That wording is not allowed here.');
+  perform tests.assert_eq('a job that is not there', tests.q(bob, b_e, format($q$public.job_apply(%L, gen_random_uuid(), 'I have shot many weddings in Ontario.')$q$, p_bob)), 'ERROR: This job is not available.');
+  perform tests.assert_eq('...and applied to only as a profile the caller acts as', tests.q(bob, b_e, format($q$public.job_apply(%L, %L, 'I have shot many weddings in Ontario.')$q$, p_cy, j2)), 'ERROR: You cannot act as this profile.');
+  j5 := tests.mkjob(p_dj2, 'Last day job');
+  update public.site_jobs set deadline = current_date where id = j5;
+  perform tests.assert_eq('the last day is still a day to apply', tests.q(olly, o_e, format($q$public.job_apply(%L, %L, 'I can work your Friday nights well.')$q$, p_olly, j5))::jsonb ->> 'state', 'sent');
+  delete from public.site_jobs where id = j5;
+  perform tests.assert_eq('someone the business is blocked by cannot apply', tests.q(eve, e_e, format($q$public.job_apply(%L, %L, 'I have worked many bars in Toronto.')$q$, p_eve, j1)), 'ERROR: This job is not available.');
+  j5 := tests.mkjob(p_dj2, 'Boundary job one'); j6 := tests.mkjob(p_dj2, 'Boundary job two');
+  perform tests.assert_eq('a message of nineteen characters', tests.q(olly, o_e, format($q$public.job_apply(%L, %L, %L)$q$, p_olly, j5, repeat('m', 19))), 'ERROR: Write a message of 20 to 2000 characters.');
+  perform tests.assert_eq('...twenty is enough', tests.q(olly, o_e, format($q$public.job_apply(%L, %L, %L)$q$, p_olly, j5, repeat('m', 20)))::jsonb ->> 'state', 'sent');
+  perform tests.assert_eq('...two thousand', tests.q(hal, h_e, format($q$public.job_apply(%L, %L, %L)$q$, p_hal, j5, repeat('m', 2000)))::jsonb ->> 'state', 'sent');
+  perform tests.assert_eq('a link of three hundred characters', tests.q(olly, o_e, format($q$public.job_apply(%L, %L, 'I can work your Friday nights well.', %L)$q$, p_olly, j6, 'https://example.com/' || repeat('x', 280)))::jsonb ->> 'state', 'sent');
+  perform tests.assert_eq('a second application from the same profile', tests.q(hal, h_e, format($q$public.job_apply(%L, %L, 'I can also work your Friday nights.')$q$, p_hal, j6))::jsonb ->> 'state', 'sent');
+  perform tests.assert_eq('my applications are newest first', (select string_agg(x -> 'job' ->> 'title', ',') from jsonb_array_elements(tests.q(hal, h_e, format($q$public.job_applications_mine(%L)$q$, p_hal))::jsonb) x), 'Boundary job two,Boundary job one');
+  delete from public.site_jobs where title like 'Boundary job%';
+  j := tests.q(bob, b_e, format($q$public.job_apply(%L, %L, '  I have shot many weddings in Ontario.  ', ' https://example.com/bob ')$q$, p_bob, j2))::jsonb;
+  ap1 := (j ->> 'id')::uuid;
+  perform tests.assert_eq('an application is sent, tidied', (j ->> 'state') || '/' || (j ->> 'message') || '/' || (j ->> 'link') || '/' || (j -> 'applicant' ->> 'handle') || '/' || (j -> 'job' ->> 'title'), 'sent/I have shot many weddings in Ontario./https://example.com/bob/bobrec/Wedding photographer');
+  perform tests.assert_eq('only once', tests.q(bob, b_e, format($q$public.job_apply(%L, %L, 'I have shot many weddings in Ontario.')$q$, p_bob, j2)), 'ERROR: You have already applied.');
+  perform tests.assert_eq('the job says so', tests.q(bob, b_e, format($q$public.job_get(%L, %L)$q$, p_bob, j2))::jsonb -> 'applied' ->> 'state', 'sent');
+  j := tests.q(cy, c_e, format($q$public.job_apply(%L, %L, 'I can photograph your wedding this June.')$q$, p_cy, j2))::jsonb;
+  ap2 := (j ->> 'id')::uuid;
+  perform tests.assert_eq('a link is optional', coalesce(j ->> 'link', 'none'), 'none');
+  perform tests.assert_eq('a professional profile can apply too', tests.q(dee, d_e, format($q$public.job_apply(%L, %L, 'My studio does weddings across Ontario.')$q$, p_dj, j3))::jsonb ->> 'state', 'sent');
+  perform tests.assert_eq('twenty a day is the limit', (select count(*)::int from public.site_job_applications where applicant = p_dj), 1);
+  for n in 1..19 loop insert into public.site_job_applications (job, applicant, message) values (tests.mkjob(p_dj2, 'Filler job number ' || n), p_zed, 'A message that is long enough.'); end loop;
+  perform tests.assert_eq('...nineteen are fine', (select count(*)::int from public.site_job_applications where applicant = p_zed), 19);
+  perform tests.assert_eq('the twentieth is allowed', tests.q(zed, z_e, format($q$public.job_apply(%L, %L, 'I can photograph your wedding this June.')$q$, p_zed, j2))::jsonb ->> 'state', 'sent');
+  perform tests.assert_eq('the twenty-first is not', tests.q(zed, z_e, format($q$public.job_apply(%L, %L, 'I can work your Friday nights well.')$q$, p_zed, j3)), 'ERROR: You have sent a lot of applications today. Try again tomorrow.');
+  delete from public.site_jobs where title like 'Filler job number%';
+
+  ---------------------------------------------------------------- the business reads and answers
+  perform tests.assert_eq('only the business reads the applications', tests.q(bob, b_e, format($q$public.job_applications(%L, %L)$q$, p_bob, j2)), 'ERROR: This job is not available.');
+  perform tests.assert_eq('...not a content manager of the business', tests.q(zed, z_e, format($q$public.job_applications(%L, %L)$q$, p_dj, j1)), 'ERROR: Your role on this profile does not allow this.');
+  perform tests.assert_eq('...but a booking agent', jsonb_array_length(tests.q(gus, g_e, format($q$public.job_applications(%L, %L)$q$, p_dj2, j2))::jsonb), 3);
+  perform tests.assert_eq('...of its own job', tests.q(dee, d_e, format($q$public.job_applications(%L, %L)$q$, p_dj, j2)), 'ERROR: This job is not available.');
+  j := tests.q(dee, d_e, format($q$public.job_applications(%L, %L)$q$, p_dj2, j2))::jsonb;
+  perform tests.assert_eq('the applications are listed, newest first, with who sent them', jsonb_array_length(j) || '/' || (j -> 0 -> 'applicant' ->> 'handle') || '/' || (j -> 1 -> 'applicant' ->> 'handle'), '3/zedrec/cyrec');
+  perform tests.assert_eq('the job counts them', tests.q(dee, d_e, format($q$public.job_get(%L, %L)$q$, p_dj2, j2))::jsonb ->> 'applications' || '/' || (tests.q(dee, d_e, format($q$public.job_get(%L, %L)$q$, p_dj2, j2))::jsonb ->> 'waiting'), '3/3');
+  perform tests.assert_eq('my listings say how many wait', (tests.q(dee, d_e, format($q$public.jobs_mine(%L)$q$, p_dj2))::jsonb -> 0 ->> 'waiting'), '3');
+  perform tests.assert_eq('a person has no listings', tests.q(bob, b_e, format($q$public.jobs_mine(%L)$q$, p_bob)), '[]');
+  perform tests.assert_eq('only the business''s team lists its jobs', tests.q(zed, z_e, format($q$public.jobs_mine(%L)$q$, p_dj)), 'ERROR: Your role on this profile does not allow this.');
+  perform tests.assert_eq('only a professional''s own jobs', jsonb_array_length(tests.q(dee, d_e, format($q$public.jobs_mine(%L)$q$, p_dj))::jsonb), 1);
+  perform tests.assert_eq('a state that exists', tests.q(dee, d_e, format($q$public.job_application_set(%L, %L, 'hired')$q$, p_dj2, ap1)), 'ERROR: Choose shortlist, accept or decline.');
+  perform tests.assert_eq('...a short reply', tests.q(dee, d_e, format($q$public.job_application_set(%L, %L, 'accepted', %L)$q$, p_dj2, ap1, repeat('x', 1001))), 'ERROR: Keep the reply to 1000 characters.');
+  perform tests.assert_eq('...in words that are allowed', tests.q(dee, d_e, format($q$public.job_application_set(%L, %L, 'accepted', 'forbiddenword welcome')$q$, p_dj2, ap1)), 'ERROR: That wording is not allowed here.');
+  perform tests.assert_eq('...only by the business', tests.q(bob, b_e, format($q$public.job_application_set(%L, %L, 'accepted')$q$, p_bob, ap1)), 'ERROR: This application is not available.');
+  perform tests.assert_eq('...and not by a content manager', tests.q(zed, z_e, format($q$public.job_application_set(%L, %L, 'accepted')$q$, p_dj, ap1)), 'ERROR: Your role on this profile does not allow this.');
+  perform tests.assert_eq('...for its own job', tests.q(dee, d_e, format($q$public.job_application_set(%L, %L, 'accepted')$q$, p_dj, ap1)), 'ERROR: This application is not available.');
+  j := tests.q(dee, d_e, format($q$public.job_application_set(%L, %L, 'shortlisted', '  Please send two dates.  ')$q$, p_dj2, ap1))::jsonb;
+  perform tests.assert_eq('an application is shortlisted with a reply', (j ->> 'state') || '/' || (j ->> 'reply') || '/' || (j ->> 'decided_at' is not null)::text, 'shortlisted/Please send two dates./true');
+  perform tests.assert_eq('the applicant reads the answer', (select string_agg((x ->> 'state') || ':' || (x ->> 'reply'), ',') from jsonb_array_elements(tests.q(bob, b_e, format($q$public.job_applications_mine(%L)$q$, p_bob))::jsonb) x), 'shortlisted:Please send two dates.');
+  perform tests.assert_eq('...with the job and its business', tests.q(bob, b_e, format($q$public.job_applications_mine(%L)$q$, p_bob))::jsonb -> 0 -> 'job' -> 'poster' ->> 'handle', 'deephotosrec');
+  perform tests.assert_eq('an answer can change', tests.q(dee, d_e, format($q$public.job_application_set(%L, %L, 'accepted')$q$, p_dj2, ap1))::jsonb ->> 'state', 'accepted');
+  perform tests.assert_eq('...and a reply can be left out', coalesce(tests.q(dee, d_e, format($q$public.job_application_set(%L, %L, 'declined')$q$, p_dj2, ap2))::jsonb ->> 'reply', 'none'), 'none');
+  perform tests.assert_eq('...or given', tests.q(dee, d_e, format($q$public.job_application_set(%L, %L, 'declined', 'Sorry, we found someone.')$q$, p_dj2, ap2))::jsonb ->> 'reply', 'Sorry, we found someone.');
+  perform tests.assert_eq('the waiting count goes down', tests.q(dee, d_e, format($q$public.job_get(%L, %L)$q$, p_dj2, j2))::jsonb ->> 'waiting', '1');
+  select id into ap4 from public.site_job_applications where job = j2 and applicant = p_zed;
+  perform tests.assert_eq('...and a shortlisted one is not waiting', tests.q(dee, d_e, format($q$public.job_application_set(%L, %L, 'shortlisted')$q$, p_dj2, ap4))::jsonb ->> 'state', 'shortlisted');
+  perform tests.assert_eq('...so the count goes to nothing', tests.q(dee, d_e, format($q$public.job_get(%L, %L)$q$, p_dj2, j2))::jsonb ->> 'waiting', '0');
+  perform tests.assert_eq('the applicant cannot answer for the business', tests.q(bob, b_e, format($q$public.job_application_withdraw(%L, %L)$q$, p_cy, ap1)), 'ERROR: You cannot act as this profile.');
+  perform tests.assert_eq('...nor take back someone else''s', tests.q(cy, c_e, format($q$public.job_application_withdraw(%L, %L)$q$, p_cy, ap1)), 'ERROR: This application is not available.');
+  perform tests.assert_eq('an application is taken back', tests.q(cy, c_e, format($q$public.job_application_withdraw(%L, %L)$q$, p_cy, ap2))::jsonb ->> 'state', 'withdrawn');
+  perform tests.assert_eq('...once', tests.q(cy, c_e, format($q$public.job_application_withdraw(%L, %L)$q$, p_cy, ap2)), 'ERROR: You already took this application back.');
+  perform tests.assert_eq('a taken-back application is not counted', tests.q(dee, d_e, format($q$public.job_get(%L, %L)$q$, p_dj2, j2))::jsonb ->> 'applications', '2');
+  perform tests.assert_eq('the business no longer sees it', (select string_agg(x -> 'applicant' ->> 'handle', ',') from jsonb_array_elements(tests.q(dee, d_e, format($q$public.job_applications(%L, %L)$q$, p_dj2, j2))::jsonb) x), 'zedrec,bobrec');
+  perform tests.assert_eq('...and cannot answer it', tests.q(dee, d_e, format($q$public.job_application_set(%L, %L, 'accepted')$q$, p_dj2, ap2)), 'ERROR: The applicant has taken this application back.');
+  j := tests.q(cy, c_e, format($q$public.job_apply(%L, %L, 'I can still photograph your wedding in June.')$q$, p_cy, j2))::jsonb;
+  perform tests.assert_eq('a taken-back application can be sent again, as new', (j ->> 'state') || '/' || (j ->> 'id') || '/' || coalesce(j ->> 'reply', 'none'), 'sent/' || ap2 || '/none');
+  perform tests.assert_eq('...with nothing left of the answer it had', (select (reply is null)::text || '/' || (decided_at is null)::text from public.site_job_applications where id = ap2), 'true/true');
+  perform tests.assert_eq('the business sees it again', jsonb_array_length(tests.q(dee, d_e, format($q$public.job_applications(%L, %L)$q$, p_dj2, j2))::jsonb), 3);
+
+  ---------------------------------------------------------------- closing a job
+  perform tests.assert_eq('a job is closed as filled', tests.q(dee, d_e, format($q$public.job_close(%L, %L, true)$q$, p_dj2, j2))::jsonb ->> 'status', 'filled');
+  perform tests.assert_eq('...once', tests.q(dee, d_e, format($q$public.job_close(%L, %L)$q$, p_dj2, j2)), 'ERROR: This job is already closed.');
+  perform tests.assert_eq('...and is no longer open', tests.q(bob, b_e, format($q$public.job_get(%L, %L)$q$, p_bob, j2))::jsonb ->> 'open', 'false');
+  perform tests.assert_eq('an application says its job is no longer open', tests.q(bob, b_e, format($q$public.job_applications_mine(%L)$q$, p_bob))::jsonb -> 0 -> 'job' ->> 'open', 'false');
+  perform tests.assert_eq('...and is listed only as the profile that sent it', tests.q(bob, b_e, format($q$public.job_applications_mine(%L)$q$, p_cy)), 'ERROR: You cannot act as this profile.');
+  perform tests.assert_eq('...and not mixed up with another profile''s', jsonb_array_length(tests.q(cy, c_e, format($q$public.job_applications_mine(%L)$q$, p_cy))::jsonb), 1);
+  perform tests.assert_eq('...nor listed', (select string_agg(x ->> 'title', ',') from jsonb_array_elements(tests.q(bob, b_e, format($q$public.jobs_list(%L)$q$, p_bob))::jsonb) x), 'Door staff,Weekend head bartender');
+  perform tests.assert_eq('...nor changed', tests.q(dee, d_e, format($q$public.job_update(%L, %L, 'Wedding photographer', 'freelance', 'Photograph a wedding on a Saturday in June.', null, '$1,500', 'Hamilton', false, null, current_date + 20)$q$, p_dj2, j2)), 'ERROR: Only an open job can be changed.');
+  perform tests.assert_eq('...nor applied to', tests.q(zed, z_e, format($q$public.job_apply(%L, %L, 'I can photograph your wedding this June.')$q$, p_zed, j2)), 'ERROR: This job is not taking applications any more.');
+  perform tests.assert_eq('a closed job keeps its applications for the business', jsonb_array_length(tests.q(dee, d_e, format($q$public.job_applications(%L, %L)$q$, p_dj2, j2))::jsonb), 3);
+  perform tests.assert_eq('a job is closed as not filled', tests.q(dee, d_e, format($q$public.job_close(%L, %L)$q$, p_dj, j1))::jsonb ->> 'status', 'closed');
+  j4 := tests.mkjob(p_dj2, 'A job that ends today');
+  perform tests.assert_eq('my listings are newest first', (select string_agg(x ->> 'title', ',') from jsonb_array_elements(tests.q(dee, d_e, format($q$public.jobs_mine(%L)$q$, p_dj2))::jsonb) x), 'A job that ends today,Wedding photographer');
+  update public.site_jobs set deadline = current_date - 1 where id = j4;
+  perform tests.assert_eq('a job whose last day passed takes no applications', tests.q(zed, z_e, format($q$public.job_apply(%L, %L, 'I can photograph your wedding this June.')$q$, p_zed, j4)), 'ERROR: This job is not taking applications any more.');
+
+  ---------------------------------------------------------------- reporting a job
+  perform tests.assert_eq('a job can be reported', tests.q(bob, b_e, format($q$public.report_create(%L, 'job', %L, 'scam', 'Asks for money first')$q$, p_bob, j3)) like '%"already": false%', true);
+  perform tests.assert_eq('...once', tests.q(bob, b_e, format($q$public.report_create(%L, 'job', %L, 'scam')$q$, p_bob, j3)) like '%"already": true%', true);
+  perform tests.assert_eq('...never one''s own', tests.q(olly, o_e, format($q$public.report_create(%L, 'job', %L, 'spam')$q$, p_olly, j3)), 'ERROR: You can''t report your own profile or what you wrote.');
+  perform tests.assert_eq('...nor one that is hidden from the reporter', tests.q(eve, e_e, format($q$public.report_create(%L, 'job', %L, 'spam')$q$, p_eve, j1)), 'ERROR: This isn''t available.');
+  perform tests.assert_eq('the report keeps what the job said', (select excerpt from public.site_reports where kind = 'job' and target = j3), 'Door staff: We need door staff for Friday nights.');
+  perform tests.assert_eq('the queue shows the job as active', tests.f(admin_u, adm, $q$public.cms_reports_list()$q$, '{0,state}'), 'active');
+  perform tests.assert_eq('removing it takes it off the list', tests.f(admin_u, adm, format($q$public.cms_report_resolve('job', %L, 'remove')$q$, j3), '{handled}'), '1');
+  perform tests.assert_eq('...and out of reach', tests.q(bob, b_e, format($q$public.job_get(%L, %L)$q$, p_bob, j3)), 'ERROR: This job is not available.');
+  perform tests.assert_eq('...and out of the business''s own list', jsonb_array_length(tests.q(olly, o_e, format($q$public.jobs_mine(%L)$q$, p_club))::jsonb), 0);
+  perform tests.assert_eq('...and its applications are no longer shown to the business', tests.q(olly, o_e, format($q$public.job_applications(%L, %L)$q$, p_club, j3)), 'ERROR: This job is not available.');
+  perform tests.assert_eq('...nor answered', tests.q(olly, o_e, format($q$public.job_application_set(%L, %L, 'accepted')$q$, p_club, (select id from public.site_job_applications where job = j3 limit 1))), 'ERROR: This application is not available.');
+  perform tests.assert_eq('...nor listed among the applicant''s own', tests.q(dee, d_e, format($q$public.job_applications_mine(%L)$q$, p_dj)), '[]');
+  perform tests.assert_eq('...and no longer takes applications', tests.q(zed, z_e, format($q$public.job_apply(%L, %L, 'I can work your Friday nights well.')$q$, p_zed, j3)), 'ERROR: This job is not available.');
+  perform tests.assert_eq('the queue shows it as removed', tests.f(admin_u, adm, $q$public.cms_reports_list('actioned')$q$, '{0,state}'), 'removed');
+  perform tests.assert_eq('a removed job cannot be reported', tests.q(cy, c_e, format($q$public.report_create(%L, 'job', %L, 'spam')$q$, p_cy, j3)), 'ERROR: This isn''t available.');
+  perform tests.assert_eq('restoring it counts the reports it settles', tests.f(admin_u, adm, format($q$public.cms_report_resolve('job', %L, 'restore')$q$, j3), '{handled}'), '1');
+  perform tests.assert_eq('...and closes it, so nobody is surprised by applications', (select status from public.site_jobs where id = j3), 'closed');
+
+  ---------------------------------------------------------------- every table is closed
+  perform tests.login(dee, d_e);
+  perform tests.assert_raises('no table can be read', 'select * from public.site_jobs', 'permission denied');
+  perform tests.assert_raises('...applications', 'select * from public.site_job_applications', 'permission denied');
+  perform tests.assert_raises('...plaques', 'select * from public.site_plaques', 'permission denied');
+  perform tests.assert_raises('...awards', 'select * from public.site_awards', 'permission denied');
+  perform tests.assert_raises('...reviews of a rank', 'select * from public.site_rank_reviews', 'permission denied');
+  perform tests.assert_raises('...requests to be verified', 'select * from public.site_profile_verifications', 'permission denied');
+  perform tests.assert_raises('...the levels', 'select * from public.site_rank_levels', 'permission denied');
+  perform tests.assert_raises('...or written to', 'update public.site_rank_levels set name = ''x''', 'permission denied');
+  perform tests.assert_raises('the helpers are not callable', 'select public.recognition_require(''jobs'')', 'permission denied');
+  perform tests.assert_raises('...nor the clean-up of addresses', 'select public.plaque_addresses_wipe()', 'permission denied');
+  perform tests.assert_raises('...nor the badge', format($q$select public.profile_badge(%L)$q$, p_ann), 'permission denied');
+  perform tests.assert_raises('...nor the follower count', format($q$select public.profile_followers(%L)$q$, p_ann), 'permission denied');
+  perform tests.assert_raises('...nor the level to ask for', format($q$select public.rank_target(%L)$q$, p_ann), 'permission denied');
+  perform tests.assert_raises('...nor a plaque as text', format($q$select public.plaque_json(%L)$q$, pq2), 'permission denied');
+  perform tests.assert_raises('...nor whether a job is visible', format($q$select public.job_visible(%L, %L)$q$, p_dj, j1), 'permission denied');
+  perform tests.assert_raises('...nor a job as text', format($q$select public.job_json(%L, %L)$q$, p_dj, j1), 'permission denied');
+  perform tests.assert_raises('...nor an application as text', format($q$select public.job_application_json(%L, %L)$q$, p_dj, ap1), 'permission denied');
+  perform tests.assert_raises('...nor the check of a listing', $q$select public.job_check('Weekend bartender', 'part_time', 'We need an experienced bartender for weekends.', null, '$20', 'Toronto', false, null, current_date)$q$, 'permission denied');
+  perform tests.logout();
+
+  ---------------------------------------------------------------- deleting an account
+  perform tests.assert_eq('a person''s jobs, applications, awards, plaques and requests are all there', (select count(*)::int from public.site_jobs where poster in (p_dj, p_dj2)) > 0 and (select count(*)::int from public.site_job_applications where applicant = p_bob) > 0 and (select count(*)::int from public.site_awards where profile = p_ann) > 0 and (select count(*)::int from public.site_plaques where profile = p_ann) > 0 and (select count(*)::int from public.site_profile_verifications where profile = p_ann) > 0, true);
+  delete from auth.users where id = ann;
+  perform tests.assert_eq('deleting an account takes its awards, plaques, reviews and requests with it', (select count(*)::int from public.site_awards where profile = p_ann) + (select count(*)::int from public.site_plaques where profile = p_ann) + (select count(*)::int from public.site_rank_reviews where profile = p_ann) + (select count(*)::int from public.site_profile_verifications where profile = p_ann), 0);
+  delete from auth.users where id = dee;
+  perform tests.assert_eq('...and a business''s jobs, with the applications to them', (select count(*)::int from public.site_jobs where poster in (p_dj, p_dj2)) + (select count(*)::int from public.site_job_applications where job in (j1, j2)), 0);
+  delete from auth.users where id = bob;
+  perform tests.assert_eq('...and a person''s applications', (select count(*)::int from public.site_job_applications where applicant = p_bob), 0);
+end $$;
+
+rollback;
