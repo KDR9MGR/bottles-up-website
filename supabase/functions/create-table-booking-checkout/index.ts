@@ -2,6 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { corsHeadersFor, handleOptions, isPreviewOrLocalOrigin } from '../_shared/cors.ts';
 import { tablesTaken } from '../_shared/tableCapacity.ts';
+import { reserveTableBooking } from '../_shared/reserveTableBooking.ts';
 import { validatePromoCode } from '../_shared/promoCode.ts';
 import { dueAtVenueBottleCents } from '../_shared/bottlePayment.ts';
 import { computeArrivalDate } from '../_shared/bookingNight.ts';
@@ -102,7 +103,7 @@ Deno.serve(async (req: Request) => {
     // the time slot separately and cross-check venue_id in application code instead.
     const { data: tableType, error: tableTypeError } = await supabase
       .from('site_table_types')
-      .select('*, venue:site_venues!inner(id, name, status, booking_start_date, booking_end_date, tax_rate_bps, bottle_payment_mode, deposit_is_credit)')
+      .select('*, venue:site_venues!inner(id, name, status, booking_start_date, booking_end_date, tax_rate_bps, bottle_payment_mode, deposit_is_credit, deposit_terms)')
       .eq('id', table_type_id)
       .eq('venue_id', venue_id)
       .single();
@@ -261,6 +262,7 @@ Deno.serve(async (req: Request) => {
       bottleSubtotalCents,
       depositCents,
       depositIsCredit: tableType.venue.deposit_is_credit,
+      depositTerms: tableType.venue.deposit_terms,
     });
     const chargeNowBottleCents = bottlePaymentChoice === 'pay_at_club' ? 0 : bottleSubtotalCents;
     const preTaxSubtotalCents = depositCents + chargeNowBottleCents;
@@ -292,34 +294,36 @@ Deno.serve(async (req: Request) => {
     // Full order total, online + in-person, for balance-due tracking in the CMS.
     const amountTotalCents = totalNowCents + dueAtVenueCents;
 
-    const { data: booking, error: bookingError } = await supabase
-      .from('site_table_bookings')
-      .insert({
-        venue_id,
-        table_type_id,
-        time_slot_id,
-        booking_date: arrivalDate,
-        customer_name,
-        customer_email,
-        customer_phone: customer_phone ?? null,
-        guest_count: guests,
+    // The early check above is only a quick, friendly refusal. THIS is the check that decides: the database locks the table type, counts again and writes the
+    // pending booking in one step, so two guests who start at the same moment cannot both get the last table (see _shared/reserveTableBooking.ts).
+    let booking: { id: string };
+    try {
+      const reserved = await reserveTableBooking(supabase, {
+        venueId: venue_id,
+        tableTypeId: table_type_id,
+        slotId: time_slot_id,
+        arrivalDate,
+        customerName: customer_name,
+        customerEmail: customer_email,
+        customerPhone: customer_phone ?? null,
+        guests,
         hours: bookedHours,
-        deposit_cents: depositCents,
-        bottle_subtotal_cents: bottleSubtotalCents,
-        tax_cents: taxCents,
-        bottlesup_fee_cents: bottlesUpFeeCents,
-        amount_total_cents: amountTotalCents,
-        bottle_payment_choice: bottlePaymentChoice,
+        depositCents,
+        bottleSubtotalCents,
+        taxCents,
+        bottlesUpFeeCents,
+        amountTotalCents,
+        bottlePaymentChoice,
         currency: tableType.currency,
-        status: 'pending',
-        promo_code_id: promoCodeId,
-        discount_cents: discountCents,
-        bottle_sign_text: signText || null,
-      })
-      .select('id')
-      .single();
-
-    if (bookingError || !booking) {
+        promoCodeId,
+        discountCents,
+        signText: signText || null,
+      });
+      if (reserved.kind === 'sold_out') {
+        return json({ error: 'No tables of this type left for that date and time' }, 409);
+      }
+      booking = { id: reserved.bookingId };
+    } catch (bookingError) {
       console.error('booking insert error:', bookingError);
       return json({ error: 'Failed to start booking' }, 500);
     }

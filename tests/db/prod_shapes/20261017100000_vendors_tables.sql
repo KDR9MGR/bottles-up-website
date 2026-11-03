@@ -45,14 +45,22 @@ begin
 end; $$;
 create trigger trg_sync_vendor_admins after insert or delete or update on public.vendors for each row execute function public.sync_vendor_admins();
 
--- A row for every new account, as production does.
+-- A row for every new account, as production does. The body is production's own, read on 29 Oct 2026 (pg_proc.prosrc, fingerprint 0f54e77c86333964079e1a41efa8ea67):
+-- tests/db/fixtures/handle_new_user_before.sql is the same function and 20261031100000_signup_without_email.sql replaces it.
 create function public.handle_new_user() returns trigger language plpgsql security definer as $$
-begin
-  insert into public.vendors (id, email, business_name, onboarding_completed)
-  values (NEW.id, NEW.email, coalesce(NEW.raw_user_meta_data->>'name', 'User'), false)
-  on conflict (id) do nothing;
-  return NEW;
-end; $$;
+BEGIN
+  INSERT INTO public.vendors (id, email, business_name, onboarding_completed)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'name', 'User'),
+    false
+  )
+  ON CONFLICT (id) DO NOTHING;
+  
+  RETURN NEW;
+END;
+$$;
 create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
 
 create policy "Enable insert for new signups" on public.vendors for insert to authenticated with check (auth.uid() = id);
