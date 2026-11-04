@@ -1,0 +1,98 @@
+{{- $biz := eq .RedirectTo "https://www.bottlesupapp.com/reset-password?app=business" -}}
+{{- $usr := eq .RedirectTo "https://www.bottlesupapp.com/reset-password?app=user" -}}
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>Reset your password</title>
+<style>
+  body { margin: 0; padding: 0; -webkit-text-size-adjust: 100%; }
+  a { color: #c2410c; }
+  @media (max-width: 620px) {
+    .container { width: 100% !important; }
+    .px { padding-left: 20px !important; padding-right: 20px !important; }
+    .code { font-size: 26px !important; letter-spacing: 6px !important; }
+  }
+  @media (prefers-color-scheme: dark) {
+    .page { background-color: #0a0a0a !important; }
+    .card { background-color: #171717 !important; }
+    .text { color: #f5f5f5 !important; }
+    .muted { color: #a3a3a3 !important; }
+    .codebox { background-color: #262626 !important; border-color: #404040 !important; }
+    .code { color: #ffffff !important; }
+    .note { background-color: #262626 !important; }
+    .rule { border-top-color: #262626 !important; }
+    a { color: #fb923c !important; }
+    a.btn { color: #000000 !important; }
+  }
+</style>
+</head>
+<body class="page" style="margin:0;padding:0;background-color:#f4f4f5;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;mso-hide:all;">Use the button or the 6-digit code to choose a new password. It only works once.&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="page" style="background-color:#f4f4f5;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" class="container" style="width:560px;max-width:560px;">
+        <tr>
+          <td class="px" style="background-color:#0a0a0a;border-radius:16px 16px 0 0;padding:24px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            <span style="font-size:22px;font-weight:700;color:#f97316;letter-spacing:0.2px;">BottlesUp</span>{{ if $biz }}<span style="font-size:11px;font-weight:700;color:#ffffff;letter-spacing:1.5px;text-transform:uppercase;padding-left:10px;">Business</span>{{ end }}
+            <div style="font-size:13px;color:#a3a3a3;padding-top:4px;">{{ if $biz }}For clubs, organizers and their teams{{ else }}Toronto&rsquo;s premier nightlife app{{ end }}</div>
+          </td>
+        </tr>
+        <tr>
+          <td class="card px" style="background-color:#ffffff;border-radius:0 0 16px 16px;padding:32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            <h1 class="text" style="margin:0 0 12px;font-size:24px;line-height:1.3;font-weight:700;color:#111827;">Reset your password</h1>
+            <p class="text" style="margin:0 0 24px;font-size:16px;line-height:1.5;color:#374151;">We got a request to reset the password for your {{ if $biz }}BottlesUp Business{{ else }}BottlesUp{{ end }} account, <strong>{{ .Email }}</strong>.</p>
+
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 12px;">
+              <tr>
+                <td align="center" bgcolor="#f97316" style="background-color:#f97316;border-radius:10px;">
+                  <a class="btn" href="https://www.bottlesupapp.com/reset-password?token_hash={{ .TokenHash }}&amp;type=recovery&amp;app={{ if $biz }}business{{ else if $usr }}user{{ else }}web{{ end }}" style="display:inline-block;padding:14px 36px;font-size:16px;font-weight:700;color:#000000;text-decoration:none;border-radius:10px;">Reset password</a>
+                </td>
+              </tr>
+            </table>
+            <p class="muted" style="margin:0 0 28px;font-size:13px;line-height:1.5;color:#6b7280;text-align:center;">Opens a secure page where you choose a new password. On a phone it can open the app for you.</p>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;">
+              <tr>
+                <td class="rule" style="border-top:1px solid #e5e7eb;font-size:0;line-height:0;height:1px;">&nbsp;</td>
+              </tr>
+            </table>
+            <p class="text" style="margin:20px 0 10px;font-size:15px;line-height:1.5;color:#374151;text-align:center;"><strong>Or type this code in the app</strong></p>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 10px;">
+              <tr>
+                <td class="codebox" align="center" style="background-color:#f3f4f6;border:1px solid #e5e7eb;border-radius:10px;padding:14px 26px;">
+                  <span class="code" style="font-family:'SF Mono',Menlo,Consolas,'Courier New',monospace;font-size:30px;font-weight:700;letter-spacing:8px;color:#111827;">{{ .Token }}</span>
+                </td>
+              </tr>
+            </table>
+            <p class="muted" style="margin:0 0 28px;font-size:13px;line-height:1.5;color:#6b7280;text-align:center;">In {{ if $biz }}BottlesUp Business{{ else if $usr }}BottlesUp{{ else }}the app{{ end }}, open <em>Forgot password</em> and choose <em>Enter the 6-digit code</em>.</p>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="note" style="background-color:#fff7ed;border-radius:10px;padding:14px 16px;">
+                  <p class="text" style="margin:0 0 6px;font-size:13px;line-height:1.5;color:#374151;"><strong>Didn&rsquo;t ask for this?</strong> You can ignore this email. Your password stays the same.</p>
+                  <p class="text" style="margin:0;font-size:13px;line-height:1.5;color:#374151;">The link and the code work once and expire soon. Never share the code: BottlesUp will never ask you for it.</p>
+                </td>
+              </tr>
+            </table>
+
+            <p class="muted" style="margin:24px 0 4px;font-size:12px;line-height:1.5;color:#6b7280;">Button not working? Copy this address into your browser:</p>
+            <p class="muted" style="margin:0;font-size:12px;line-height:1.5;color:#6b7280;word-break:break-all;"><a href="https://www.bottlesupapp.com/reset-password?token_hash={{ .TokenHash }}&amp;type=recovery&amp;app={{ if $biz }}business{{ else if $usr }}user{{ else }}web{{ end }}" style="color:#c2410c;">https://www.bottlesupapp.com/reset-password?token_hash={{ .TokenHash }}&amp;type=recovery&amp;app={{ if $biz }}business{{ else if $usr }}user{{ else }}web{{ end }}</a></p>
+          </td>
+        </tr>
+        <tr>
+          <td class="px" align="center" style="padding:20px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            <p class="muted" style="margin:0 0 4px;font-size:12px;line-height:1.5;color:#6b7280;">Sent to {{ .Email }} because a password reset was requested for it.</p>
+            <p class="muted" style="margin:0;font-size:12px;line-height:1.5;color:#6b7280;">{{ if $biz }}BottlesUp Business{{ else }}BottlesUp{{ end }} &middot; Toronto, Canada</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>
