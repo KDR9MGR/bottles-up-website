@@ -82,6 +82,8 @@ const ProfileOnboarding = lazy(() => import("./account/pages/ProfileOnboarding")
 const BusinessNew = lazy(() => import("./account/pages/BusinessNew"));
 const BusinessOnboarding = lazy(() => import("./account/pages/BusinessOnboarding"));
 const AcceptInvite = lazy(() => import("./account/pages/AcceptInvite"));
+// The page every password-reset e-mail points to. Always routed (not behind the account switch): the apps send people here too.
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const WorkspacePage = lazy(() => import("./account/workspace/WorkspacePage"));
 const CmsVerifications = lazy(() => import("./cms/pages/Verifications"));
 
@@ -108,6 +110,7 @@ const App = () => {
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/events" element={<Events />} />
             <Route path="/events/:id" element={<EventDetail />} />
             <Route path="/vip-tables" element={<VipTables />} />
