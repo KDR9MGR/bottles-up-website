@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, Ticket, Users, Settings, LogOut, ScanLine, CheckCircle2, ScrollText, Building2, Wine, HelpCircle, Crown, Tag, ClipboardCheck, BadgeCheck, RotateCcw, Percent, Landmark } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Ticket, Users, Settings, LogOut, ScanLine, CheckCircle2, ScrollText, Building2, Wine, HelpCircle, Crown, Tag, ClipboardCheck, BadgeCheck, RotateCcw, Percent, Landmark, ShieldAlert, SlidersHorizontal, Handshake, Wallet, Award } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -27,6 +27,11 @@ const navItems = [
   { to: '/cms/refunds', label: 'Refunds', icon: RotateCcw },
   { to: '/cms/discounts', label: 'Discounts', icon: Percent },
   { to: '/cms/payouts', label: 'Payouts', icon: Landmark },
+  { to: '/cms/moderation', label: 'Moderation', icon: ShieldAlert },
+  { to: '/cms/social-settings', label: 'Social settings', icon: SlidersHorizontal },
+  { to: '/cms/marketplace', label: 'Hiring professionals', icon: Handshake },
+  { to: '/cms/billing', label: 'Subscriptions and tips', icon: Wallet },
+  { to: '/cms/recognition', label: 'Ranks and plaques', icon: Award },
   { to: '/cms/promo-codes', label: 'Promo Codes', icon: Tag },
   ...(ACCOUNT_ONBOARDING_ENABLED ? [{ to: '/cms/verifications', label: 'Verification', icon: BadgeCheck }] : []),
   { to: '/cms/vip-list', label: 'VIP List', icon: Users },

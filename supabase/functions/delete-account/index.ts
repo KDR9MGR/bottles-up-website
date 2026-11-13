@@ -1,5 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeadersFor, handleOptions } from '../_shared/cors.ts';
+import { removeProfileFolders } from '../_shared/socialMedia.ts';
 
 // Deletes the caller's own account - and only their own. The caller's JWT is
 // resolved to a user id via a client scoped to their Authorization header
@@ -38,6 +39,10 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(supabaseUrl, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
+  // The person's photos and videos (the customer app's social side) are files in a private bucket, which the database cannot delete. Note whose they are BEFORE the account goes.
+  const { data: ownProfiles } = await admin.from('site_profiles').select('id').eq('user_id', userId);
+  const profileFolders = (ownProfiles ?? []).map((p: { id: string }) => p.id);
+
   // Best-effort: the profile row has no FK/cascade back to auth.users, so it
   // would otherwise be orphaned after the auth user is gone.
   const { error: profileError } = await admin.from('profiles').delete().eq('id', userId);
@@ -49,6 +54,16 @@ Deno.serve(async (req: Request) => {
   if (deleteError) {
     console.error('delete-account: failed to delete auth user', userId, deleteError);
     return json({ error: 'Failed to delete account' }, 500);
+  }
+
+  // Now the files. Best effort: the account is already gone, so a failure here must not look like one; sweep-social-media removes anything left behind.
+  if (profileFolders.length > 0) {
+    try {
+      const { failed } = await removeProfileFolders(admin.storage.from('social-media'), profileFolders);
+      if (failed > 0) console.error('delete-account: some files could not be removed (the sweep will)', failed);
+    } catch (error) {
+      console.error('delete-account: could not remove the files (the sweep will)', error);
+    }
   }
 
   return json({ success: true });

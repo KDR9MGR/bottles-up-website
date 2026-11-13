@@ -7,12 +7,14 @@ import path from 'path';
 //                        hashing in tests are the real thing)
 //   supabase-js       -> a stub; tests pass in an in-memory fake instead
 //   qrcode            -> a stub; no image generation needed
+//   anthropic sdk     -> a stub; the model's answer is set by the test
 export default defineConfig({
   resolve: {
     alias: [
       { find: /^npm:stripe@\d+$/, replacement: 'stripe' },
       { find: /^npm:bcryptjs@[\d.]+$/, replacement: 'bcryptjs' },
       { find: /^npm:@supabase\/supabase-js@\d+$/, replacement: path.resolve(__dirname, 'tests/edge/stubs/supabase-js.ts') },
+      { find: /^npm:@anthropic-ai\/sdk@\d+$/, replacement: path.resolve(__dirname, 'tests/edge/stubs/anthropic-sdk.ts') },
       { find: /^npm:qrcode@[\d.]+$/, replacement: path.resolve(__dirname, 'tests/edge/stubs/qrcode.ts') },
       { find: '@', replacement: path.resolve(__dirname, 'src') },
     ],
