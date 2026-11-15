@@ -202,7 +202,17 @@ begin
   perform tests.assert_eq('a manager is not a door person: no exits from them', tests.exit_of(mgr_a, 'DX-GROUP', 1, ev_a), 'ERROR: not authorized');
   perform tests.assert_eq('a count below one is refused', tests.exit_of(door_a, 'DX-GROUP', 0, ev_a), 'ERROR: choose how many are leaving');
 
-  perform tests.assert_eq('turning tracking off is allowed and keeps the exits', tests.tracking_on(owner_u, ev_a, false), 'done');
+  -- A guest admitted and refunded afterwards is still in the room: they can be counted out. Done in a sub-transaction that is rolled back, so the figures above and below are untouched.
+  begin
+    update public.site_orders set status = 'refunded' where id = o_group;
+    perform tests.assert_eq('a guest refunded after coming in can still be counted out', tests.exit_of(door_a, 'DX-GROUP', 1, ev_a), 'ok in=2 out=2 inside=0');
+    raise exception 'undo the refund again';
+  exception when others then
+    if sqlerrm <> 'undo the refund again' then raise; end if;
+  end;
+  perform tests.assert_eq('...and that left no trace', tests.occ(door_a, ev_a), 'true 4/3/1');
+
+  perform tests.assert_eq('turning tracking off is allowed and keeps the exits',tests.tracking_on(owner_u, ev_a, false), 'done');
   perform tests.assert_eq('...the figure still reads the same', tests.occ(door_a, ev_a), 'false 4/3/1');
   perform tests.assert_eq('...but nobody can record another exit', tests.exit_of(door_a, 'DX-GROUP', 1, ev_a), 'not_tracking in=- out=- inside=-');
 

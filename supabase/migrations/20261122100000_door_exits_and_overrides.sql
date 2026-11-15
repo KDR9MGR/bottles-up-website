@@ -4,7 +4,8 @@
 -- WHAT THIS ADDS (everything is new; no live function or table is replaced, door_admit_group() and the scanners stay exactly as they are):
 --   * site_events.track_exits        off by default. An owner, organizer or the club's manager turns it on for an event; only then does the door record exits and show "Inside now".
 --   * site_order_exits               one row per exit (order, guests, who, when). A closed table, like site_order_admissions.
---   * door_record_exit(code, count, event)   a door person records guests leaving. Refused unless the event tracks exits; never more than are inside.
+--   * door_record_exit(code, count, event)   a door person records guests leaving. Refused unless the event tracks exits; never more than are inside. Anyone who is inside can be counted out
+--                                    whatever the order's status is now (a guest admitted and refunded afterwards is still in the room).
 --   * door_occupancy(event)          admitted, exited and inside now, and whether exits are tracked (door people who cover the event, and those who may manage it).
 --   * door_override_entry(code, reason, count, event)   admits a guest the scan held back ONLY because of the entry code (a non-transferable ticket whose code was not verified), by
 --                                    someone who may manage the event, with a written reason that is kept. Everything else a scan refuses stays refused: unpaid, refunded, ended,
@@ -142,7 +143,8 @@ begin
   v_out := coalesce((select sum(x.guests) from public.site_order_exits x where x.order_id = v_order.order_id), 0)::int;
   v_inside := greatest(v_in - v_out, 0);
 
-  if v_order.status <> 'paid' or v_inside = 0 then
+  -- Whoever is inside can leave, whatever the order's status is now: a guest admitted and refunded afterwards is still in the room and has to be counted out. (Nobody who was never admitted has anything inside.)
+  if v_inside = 0 then
     return query select 'nothing_inside', v_order.customer, v_order.guests, v_in, v_out, v_inside;
     return;
   end if;
