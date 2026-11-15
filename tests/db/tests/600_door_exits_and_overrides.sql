@@ -69,6 +69,17 @@ exception when others then
   perform tests.logout();
   return 'ERROR: ' || sqlerrm;
 end $$;
+create function tests.nights(p_user uuid, p_venue uuid) returns text language plpgsql as $$
+declare v text;
+begin
+  perform tests.login(p_user);
+  v := (select string_agg(n.title || ':' || n.track_exits || ':' || n.admitted || '/' || n.exited || '/' || n.inside, ',' order by n.title) from public.door_club_nights(p_venue) n);
+  perform tests.logout();
+  return coalesce(v, 'none');
+exception when others then
+  perform tests.logout();
+  return 'ERROR: ' || sqlerrm;
+end $$;
 create function tests.override_rows(p_event uuid) returns int language sql security definer as $$ select count(*)::int from public.site_door_overrides where event_id = p_event $$;
 create function tests.exit_rows(p_event uuid) returns int language sql security definer as $$ select count(*)::int from public.site_order_exits x join public.site_orders o on o.id = x.order_id where o.event_id = p_event $$;
 
@@ -102,6 +113,9 @@ begin
   insert into public.site_events (title, description, venue_name, start_date, end_date, status, venue_id) values ('Club B Night', 'd', 'Club B', now() - interval '1 hour', now() + interval '8 hours', 'published', venue_b) returning id into ev_b;
   insert into public.site_events (title, description, venue_name, start_date, end_date, status, venue_id) values ('Rival Night', 'd', 'Rival Club', now() - interval '1 hour', now() + interval '8 hours', 'published', venue_r) returning id into ev_r;
   insert into public.site_events (title, description, venue_name, start_date, end_date, status, venue_id) values ('Last Night', 'd', 'Club A', now() - interval '20 hours', now() - interval '10 hours', 'published', venue_a) returning id into ev_old;
+  insert into public.site_events (title, description, venue_name, start_date, end_date, status, venue_id) values ('Ancient Night', 'd', 'Club A', now() - interval '40 hours', now() - interval '30 hours', 'published', venue_a);
+  insert into public.site_events (title, description, venue_name, start_date, end_date, status, venue_id) values ('Far Future Night', 'd', 'Club A', now() + interval '3 days', now() + interval '3 days 8 hours', 'published', venue_a);
+  insert into public.site_events (title, description, venue_name, start_date, end_date, status, venue_id) values ('Draft Night', 'd', 'Club A', now() - interval '1 hour', now() + interval '8 hours', 'draft', venue_a);
   insert into public.site_ticket_tiers (event_id, name, price_cents, capacity) values (ev_a, 'General', 5000, 50) returning id into t_a;
   insert into public.site_ticket_tiers (event_id, name, price_cents, capacity) values (ev_b, 'General', 5000, 50) returning id into t_b;
   insert into public.site_ticket_tiers (event_id, name, price_cents, capacity) values (ev_r, 'General', 5000, 50) returning id into t_r;
@@ -241,6 +255,17 @@ begin
   perform tests.assert_eq('another club''s manager cannot', tests.ologged(mgr_b, ev_a), 'ERROR: not authorized');
   perform tests.login_anon();
   perform tests.assert_raises('a visitor cannot', format($q$select * from public.door_override_log(%L)$q$, ev_a), 'permission denied');
+  perform tests.logout();
+
+  ---------------------------------------------------------------- the club's nights
+  perform tests.assert_eq('the club''s manager sees the nights that are on or ended under 12 hours ago, with their figures (not a night over 30 hours ago, one 3 days away, or a draft)', tests.nights(mgr_a, venue_a), 'Last Night:false:0/0/0,Tonight:false:7/3/4');
+  perform tests.assert_eq('the owner sees the same for the club', tests.nights(owner_u, venue_a), 'Last Night:false:0/0/0,Tonight:false:7/3/4');
+  perform tests.assert_eq('another club''s manager cannot read this club''s nights', tests.nights(mgr_b, venue_a), 'ERROR: not authorized');
+  perform tests.assert_eq('a door person cannot', tests.nights(door_a, venue_a), 'ERROR: not authorized');
+  perform tests.assert_eq('a rival cannot', tests.nights(rival_u, venue_a), 'ERROR: not authorized');
+  perform tests.assert_eq('the other club has its own night', tests.nights(mgr_b, venue_b), 'Club B Night:false:0/0/0');
+  perform tests.login_anon();
+  perform tests.assert_raises('a visitor cannot', format($q$select * from public.door_club_nights(%L)$q$, venue_a), 'permission denied');
   perform tests.logout();
 
   ---------------------------------------------------------------- the closed tables

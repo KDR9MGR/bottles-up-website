@@ -11,6 +11,7 @@
 --                                    wrong event, fully in already. The answer is decided HERE from the order, never from anything the app says.
 --   * door_override_log(event)       who overrode what and why, for those who may manage the event.
 --   * set_event_exit_tracking(event, on)
+--   * door_club_nights(club)         the club's nights that are on now or just ended, with exit tracking and occupancy, for the owner and the manager (they have no door role, so no door_events()).
 --
 -- WHO MAY OVERRIDE (a policy assumption, easy to change in can_manage_door() below): the owner or an organizer of the organization that owns the event, or the owner or manager of the
 -- club the event is linked to. Door staff cannot override: they ask a manager.
@@ -287,10 +288,35 @@ begin
 end;
 $$;
 
+-- The club's nights for the owner and the manager: published events of the club that start within a day or ended less than 12 hours ago.
+create function public.door_club_nights(p_venue uuid)
+returns table (event_id uuid, title text, start_date timestamptz, end_date timestamptz, track_exits boolean, admitted int, exited int, inside int)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null or p_venue is null or not public.can_access_venue(p_venue, array['owner', 'manager']) then raise exception 'not authorized'; end if;
+  return query
+    select e.id, e.title, e.start_date, e.end_date, e.track_exits,
+           coalesce((select sum(public.door_order_in(o.id)) from public.site_orders o where o.event_id = e.id and o.status = 'paid'), 0)::int,
+           coalesce((select sum(x.guests) from public.site_order_exits x join public.site_orders o on o.id = x.order_id where o.event_id = e.id and o.status = 'paid'), 0)::int,
+           greatest(coalesce((select sum(public.door_order_in(o.id)) from public.site_orders o where o.event_id = e.id and o.status = 'paid'), 0)
+                    - coalesce((select sum(x.guests) from public.site_order_exits x join public.site_orders o on o.id = x.order_id where o.event_id = e.id and o.status = 'paid'), 0), 0)::int
+      from public.site_events e
+     where e.venue_id = p_venue and e.status = 'published'
+       and e.start_date < now() + interval '1 day'
+       and coalesce(e.end_date, e.start_date + interval '12 hours') > now() - interval '12 hours'
+     order by e.start_date, e.id
+     limit 20;
+end;
+$$;
+
 revoke all on function public.can_manage_door(uuid), public.set_event_exit_tracking(uuid, boolean), public.door_order_in(uuid), public.door_record_exit(text, int, uuid),
-  public.door_occupancy(uuid), public.door_override_entry(text, text, int, uuid), public.door_override_log(uuid) from public, anon;
+  public.door_occupancy(uuid), public.door_override_entry(text, text, int, uuid), public.door_override_log(uuid), public.door_club_nights(uuid) from public, anon;
 -- door_order_in() is an inside helper: it answers for any order id, so only the other functions (which run with their owner's rights) and the service role may call it.
 revoke all on function public.door_order_in(uuid) from authenticated;
 grant execute on function public.can_manage_door(uuid), public.set_event_exit_tracking(uuid, boolean), public.door_record_exit(text, int, uuid),
-  public.door_occupancy(uuid), public.door_override_entry(text, text, int, uuid), public.door_override_log(uuid) to authenticated, service_role;
+  public.door_occupancy(uuid), public.door_override_entry(text, text, int, uuid), public.door_override_log(uuid), public.door_club_nights(uuid) to authenticated, service_role;
 grant execute on function public.door_order_in(uuid) to service_role;
