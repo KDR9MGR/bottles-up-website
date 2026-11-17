@@ -115,7 +115,8 @@ describe('figures and words', () => {
 describe('times are in the club\'s time zone', () => {
   const t = new Date('2026-11-15T03:12:00Z');
   it('24-hour time, with midnight as 00 and the zone deciding', () => {
-    expect([timeOfDay(t, 'UTC'), timeOfDay(t, 'America/Toronto'), timeOfDay(t, 'America/Vancouver'), timeOfDay(t, 'Asia/Kolkata')]).toEqual(['03:12', '22:12', '19:12', '08:42']);
+    // Los Angeles, not Vancouver: British Columbia moves to permanent daylight time from 1 Nov 2026 (tzdata 2026b), so Vancouver's offset in this month depends on the time-zone database of whoever runs the test (see tests/db/tests/450_venue_time_zone.sql).
+    expect([timeOfDay(t, 'UTC'), timeOfDay(t, 'America/Toronto'), timeOfDay(t, 'America/Los_Angeles'), timeOfDay(t, 'Asia/Kolkata')]).toEqual(['03:12', '22:12', '19:12', '08:42']);
     expect(timeOfDay(new Date('2026-11-15T05:05:00Z'), 'UTC')).toBe('05:05');
     expect(timeOfDay(new Date('2026-11-15T00:00:00Z'), 'UTC')).toBe('00:00');
     expect(timeOfDay(new Date('2026-11-15T05:00:00Z'), 'America/Toronto')).toBe('00:00');
