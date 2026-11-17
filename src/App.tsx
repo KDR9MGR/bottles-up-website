@@ -44,6 +44,7 @@ import ClubPaymentConfirm from "./pages/ClubPaymentConfirm";
 import OrderByCode from "./pages/OrderByCode";
 import BookingByCode from "./pages/BookingByCode";
 import BottleSubstitutionConfirm from "./pages/BottleSubstitutionConfirm";
+import ComplimentaryClaim from "./pages/ComplimentaryClaim";
 import EventDetail from "./pages/EventDetail";
 import Events from "./pages/Events";
 import VipTables from "./pages/VipTables";
@@ -125,6 +126,7 @@ const App = () => {
             <Route path="/pay/tip-thanks" element={<TipThanks />} />
             <Route path="/club-payment/confirm/:token" element={<ClubPaymentConfirm />} />
             <Route path="/bottle-substitution/confirm/:token" element={<BottleSubstitutionConfirm />} />
+            <Route path="/claim/:token" element={<ComplimentaryClaim />} />
             <Route path="/order/:code" element={<OrderByCode />} />
             <Route path="/booking/:code" element={<BookingByCode />} />
             <Route path="/my-tickets" element={<MyTickets />} />
