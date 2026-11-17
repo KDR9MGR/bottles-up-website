@@ -95,6 +95,9 @@ bash tests/db/concurrency_door_sales.sh
 echo "--- concurrency_oversold.sh"
 bash tests/db/concurrency_oversold.sh
 
+echo "--- concurrency_settlement_adjustments.sh"
+bash tests/db/concurrency_settlement_adjustments.sh
+
 echo "--- migration_guard.sh"
 bash tests/db/migration_guard.sh
 
