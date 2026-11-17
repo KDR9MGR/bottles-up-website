@@ -1,0 +1,113 @@
+{
+  "note": "a club count that does not match the clubs sent: the answer cannot be trusted",
+  "kind": "owner_combined",
+  "timeZone": "UTC",
+  "input": {
+    "report": {
+      "org_name": "Club Co",
+      "business_night": "2026-11-14",
+      "venues_total": 3,
+      "venues_final": 1,
+      "currency": "CAD",
+      "currency_mixed": false,
+      "totals": {
+        "tables": 20,
+        "guests": 90,
+        "seated": 70,
+        "booked_cents": 1800000,
+        "paid_cents": 900000,
+        "balance_cents": 900000,
+        "discount_cents": 40000,
+        "payments": 30,
+        "collected_cents": 900000,
+        "cash_cents": 200000,
+        "card_cents": 700000,
+        "cash_counted_cents": 195000,
+        "shortage_cents": 5000,
+        "overage_cents": 0,
+        "held_cents": 12000,
+        "bottle_lines": 60,
+        "bottle_value_cents": 3000000,
+        "bottles_served": 55,
+        "unverified": 4,
+        "disputed": 1,
+        "no_receipt": 3,
+        "flags_open": 2,
+        "requests_open": 1,
+        "alerts_unresolved": 0,
+        "closed_with_exceptions": 2
+      },
+      "venues": [
+        {
+          "venue_id": "v1",
+          "venue_name": "Club A",
+          "currencies": [
+            "cad"
+          ],
+          "report": {
+            "view": "full",
+            "final": true,
+            "venue_name": "Club A",
+            "business_night": "2026-11-14",
+            "generated_at": null,
+            "closed_at": null,
+            "closed_by_name": "Mia Manager",
+            "exceptions": [
+              {
+                "key": "a",
+                "kind": "blocker",
+                "count": 1,
+                "label": "x"
+              }
+            ],
+            "exceptions_note": null,
+            "bookings": {
+              "count": 12,
+              "guests": 58,
+              "seated": 41,
+              "paid_cents": 482550,
+              "total_cents": 960000,
+              "balance_cents": 477450,
+              "discount_cents": 25000
+            },
+            "payments": {
+              "count": 17,
+              "disputed": 1,
+              "tax_cents": 62500,
+              "cash_cents": 120000,
+              "no_receipt": 2,
+              "unverified": 3,
+              "corrections": 1,
+              "debit_cents": 98050,
+              "billed_cents": 5,
+              "credit_cents": 150000,
+              "discount_cents": 0,
+              "gratuity_cents": 47000,
+              "collected_cents": 482550,
+              "split_card_cents": 114500
+            },
+            "bottles": {
+              "lines": 34,
+              "served": 29,
+              "awaiting": 2,
+              "cancelled": 1,
+              "in_progress": 2,
+              "value_cents": 2150075,
+              "due_at_venue": 4
+            },
+            "flags": {
+              "open": 2,
+              "raised": 5,
+              "resolved": 3,
+              "by_resolution": {
+                "refund_issued": 1,
+                "false_alarm": 2
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": null
+}

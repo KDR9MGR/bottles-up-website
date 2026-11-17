@@ -1,0 +1,170 @@
+{
+  "note": "times: starts, ends, figures as of, last check-in",
+  "kind": "organizer_sales",
+  "timeZone": "UTC",
+  "input": {
+    "report": {
+      "generated_at": "2026-11-15T01:30:00Z",
+      "event": {
+        "title": "Night One",
+        "status": "published",
+        "venue_name": "Club A",
+        "capacity": 400,
+        "start": "2026-11-14T22:00:00Z",
+        "end": "2026-11-15T04:00:00Z"
+      },
+      "tickets": {
+        "orders": 120,
+        "tickets_sold": 180,
+        "checked_in": 95,
+        "refunded_orders": 2,
+        "refunded_cents": 9000,
+        "currency_mixed": false,
+        "currency": "CAD",
+        "gross_cents": 540000,
+        "by_tier": [
+          {
+            "tier": "General",
+            "price_cents": 2500,
+            "capacity": 300,
+            "sold": 150,
+            "checked_in": 80,
+            "gross_cents": 375000,
+            "currency": "CAD"
+          },
+          {
+            "tier": "VIP",
+            "price_cents": 5500,
+            "capacity": 50,
+            "sold": 30,
+            "checked_in": 15,
+            "gross_cents": 165000
+          }
+        ]
+      },
+      "venues": [
+        {
+          "agreement_id": "a1",
+          "venue_name": "Club A",
+          "status": "active",
+          "in_force": true,
+          "grants": [
+            {
+              "key": "ticket_checkins",
+              "allowed": true,
+              "available": true,
+              "data": {
+                "checked_in": 95,
+                "tickets_sold": 180,
+                "last_check_in_at": "2026-11-15T00:41:00Z"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "expected": {
+    "title": "Event report",
+    "subtitle": "Night One",
+    "statusLine": "Figures as of 01:30. Only what each club has chosen to share is included.",
+    "fileName": "night-one-2026-11-14-event-report.pdf",
+    "sections": [
+      {
+        "title": "Event",
+        "rows": [
+          {
+            "label": "Event",
+            "value": "Night One",
+            "strong": false
+          },
+          {
+            "label": "Starts",
+            "value": "Sat Nov 14, 22:00",
+            "strong": false
+          },
+          {
+            "label": "Ends",
+            "value": "Sun Nov 15, 04:00",
+            "strong": false
+          },
+          {
+            "label": "Status",
+            "value": "Published",
+            "strong": false
+          },
+          {
+            "label": "Venue",
+            "value": "Club A",
+            "strong": false
+          },
+          {
+            "label": "Capacity set on the event",
+            "value": "400",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Your tickets (CAD)",
+        "rows": [
+          {
+            "label": "Paid orders",
+            "value": "120",
+            "strong": false
+          },
+          {
+            "label": "Tickets sold",
+            "value": "180",
+            "strong": true
+          },
+          {
+            "label": "Checked in",
+            "value": "95",
+            "strong": false
+          },
+          {
+            "label": "Gross sales",
+            "value": "$5,400.00",
+            "strong": true
+          },
+          {
+            "label": "Refunded",
+            "value": "2 orders · $90.00",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "By ticket type",
+        "rows": [
+          {
+            "label": "General · $25.00 CAD · 150 of 300 sold, 80 in",
+            "value": "$3,750.00",
+            "strong": false
+          },
+          {
+            "label": "VIP · $55.00 · 30 of 50 sold, 15 in",
+            "value": "$1,650.00",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Check-ins at Club A",
+        "rows": [
+          {
+            "label": "Checked in",
+            "value": "95 of 180",
+            "strong": false
+          },
+          {
+            "label": "Last check-in",
+            "value": "00:41",
+            "strong": false
+          }
+        ]
+      }
+    ]
+  }
+}

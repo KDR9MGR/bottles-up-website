@@ -1,0 +1,258 @@
+{
+  "note": "clubs not in force (negotiating, cancelled, with no grants), table sales with no night, capacity shared but with no data, a thing not shared that still carries data, and a check-in count with no last time",
+  "kind": "organizer_sales",
+  "timeZone": "UTC",
+  "input": {
+    "report": {
+      "event": {
+        "title": "Edge Night",
+        "status": "published",
+        "venue_name": "Club A"
+      },
+      "tickets": {
+        "orders": 0,
+        "tickets_sold": 0,
+        "checked_in": 0,
+        "refunded_orders": 1,
+        "refunded_cents": 100,
+        "currency_mixed": false,
+        "currency": "CAD",
+        "gross_cents": 0,
+        "by_tier": []
+      },
+      "venues": [
+        {
+          "agreement_id": "a1",
+          "venue_name": "Club Negotiating",
+          "status": "negotiating",
+          "in_force": false,
+          "grants": [
+            {
+              "key": "capacity",
+              "allowed": true,
+              "available": true,
+              "data": {
+                "agreed": 1,
+                "tickets_sold": 0,
+                "checked_in": 0
+              }
+            }
+          ]
+        },
+        {
+          "agreement_id": "a2",
+          "venue_name": "Club Cancelled",
+          "status": "cancelled",
+          "in_force": false
+        },
+        {
+          "agreement_id": "a3",
+          "venue_name": "Club Edges",
+          "status": "active",
+          "in_force": true,
+          "grants": [
+            {
+              "key": "table_sales",
+              "allowed": true,
+              "available": true,
+              "data": {
+                "tables": 2,
+                "guests": 4,
+                "currency_mixed": false,
+                "booked_cents": 100,
+                "paid_cents": 50
+              }
+            },
+            {
+              "key": "capacity",
+              "allowed": true,
+              "available": true,
+              "data": null
+            },
+            {
+              "key": "ticket_checkins",
+              "allowed": false,
+              "available": true,
+              "data": {
+                "checked_in": 9,
+                "tickets_sold": 9,
+                "last_check_in_at": null
+              }
+            },
+            {
+              "key": "bar_sales",
+              "allowed": true,
+              "available": true,
+              "data": {
+                "x": 1
+              }
+            },
+            {
+              "key": "settlement",
+              "allowed": false,
+              "available": false,
+              "data": null
+            },
+            {
+              "key": "ticket_checkins",
+              "allowed": true,
+              "available": true,
+              "data": {
+                "checked_in": 1,
+                "tickets_sold": 2
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "expected": {
+    "title": "Event report",
+    "subtitle": "Edge Night",
+    "statusLine": "Figures as they stand now. Only what each club has chosen to share is included.",
+    "fileName": "edge-night-event-report.pdf",
+    "sections": [
+      {
+        "title": "Event",
+        "rows": [
+          {
+            "label": "Event",
+            "value": "Edge Night",
+            "strong": false
+          },
+          {
+            "label": "Starts",
+            "value": "Not set",
+            "strong": false
+          },
+          {
+            "label": "Status",
+            "value": "Published",
+            "strong": false
+          },
+          {
+            "label": "Venue",
+            "value": "Club A",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Your tickets (CAD)",
+        "rows": [
+          {
+            "label": "Paid orders",
+            "value": "0",
+            "strong": false
+          },
+          {
+            "label": "Tickets sold",
+            "value": "0",
+            "strong": true
+          },
+          {
+            "label": "Checked in",
+            "value": "0",
+            "strong": false
+          },
+          {
+            "label": "Gross sales",
+            "value": "$0.00",
+            "strong": true
+          },
+          {
+            "label": "Refunded",
+            "value": "1 order · $1.00",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Club Negotiating · not active",
+        "rows": [
+          {
+            "label": "Shared with you",
+            "value": "Being agreed. Nothing is shared until both sides accept.",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Club Cancelled · not active",
+        "rows": [
+          {
+            "label": "Shared with you",
+            "value": "Not active. Nothing is shared.",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Table sales at Club Edges · null",
+        "rows": [
+          {
+            "label": "Tables booked",
+            "value": "2",
+            "strong": false
+          },
+          {
+            "label": "Guests",
+            "value": "4",
+            "strong": false
+          },
+          {
+            "label": "Booked total",
+            "value": "$1.00",
+            "strong": true
+          },
+          {
+            "label": "Paid so far",
+            "value": "$0.50",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Check-ins at Club Edges",
+        "rows": [
+          {
+            "label": "Checked in",
+            "value": "1 of 2",
+            "strong": false
+          },
+          {
+            "label": "Last check-in",
+            "value": "None yet",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Not available from Club Edges",
+        "rows": [
+          {
+            "label": "Capacity",
+            "value": "Shared",
+            "strong": false
+          },
+          {
+            "label": "Ticket check-ins",
+            "value": "Not shared",
+            "strong": false
+          },
+          {
+            "label": "Bar sales",
+            "value": "Shared",
+            "strong": false
+          },
+          {
+            "label": "Settlement details",
+            "value": "Not shared",
+            "strong": false
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "note": "an event whose title makes no file name, an unfamiliar status, a club sharing table money in two currencies and capacity with none agreed",
+  "kind": "organizer_sales",
+  "timeZone": "UTC",
+  "input": {
+    "report": {
+      "event": {
+        "title": "!!!",
+        "status": "sold_out"
+      },
+      "tickets": {
+        "orders": 1,
+        "tickets_sold": 1,
+        "checked_in": 1,
+        "currency_mixed": false,
+        "currency": null,
+        "gross_cents": 0
+      },
+      "venues": [
+        {
+          "agreement_id": "a1",
+          "venue_name": "Club A",
+          "in_force": true,
+          "status": "changes_pending",
+          "grants": [
+            {
+              "key": "table_sales",
+              "allowed": true,
+              "available": true,
+              "data": {
+                "night": "2026-11-14",
+                "tables": 1,
+                "guests": 2,
+                "currency_mixed": true,
+                "currency": null
+              }
+            },
+            {
+              "key": "capacity",
+              "allowed": true,
+              "available": true,
+              "data": {
+                "agreed": null,
+                "tickets_sold": 1,
+                "checked_in": 1
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "expected": {
+    "title": "Event report",
+    "subtitle": "!!!",
+    "statusLine": "Figures as they stand now. Only what each club has chosen to share is included.",
+    "fileName": "event-event-report.pdf",
+    "sections": [
+      {
+        "title": "Event",
+        "rows": [
+          {
+            "label": "Event",
+            "value": "!!!",
+            "strong": false
+          },
+          {
+            "label": "Starts",
+            "value": "Not set",
+            "strong": false
+          },
+          {
+            "label": "Status",
+            "value": "Sold out",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Your tickets",
+        "rows": [
+          {
+            "label": "Paid orders",
+            "value": "1",
+            "strong": false
+          },
+          {
+            "label": "Tickets sold",
+            "value": "1",
+            "strong": true
+          },
+          {
+            "label": "Checked in",
+            "value": "1",
+            "strong": false
+          },
+          {
+            "label": "Gross sales",
+            "value": "$0.00",
+            "strong": true
+          }
+        ]
+      },
+      {
+        "title": "Table sales at Club A · Saturday Nov 14",
+        "rows": [
+          {
+            "label": "Tables booked",
+            "value": "1",
+            "strong": false
+          },
+          {
+            "label": "Guests",
+            "value": "2",
+            "strong": false
+          },
+          {
+            "label": "Money",
+            "value": "Not added: more than one currency",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Capacity at Club A",
+        "rows": [
+          {
+            "label": "Agreed capacity",
+            "value": "Not set in the agreement",
+            "strong": false
+          },
+          {
+            "label": "Tickets sold",
+            "value": "1",
+            "strong": false
+          },
+          {
+            "label": "Checked in",
+            "value": "1",
+            "strong": false
+          }
+        ]
+      }
+    ]
+  }
+}

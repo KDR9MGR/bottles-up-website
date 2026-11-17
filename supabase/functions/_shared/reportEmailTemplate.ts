@@ -16,9 +16,11 @@ export interface ReportEmailContext {
   eventTitle: string | null;
   /** A night as YYYY-MM-DD (checked by the database), or the event's id for an organizer's report. */
   ref: string;
-  /** The signed-in person who sent it. */
+  /** The signed-in person who sent it. Not used for an automatic report. */
   senderEmail: string;
   filename: string;
+  /** Sent by the server when the night was closed, not by a person pressing the button. */
+  automatic?: boolean;
 }
 
 const oneLine = (value: string) => value.replace(/\s+/g, ' ').trim();
@@ -45,13 +47,16 @@ export function buildReportEmail(ctx: ReportEmailContext): { subject: string; ht
   const what = describeReport(ctx);
   const sender = oneLine(ctx.senderEmail);
   const file = oneLine(ctx.filename);
+  const footer = ctx.automatic
+    ? 'Sent automatically by BottlesUp Business when the night was closed, because your address is on the report list. If you were not expecting this, you can ignore it.'
+    : `Sent by ${sender} from BottlesUp Business, because your address is on the report list. If you were not expecting this, you can ignore it.`;
 
   const html = `
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0a0a0a; color: #fff; border-radius: 16px;">
       <h1 style="color: #f97316; font-size: 22px;">A report for you</h1>
       <p>${escapeHtml(what)}.</p>
       <p>It is attached as a PDF (${escapeHtml(file)}).</p>
-      <p style="color: #999; font-size: 12px;">Sent by ${escapeHtml(sender)} from BottlesUp Business, because your address is on the report list. If you were not expecting this, you can ignore it.</p>
+      <p style="color: #999; font-size: 12px;">${escapeHtml(footer)}</p>
     </div>`;
   const text = [
     'A report for you',
@@ -59,7 +64,7 @@ export function buildReportEmail(ctx: ReportEmailContext): { subject: string; ht
     `${what}.`,
     `It is attached as a PDF (${file}).`,
     '',
-    `Sent by ${sender} from BottlesUp Business, because your address is on the report list. If you were not expecting this, you can ignore it.`,
+    footer,
   ].join('\n');
   return { subject: REPORT_SUBJECT, html, text };
 }

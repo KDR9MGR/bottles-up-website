@@ -1,0 +1,130 @@
+{
+  "note": "the security view: no money, incidents of unlisted kinds",
+  "kind": "venue_night",
+  "timeZone": "UTC",
+  "input": {
+    "report": {
+      "view": "security",
+      "final": true,
+      "venue_name": "The Venue",
+      "business_night": "2026-11-14",
+      "generated_at": null,
+      "closed_at": null,
+      "closed_by_name": "Mia Manager",
+      "exceptions": [],
+      "exceptions_note": null,
+      "security": {
+        "tasks": {
+          "done": 4,
+          "open": 1,
+          "total": 5
+        },
+        "alerts": {
+          "total": 3,
+          "urgent": 1,
+          "by_kind": {
+            "fight": 1,
+            "medical": 1,
+            "unlisted_kind": 1
+          },
+          "escalated": 1,
+          "unresolved": 1
+        },
+        "incidents": [
+          {
+            "kind": "fight",
+            "location": "Main floor",
+            "status": "reviewed"
+          },
+          {
+            "kind": "theft",
+            "location": "Coat check",
+            "status": "submitted"
+          },
+          {
+            "location": "Patio"
+          }
+        ]
+      }
+    },
+    "sales": null
+  },
+  "expected": {
+    "title": "Security report",
+    "subtitle": "The Venue · Saturday Nov 14",
+    "statusLine": "FINAL · closed by Mia Manager",
+    "fileName": "the-venue-2026-11-14-security-final.pdf",
+    "sections": [
+      {
+        "title": "Security",
+        "rows": [
+          {
+            "label": "Alerts",
+            "value": "3",
+            "strong": false
+          },
+          {
+            "label": "Urgent",
+            "value": "1",
+            "strong": false
+          },
+          {
+            "label": "Escalated",
+            "value": "1",
+            "strong": false
+          },
+          {
+            "label": "Not resolved",
+            "value": "1",
+            "strong": false
+          },
+          {
+            "label": "  Fight",
+            "value": "1",
+            "strong": false
+          },
+          {
+            "label": "  Medical",
+            "value": "1",
+            "strong": false
+          },
+          {
+            "label": "  unlisted_kind",
+            "value": "1",
+            "strong": false
+          },
+          {
+            "label": "Tasks",
+            "value": "5",
+            "strong": false
+          },
+          {
+            "label": "Tasks done",
+            "value": "4",
+            "strong": false
+          },
+          {
+            "label": "Incident reports",
+            "value": "3",
+            "strong": false
+          },
+          {
+            "label": "  Fight · Main floor",
+            "value": "Reviewed",
+            "strong": false
+          },
+          {
+            "label": "  Theft · Coat check",
+            "value": "Not reviewed",
+            "strong": false
+          },
+          {
+            "label": "  Other · Patio",
+            "value": "Not reviewed",
+            "strong": false
+          }
+        ]
+      }
+    ]
+  }
+}

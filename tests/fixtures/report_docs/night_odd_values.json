@@ -1,0 +1,117 @@
+{
+  "note": "strings for numbers, a date that does not exist, a name with accents and an ampersand, an exception with no key, negative cents",
+  "kind": "venue_night",
+  "timeZone": "UTC",
+  "input": {
+    "report": {
+      "business_night": "2026-02-30",
+      "final": true,
+      "venue_name": "Café Münch & Söhne",
+      "view": "full",
+      "closed_by_name": "",
+      "bookings": {
+        "count": "7",
+        "guests": "many",
+        "total_cents": 1234567,
+        "paid_cents": -50
+      },
+      "flags": {
+        "open": 0,
+        "by_resolution": null
+      },
+      "exceptions": [
+        {
+          "label": "no key"
+        },
+        {
+          "key": "k",
+          "count": 2
+        }
+      ]
+    },
+    "sales": null
+  },
+  "expected": {
+    "title": "Nightly report",
+    "subtitle": "Café Münch & Söhne · 2026-02-30",
+    "statusLine": "FINAL · closed",
+    "fileName": "caf-m-nch-s-hne-2026-02-30-full-final.pdf",
+    "sections": [
+      {
+        "title": "Tables and guests",
+        "rows": [
+          {
+            "label": "Tables booked",
+            "value": "7",
+            "strong": false
+          },
+          {
+            "label": "Guests",
+            "value": "0",
+            "strong": false
+          },
+          {
+            "label": "Guests seated (tables)",
+            "value": "0",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Sales",
+        "rows": [
+          {
+            "label": "Booked total",
+            "value": "$12,345.67",
+            "strong": true
+          },
+          {
+            "label": "Paid so far",
+            "value": "$0.50",
+            "strong": false
+          },
+          {
+            "label": "Balance still due",
+            "value": "$0.00",
+            "strong": false
+          },
+          {
+            "label": "Discounts",
+            "value": "$0.00",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Flagged payments",
+        "rows": [
+          {
+            "label": "Flagged",
+            "value": "0",
+            "strong": false
+          },
+          {
+            "label": "Still open",
+            "value": "0",
+            "strong": false
+          },
+          {
+            "label": "Resolved",
+            "value": "0",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Closed with exceptions",
+        "rows": [
+          {
+            "label": "k",
+            "value": "2",
+            "strong": false
+          }
+        ]
+      }
+    ]
+  }
+}
