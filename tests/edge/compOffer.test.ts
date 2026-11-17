@@ -113,7 +113,7 @@ describe('a send that goes', () => {
   });
 
   it('puts the club\'s own time in the e-mail', async () => {
-    user = vi.fn(async () => ({ data: [{ ...ROW, time_zone: 'America/Vancouver' }], error: null }));
+    user = vi.fn(async () => ({ data: [{ ...ROW, time_zone: 'America/Los_Angeles' }], error: null }));
     await run();
     expect((calls.find((c) => c.who === 'send')!.args as { text: string }).text).toContain('6:00 PM PST');
   });

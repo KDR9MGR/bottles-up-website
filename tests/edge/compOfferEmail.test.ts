@@ -99,7 +99,7 @@ describe('the link', () => {
 describe('the expiry', () => {
   it('is in the club\'s own time', () => {
     expect(expiryLabel('2026-11-25T02:00:00Z', 'America/Toronto')).toBe('Tuesday, November 24 at 9:00 PM EST');
-    expect(expiryLabel('2026-11-25T02:00:00Z', 'America/Vancouver')).toBe('Tuesday, November 24 at 6:00 PM PST');
+    expect(expiryLabel('2026-11-25T02:00:00Z', 'America/Los_Angeles')).toBe('Tuesday, November 24 at 6:00 PM PST');
   });
 
   it('falls back to Toronto without a zone, and to UTC for a zone that is not real', () => {

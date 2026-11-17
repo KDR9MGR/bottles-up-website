@@ -176,7 +176,7 @@ begin
   perform tests.assert_eq('four sends in a day are fine (and the fifth)', tests.begin_col(owner_u, 'owner@send.example', o2, 'first_send'), 'true');
   perform tests.assert_eq('the sixth in a day is refused in plain words', tests.begin_col(owner_u, 'owner@send.example', o2, 'send_id'), 'ERROR: this link was sent 5 times in the last day: wait before sending it again');
   perform tests.assert_eq('and wrote nothing', (select count(*) from public.site_comp_offer_sends where offer_id = o2 and created_at > now() - interval '1 day'), 5::bigint);
-  update public.site_comp_offer_sends set created_at = now() - interval '25 hours' where id = (select id from public.site_comp_offer_sends where offer_id = o2 order by id limit 1);
+  update public.site_comp_offer_sends set created_at = now() - interval '25 hours' where id = (select id from public.site_comp_offer_sends where offer_id = o2 and created_at > now() - interval '1 day' order by created_at desc, id limit 1);
   perform tests.assert_eq('an attempt older than a day stops counting', tests.begin_col(owner_u, 'owner@send.example', o2, 'first_send'), 'true');
   perform tests.assert_eq('the limit is for that offer: another offer is not affected', tests.begin_col(owner_u, 'owner@send.example', o1, 'first_send'), 'true');
   -- per person: 30 an hour
@@ -185,7 +185,7 @@ begin
     select o3, mgr_a, 'x@x.example', false, 'failed', 'send_failed', now() from generate_series(1, 30);
   perform tests.assert_eq('a person who has sent 30 this hour is asked to wait', tests.begin_col(mgr_a, 'mgra@send.example', o1, 'send_id'), 'ERROR: you have sent a lot of links this hour: wait before sending another');
   perform tests.assert_eq('it is per person: the owner is not stopped by it', tests.begin_col(owner_u, 'owner@send.example', o6, 'first_send'), 'false');
-  update public.site_comp_offer_sends set created_at = now() - interval '61 minutes' where sent_by = mgr_a and id = (select id from public.site_comp_offer_sends where sent_by = mgr_a order by id limit 1);
+  update public.site_comp_offer_sends set created_at = now() - interval '61 minutes' where sent_by = mgr_a and id = (select id from public.site_comp_offer_sends where sent_by = mgr_a and created_at > now() - interval '1 hour' order by created_at desc, id limit 1);
   perform tests.assert_true('29 in the hour is not enough to stop them', tests.begin_col(mgr_a, 'mgra@send.example', o1, 'send_id') ~ '^[0-9a-f-]{36}$');
   delete from public.site_comp_offer_sends where sent_by = mgr_a;
 
