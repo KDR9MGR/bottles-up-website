@@ -3,7 +3,7 @@ import path from 'path';
 
 // The Supabase edge functions are written for Deno (`npm:` specifiers, `.ts`
 // import suffixes). These aliases let vitest run that exact source, untouched:
-//   stripe, bcryptjs  -> the real packages (so signature checks and password
+//   stripe, bcryptjs, pdf-lib -> the real packages (so signature checks and password
 //                        hashing in tests are the real thing)
 //   supabase-js       -> a stub; tests pass in an in-memory fake instead
 //   qrcode            -> a stub; no image generation needed
@@ -13,6 +13,7 @@ export default defineConfig({
     alias: [
       { find: /^npm:stripe@\d+$/, replacement: 'stripe' },
       { find: /^npm:bcryptjs@[\d.]+$/, replacement: 'bcryptjs' },
+      { find: /^npm:pdf-lib@[\d.]+$/, replacement: 'pdf-lib' },
       { find: /^npm:@supabase\/supabase-js@\d+$/, replacement: path.resolve(__dirname, 'tests/edge/stubs/supabase-js.ts') },
       { find: /^npm:@anthropic-ai\/sdk@\d+$/, replacement: path.resolve(__dirname, 'tests/edge/stubs/anthropic-sdk.ts') },
       { find: /^npm:qrcode@[\d.]+$/, replacement: path.resolve(__dirname, 'tests/edge/stubs/qrcode.ts') },

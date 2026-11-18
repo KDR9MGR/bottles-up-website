@@ -1,0 +1,13 @@
+{
+  "note": "no business night: the report cannot be read",
+  "kind": "venue_night",
+  "timeZone": "UTC",
+  "input": {
+    "report": {
+      "view": "full",
+      "final": true
+    },
+    "sales": null
+  },
+  "expected": null
+}

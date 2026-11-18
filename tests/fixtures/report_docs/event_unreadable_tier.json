@@ -1,0 +1,20 @@
+{
+  "note": "a ticket type with no name: the report cannot be read",
+  "kind": "organizer_sales",
+  "timeZone": "UTC",
+  "input": {
+    "report": {
+      "event": {
+        "title": "X"
+      },
+      "tickets": {
+        "by_tier": [
+          {
+            "price_cents": 1
+          }
+        ]
+      }
+    }
+  },
+  "expected": null
+}

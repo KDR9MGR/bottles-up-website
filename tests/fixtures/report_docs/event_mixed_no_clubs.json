@@ -1,0 +1,93 @@
+{
+  "note": "two currencies, a draft event with no club linked",
+  "kind": "organizer_sales",
+  "timeZone": "UTC",
+  "input": {
+    "report": {
+      "event": {
+        "title": "Draft Night",
+        "status": "draft"
+      },
+      "tickets": {
+        "orders": 3,
+        "tickets_sold": 3,
+        "checked_in": 0,
+        "refunded_orders": 1,
+        "refunded_cents": 100,
+        "currency_mixed": true,
+        "currency": null,
+        "gross_cents": null,
+        "by_tier": []
+      },
+      "venues": []
+    }
+  },
+  "expected": {
+    "title": "Event report",
+    "subtitle": "Draft Night",
+    "statusLine": "Figures as they stand now. Only what each club has chosen to share is included.",
+    "fileName": "draft-night-event-report.pdf",
+    "sections": [
+      {
+        "title": "Event",
+        "rows": [
+          {
+            "label": "Event",
+            "value": "Draft Night",
+            "strong": false
+          },
+          {
+            "label": "Starts",
+            "value": "Not set",
+            "strong": false
+          },
+          {
+            "label": "Status",
+            "value": "Draft (private)",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Your tickets",
+        "rows": [
+          {
+            "label": "Paid orders",
+            "value": "3",
+            "strong": false
+          },
+          {
+            "label": "Tickets sold",
+            "value": "3",
+            "strong": true
+          },
+          {
+            "label": "Checked in",
+            "value": "0",
+            "strong": false
+          },
+          {
+            "label": "Gross sales",
+            "value": "Not added: more than one currency",
+            "strong": true
+          },
+          {
+            "label": "Refunded",
+            "value": "1 order · amount not added",
+            "strong": false
+          }
+        ]
+      },
+      {
+        "title": "Shared by the club",
+        "rows": [
+          {
+            "label": "Venue",
+            "value": "No club is linked to this event yet",
+            "strong": false
+          }
+        ]
+      }
+    ]
+  }
+}

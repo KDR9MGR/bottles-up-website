@@ -1,0 +1,52 @@
+{
+  "note": "a club whose report cannot be read",
+  "kind": "owner_combined",
+  "timeZone": "UTC",
+  "input": {
+    "report": {
+      "org_name": "Club Co",
+      "business_night": "2026-11-14",
+      "venues_total": 1,
+      "venues_final": 1,
+      "currency": "CAD",
+      "currency_mixed": false,
+      "totals": {
+        "tables": 20,
+        "guests": 90,
+        "seated": 70,
+        "booked_cents": 1800000,
+        "paid_cents": 900000,
+        "balance_cents": 900000,
+        "discount_cents": 40000,
+        "payments": 30,
+        "collected_cents": 900000,
+        "cash_cents": 200000,
+        "card_cents": 700000,
+        "cash_counted_cents": 195000,
+        "shortage_cents": 5000,
+        "overage_cents": 0,
+        "held_cents": 12000,
+        "bottle_lines": 60,
+        "bottle_value_cents": 3000000,
+        "bottles_served": 55,
+        "unverified": 4,
+        "disputed": 1,
+        "no_receipt": 3,
+        "flags_open": 2,
+        "requests_open": 1,
+        "alerts_unresolved": 0,
+        "closed_with_exceptions": 2
+      },
+      "venues": [
+        {
+          "venue_id": "v1",
+          "venue_name": "Club A",
+          "report": {
+            "view": "full"
+          }
+        }
+      ]
+    }
+  },
+  "expected": null
+}

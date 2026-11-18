@@ -1,0 +1,13 @@
+{
+  "note": "no tickets part: the report cannot be read",
+  "kind": "organizer_sales",
+  "timeZone": "UTC",
+  "input": {
+    "report": {
+      "event": {
+        "title": "X"
+      }
+    }
+  },
+  "expected": null
+}
