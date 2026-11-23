@@ -101,6 +101,9 @@ bash tests/db/concurrency_settlement_adjustments.sh
 echo "--- concurrency_report_jobs.sh"
 bash tests/db/concurrency_report_jobs.sh
 
+echo "--- concurrency_rename_business.sh"
+bash tests/db/concurrency_rename_business.sh
+
 echo "--- migration_guard.sh"
 bash tests/db/migration_guard.sh
 
