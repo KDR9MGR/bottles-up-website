@@ -19,6 +19,7 @@ import {
 import { Tag, X, Loader2, Lock, Unlock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
+import { defaultTierId, saleLabel } from '@/lib/saleWindow';
 import type { EventWithTiers } from './PopularEvents';
 
 interface BookingDialogProps {
@@ -54,8 +55,8 @@ const BookingDialog = ({ event, open, onOpenChange, initialTierId }: BookingDial
 
   useEffect(() => {
     if (event && event.ticket_tiers.length > 0) {
-      const preselected = initialTierId && event.ticket_tiers.some((t) => t.id === initialTierId);
-      setTierId(preselected ? initialTierId! : event.ticket_tiers[0].id);
+      // Start on the one asked for if it is on sale, else the first that is: a ticket type whose sales have not started or have ended cannot be bought.
+      setTierId(defaultTierId(event.ticket_tiers, initialTierId));
     }
     setName('');
     setEmail('');
@@ -86,6 +87,8 @@ const BookingDialog = ({ event, open, onOpenChange, initialTierId }: BookingDial
 
   const selectedTier = event.ticket_tiers.find((t) => t.id === tierId);
   const isSelectedTierLocked = !!selectedTier?.requires_access_code && !unlockedTiers[tierId];
+  // "On sale from Dec 5, 7:00 PM" or "Sales ended" when the chosen ticket type cannot be bought right now (the checkout function refuses it too).
+  const selectedClosedLabel = selectedTier ? saleLabel(selectedTier) : null;
   const qty = parseInt(quantity, 10) || 0;
   const unitPriceCents = selectedTier
     ? selectedTier.requires_access_code
@@ -158,6 +161,10 @@ const BookingDialog = ({ event, open, onOpenChange, initialTierId }: BookingDial
 
     if (!name || !email || !tierId || qty < 1) {
       toast({ title: 'Please fill in all required fields', variant: 'destructive' });
+      return;
+    }
+    if (selectedClosedLabel) {
+      toast({ title: 'This ticket type is not on sale', description: selectedClosedLabel, variant: 'destructive' });
       return;
     }
     if (isSelectedTierLocked) {
@@ -245,11 +252,14 @@ const BookingDialog = ({ event, open, onOpenChange, initialTierId }: BookingDial
                   {event.ticket_tiers.map((tier) => {
                     const locked = tier.requires_access_code && !unlockedTiers[tier.id];
                     const unlockedPrice = unlockedTiers[tier.id]?.priceCents;
+                    const closedLabel = saleLabel(tier);
                     return (
-                      <SelectItem key={tier.id} value={tier.id}>
-                        {locked
-                          ? `🔒 ${tier.name} - Locked`
-                          : `${tier.name} - $${((unlockedPrice ?? tier.price_cents) / 100).toFixed(2)}`}
+                      <SelectItem key={tier.id} value={tier.id} disabled={closedLabel !== null}>
+                        {closedLabel !== null
+                          ? `${tier.name} - ${closedLabel}`
+                          : locked
+                            ? `🔒 ${tier.name} - Locked`
+                            : `${tier.name} - $${((unlockedPrice ?? tier.price_cents) / 100).toFixed(2)}`}
                       </SelectItem>
                     );
                   })}
@@ -356,14 +366,16 @@ const BookingDialog = ({ event, open, onOpenChange, initialTierId }: BookingDial
           <DialogFooter>
             <Button
               type="submit"
-              disabled={submitting || isSelectedTierLocked}
+              disabled={submitting || isSelectedTierLocked || selectedClosedLabel !== null}
               className="w-full bg-gradient-orange text-black font-bold hover:opacity-90"
             >
               {submitting
                 ? 'Redirecting to checkout...'
-                : isSelectedTierLocked
-                  ? 'Enter access code to continue'
-                  : 'Continue to Payment'}
+                : selectedClosedLabel
+                  ? selectedClosedLabel
+                  : isSelectedTierLocked
+                    ? 'Enter access code to continue'
+                    : 'Continue to Payment'}
             </Button>
           </DialogFooter>
         </form>

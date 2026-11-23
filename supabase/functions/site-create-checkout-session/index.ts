@@ -3,6 +3,7 @@ import Stripe from 'npm:stripe@17';
 import { corsHeadersFor, handleOptions, isPreviewOrLocalOrigin } from '../_shared/cors.ts';
 import { validatePromoCode } from '../_shared/promoCode.ts';
 import { validateTierAccessCode } from '../_shared/tierAccessCode.ts';
+import { saleWindowBlock } from '../_shared/saleWindow.ts';
 
 Deno.serve(async (req: Request) => {
   const preflight = handleOptions(req);
@@ -67,6 +68,15 @@ Deno.serve(async (req: Request) => {
     }
     if (tier.events.status !== 'published') {
       return json({ error: 'This event is not currently on sale' }, 400);
+    }
+    // The ticket type's own sales window (an organizer may set a start and an end). Checked here, from the row just read, so a client cannot buy outside it
+    // by calling this function directly; the apps only show it.
+    const saleWindow = saleWindowBlock(tier);
+    if (saleWindow.blocked) {
+      return json(
+        { error: saleWindow.message, code: saleWindow.reason === 'not_started' ? 'sales_not_started' : 'sales_ended', ...(saleWindow.reason === 'not_started' ? { opens_at: saleWindow.opens_at } : { closed_at: saleWindow.closed_at }) },
+        409,
+      );
     }
     // The client never gets to just claim it already unlocked this tier - the
     // access code (if the tier requires one) is re-checked from scratch here,
