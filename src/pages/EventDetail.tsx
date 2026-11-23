@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import BookingDialog from '@/components/BookingDialog';
 import Lightbox from '@/components/Lightbox';
 import type { EventWithTiers } from '@/components/PopularEvents';
+import { saleLabel } from '@/lib/saleWindow';
 import Reveal from '@/components/motion/Reveal';
 import Tilt from '@/components/motion/Tilt';
 
@@ -295,6 +296,11 @@ const EventDetail = () => {
                               <div className="font-semibold text-white">${(tier.price_cents / 100).toFixed(2)}</div>
                             )}
                           </div>
+                          {saleLabel(tier) && (
+                            <div className="text-xs font-medium text-primary" data-testid="tier-sale-label">
+                              {saleLabel(tier)}
+                            </div>
+                          )}
                           {event.show_ticket_count && (
                             <div className="text-xs text-muted-foreground">
                               {remaining > 0 ? `${remaining} left` : 'Sold out'}

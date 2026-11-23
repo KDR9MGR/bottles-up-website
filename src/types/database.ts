@@ -91,6 +91,8 @@ export interface Database {
           sold_count: number;
           is_non_transferable: boolean;
           requires_access_code: boolean;
+          sale_starts_at: string | null;
+          sale_ends_at: string | null;
           created_at: string;
           updated_at: string;
         };
